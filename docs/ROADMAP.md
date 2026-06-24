@@ -47,8 +47,8 @@ Shipped in v0.1:
 - Search ranking over name, title, description, type, transport, repo (`src/search.ts`).
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
 - Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
-- Install writes + `mcp-lock.json` (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift and trust downgrade checks exist, but v2 integrity fields, frozen `mpm ci`, remote capability pins, and signed lock integrity are still open.
+- Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
+- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, and frozen `mpm ci` exist; remote tool-description pins, signed lock integrity, policy controls, and client-config reconciliation are still open.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -61,12 +61,12 @@ closed rows stay listed so the roadmap preserves the security history.
 |--------|----------|-----|---------|--------|
 | **Silent key collision** — locking same server for claude then cursor destroys the claude entry | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Key entries by `name + client` (→ F3) | v0.2 | Closed in current code |
 | **Unsafe cast on read** — `JSON.parse(raw) as Lockfile` accepts any hand-edited shape | `src/plan.ts` | Real `parseLockfile()` validator; reject malformed entries (→ F3) | v0.2 | Closed in current code |
-| **Records but never enforces** — `install` re-resolves and overwrites the lock without diffing | `src/cli.ts`, `src/tui.tsx` | Diff resolved vs locked; refuse install on drift unless explicitly updating lock (→ F3) | v0.2 | Closed for install; `mpm ci` still open |
+| **Records but never enforces** — `install` re-resolves and overwrites the lock without diffing | `src/cli.ts`, `src/tui.tsx`, `src/ci.ts` | Diff resolved vs locked; refuse install on drift unless explicitly updating lock; add frozen `mpm ci` (→ F3) | v0.2 | Closed in current code |
 | **Trust snapshot is cosmetic** — nothing blocks a downgrade | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Compare locked trust against resolved trust; refuse when resolved trust decreases | v0.2 | Closed for install; policy controls still open |
 | **Remote targets have no integrity pin** — remote entry is just `{kind, type, url}` | `src/plan.ts`, `src/tester.ts` | Reuse the MCP probe path (`initialize` → `tools/list`) to pin a tool-description hash + capability manifest; diff on install because no content digest exists for a URL (→ F1) | v0.2 | Open |
 | **No remove / unlock** — servers only accumulate; cleanup means hand-editing JSON | `src/cli.ts`, `src/plan.ts`, `src/install.ts` | Add `mpm remove <server> [--client <c>]` that deletes from lock and client config | v0.2 | Open |
 | **`generatedAt` is global and overwritten** — original creation time and per-server provenance are lost | `src/plan.ts` | Preserve `generatedAt`, add top-level `updatedAt`, add per-entry resolution timestamp | v0.2 | Closed in current code |
-| **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts` | Optional signed/digested lockfile header; verify on read (depends on sigstore) | v0.3 | Open |
+| **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts` | Per-entry integrity is shipped; optional signed/digested lockfile header still depends on sigstore | v0.3 | Partially closed |
 | **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts` | Add `mpm doctor` to reconcile lock ↔ client config and report drift | v0.3 | Open |
 
 Exit rule: a defect stays "open" until it has both a failing test (reproducing the bad
@@ -112,8 +112,8 @@ clobbering unrelated keys.
 |------|------|--------|
 | Fix the key collision | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Key entries by `name + client`, not `name`. **Shipped in current code.** |
 | Runtime validation on read | `src/plan.ts` | Replace `JSON.parse(raw) as Lockfile` with a real `parseLockfile()` validator. **Shipped in current code.** |
-| Add integrity fields | `src/plan.ts` | Per entry: SRI `integrity`, `resolved` source, `original`/`locked` split (manifest spec vs resolved pin). Bump `lockfileVersion` to 2. |
-| Frozen install | `src/cli.ts`, **new** `src/ci.ts` | New `mpm ci`: manifest↔lock drift = hard error; verify integrity metadata at install; never mutate the lock. Wire the command into the CLI switch and help text. |
+| Add integrity fields | `src/plan.ts` | Per entry: `sha256-...` integrity, `resolved` source, `original`/`locked` split (manifest spec vs resolved pin). Bump `lockfileVersion` to 2. **Implemented in current code.** |
+| Frozen install | `src/cli.ts`, **new** `src/ci.ts` | New `mpm ci`: manifest↔lock drift = hard error; verify integrity metadata at install; never mutate the lock. Wire the command into the CLI switch and help text. **Implemented in current code.** |
 | Drift + downgrade detection | `src/cli.ts`, `src/tui.tsx` | Compare resolved server against existing lock; refuse if version, target, generated config, or trust score changed unless `--update-lock` is used. **Base gate shipped; policy exceptions still open.** |
 
 **Acceptance:** a tampered lockfile (downgraded version / stripped digest) is rejected;

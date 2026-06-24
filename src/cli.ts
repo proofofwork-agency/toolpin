@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { verifyFrozenInstall } from "./ci.js";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { installServerConfig, type InstallScope } from "./install.js";
@@ -43,6 +44,9 @@ async function main(): Promise<void> {
       return;
     case "install":
       await install(rest);
+      return;
+    case "ci":
+      await ci(rest);
       return;
     case "test":
       await test(rest);
@@ -218,9 +222,16 @@ async function findServer(rest: string[], name: string): Promise<NormalizedServe
   throw new Error(`No server found for ${name}. Try \`mpm ingest\` or pass --live.`);
 }
 
-async function loadServers(rest: string[], liveOptions: { search?: string } = {}): Promise<NormalizedServer[]> {
+async function findExactServer(rest: string[], name: string, source: RegistrySourceId | "all"): Promise<NormalizedServer> {
+  const servers = await loadServers(rest, { search: name, source });
+  const exact = latestOnly(servers).find((server) => server.name === name);
+  if (exact) return exact;
+  throw new Error(`No exact server found for ${name} in ${source}. Try \`mpm ingest\` or pass --live.`);
+}
+
+async function loadServers(rest: string[], liveOptions: { search?: string; source?: RegistrySourceId | "all" } = {}): Promise<NormalizedServer[]> {
   let entries: RegistryEntry[];
-  const source = sourceFlag(rest, "all");
+  const source = liveOptions.source ?? sourceFlag(rest, "all");
 
   if (hasFlag(rest, "--live")) {
     entries = await fetchRegistry({ maxPages: 3, search: liveOptions.search, source });
@@ -294,6 +305,36 @@ async function install(rest: string[]): Promise<void> {
   console.log(`Installed ${server.name} for ${clients.join(", ")}`);
 }
 
+async function ci(rest: string[]): Promise<void> {
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const verifyBeforeUse = hasFlag(rest, "--verify");
+  const report = await verifyFrozenInstall(path, async (locked) => {
+    const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
+    if (verifyBeforeUse) {
+      const verification = await verifyServer(server, {
+        liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+        timeoutMs: numberFlag(rest, "--timeout", 15000),
+      });
+      if (!verification.ok) {
+        throw new Error([
+          `Verification failed for ${locked.name}:`,
+          ...verification.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
+        ].join("\n"));
+      }
+    }
+    return buildInstallPlan(server, locked.client);
+  });
+
+  if (!report.ok) {
+    throw new Error([
+      `Frozen install failed for ${path}.`,
+      ...report.issues.flatMap((issue) => [`- ${issue.key}:`, ...issue.messages.map((message) => `  - ${message}`)]),
+    ].join("\n"));
+  }
+
+  console.log(`Frozen install OK: ${report.checked} locked server/client entrie(s) verified.`);
+}
+
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
@@ -327,6 +368,7 @@ Commands:
   mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
   mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
   mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+  mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]
   mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
