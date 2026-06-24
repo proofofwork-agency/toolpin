@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
+import { codexTomlFromClientConfig } from "./codexToml.js";
 import { installServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
@@ -196,7 +197,11 @@ async function exportConfig(rest: string[]): Promise<void> {
   }
   const exported = exportClientConfig(server, client);
 
-  console.log(JSON.stringify(exported.config, null, 2));
+  if (client === "codex") {
+    console.log(codexTomlFromClientConfig(exported.config));
+  } else {
+    console.log(JSON.stringify(exported.config, null, 2));
+  }
   if (exported.notes.length) {
     console.error(`Notes: ${exported.notes.join(" ")}`);
   }

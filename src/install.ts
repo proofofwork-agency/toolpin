@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { exportClientConfig, type ClientName } from "./config.js";
+import { mergeCodexToml } from "./codexToml.js";
 import type { NormalizedServer } from "./types.js";
 
 export type InstallScope = "project" | "global";
@@ -22,6 +23,23 @@ export async function installServerConfig(
 ): Promise<InstallResult> {
   const exported = exportClientConfig(server, client);
   const target = resolveConfigTarget(client, scope);
+  if (client === "codex") {
+    const existing = await readText(target.file);
+    const next = mergeCodexToml(existing, exported.config);
+
+    await mkdir(path.dirname(target.file), { recursive: true });
+    await writeFile(target.file, next, "utf8");
+
+    return {
+      client,
+      scope,
+      file: target.file,
+      serverName: server.name,
+      action: existing.trim().length === 0 ? "created" : "updated",
+      notes: [...target.notes, ...exported.notes],
+    };
+  }
+
   const existing = await readJsonObject(target.file);
   const next = mergeClientConfig(existing, exported.config, client);
 
@@ -47,7 +65,7 @@ function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: s
       case "vscode":
         return { file: path.join(cwd, ".vscode", "mcp.json"), notes: ["Project VS Code MCP config written."] };
       case "codex":
-        return { file: path.join(cwd, ".mcp.json"), notes: ["Project Codex-compatible MCP config written."] };
+        return { file: path.join(cwd, ".codex", "config.toml"), notes: ["Project Codex config.toml written. Project must be trusted by Codex before this layer loads."] };
       case "opencode":
         return { file: path.join(cwd, "opencode.json"), notes: ["Project opencode config written. Restart opencode to load it."] };
       case "claude":
@@ -64,7 +82,7 @@ function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: s
     case "vscode":
       return { file: path.join(home, ".config", "Code", "User", "mcp.json"), notes: ["Global VS Code user MCP config path written."] };
     case "codex":
-      return { file: path.join(home, ".codex", "mcp.json"), notes: ["Global Codex MCP config path written."] };
+      return { file: path.join(home, ".codex", "config.toml"), notes: ["Global Codex config.toml written."] };
     case "claude":
     case "cursor":
     case "generic":
@@ -96,16 +114,6 @@ function mergeClientConfig(existing: Record<string, unknown>, incoming: unknown,
     };
   }
 
-  if (client === "codex") {
-    return {
-      ...existing,
-      mcp_servers: {
-        ...asObject(existing.mcp_servers),
-        ...asObject(incomingObject.mcp_servers),
-      },
-    };
-  }
-
   return {
     ...existing,
     mcpServers: {
@@ -121,6 +129,14 @@ async function readJsonObject(file: string): Promise<Record<string, unknown>> {
     return asObject(JSON.parse(raw));
   } catch {
     return {};
+  }
+}
+
+async function readText(file: string): Promise<string> {
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return "";
   }
 }
 

@@ -107,7 +107,7 @@ function wrapClientConfig(client: ClientName, serverName: string, config: Record
     case "vscode":
       return { servers: mcpServers };
     case "codex":
-      return { mcp_servers: mcpServers };
+      return { mcp_servers: { [serverName]: toCodexMcp(config) } };
     case "opencode":
       return { $schema: "https://opencode.ai/config.json", mcp: { [serverName]: toOpenCodeMcp(config) } };
     case "claude":
@@ -116,6 +116,22 @@ function wrapClientConfig(client: ClientName, serverName: string, config: Record
     default:
       return { mcpServers };
   }
+}
+
+function toCodexMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    const headers = config.headers;
+    return {
+      url: config.url,
+      ...(headers && typeof headers === "object" && !Array.isArray(headers) ? { http_headers: headers } : {}),
+    };
+  }
+
+  return {
+    command: config.command,
+    args: config.args,
+    env: config.env,
+  };
 }
 
 function toOpenCodeMcp(config: Record<string, unknown>): Record<string, unknown> {

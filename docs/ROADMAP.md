@@ -46,7 +46,7 @@ Shipped in v0.1:
 - Normalized package/remote metadata; multi-source scaffold (pulse/smithery/glama disabled).
 - Search ranking over name, title, description, type, transport, repo (`src/search.ts`).
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
-- Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`) — **note: Codex is incorrect, emits JSON `mcp_servers` but Codex consumes TOML.**
+- Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
 - Install writes + `mcp-lock.json` (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, and install drift refusal.
 - Lockfile enforcement is **partial**: local drift and trust downgrade checks exist, but v2 integrity fields, frozen `mpm ci`, remote capability pins, and signed lock integrity are still open.
 - Ink TUI (`src/tui.tsx`).
@@ -96,7 +96,7 @@ servers fail verification unless the user explicitly skips live verification.
 
 | Task | File | Detail |
 |------|------|--------|
-| Fix Codex (TOML) | `src/config.ts`, `src/install.ts`, `src/tui.tsx` | Codex uses `~/.codex/config.toml` with `[mcp_servers.<id>]`. Add a format-aware writer/merger and fix paths; current JSON `mcp_servers` output (`config.ts:110`), `~/.codex/mcp.json` target (`install.ts:66-67`), and TUI labels are wrong. |
+| Fix Codex (TOML) | `src/config.ts`, `src/install.ts`, `src/tui.tsx`, `src/codexToml.ts` | Codex uses `~/.codex/config.toml` and trusted project `.codex/config.toml` with `[mcp_servers.<id>]`. Format-aware writer/merger, export output, install paths, and TUI labels are shipped in current code. |
 | Research next-wave clients | `docs/client-configs.md` or equivalent | Before adding clients, record each target's config path, schema key, local/remote transport shape, and env interpolation syntax. Candidate targets: Windsurf, Cline, Continue, Gemini CLI, Zed, and Roo Code. |
 | Add verified clients | `src/config.ts`, `src/install.ts`, `src/cli.ts`, `src/tui.tsx` | Extend `ClientName`, `PROJECT_CLIENTS`, config wrapping, install paths, CLI usage strings/help, `clientFlag`, TUI client list, and project/global target labels only for clients with completed research. |
 | Per-client env syntax | `src/config.ts` | Replace generic placeholder emission (`config.ts:90-96`) with per-client interpolation syntax. |

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
+import { codexTomlFromClientConfig } from "./codexToml.js";
 import { installServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, lockKey, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "./registry.js";
@@ -206,8 +207,9 @@ function MpmTui() {
       const files: string[] = [];
       for (const client of selectedClients(state.client)) {
         const exported = exportClientConfig(selectedServer, client);
-        const file = path.join(".mpm", `${safeFileName(selectedServer.name)}.${client}.json`);
-        await writeFile(file, `${JSON.stringify(exported.config, null, 2)}\n`, "utf8");
+        const formatted = formatClientConfigSnippet(client, exported.config);
+        const file = path.join(".mpm", `${safeFileName(selectedServer.name)}.${client}.${formatted.extension}`);
+        await writeFile(file, formatted.content, "utf8");
         files.push(file);
       }
       setState((prev) => ({ ...prev, lastAction: `saved ${files.length} config snippet(s)` }));
@@ -803,12 +805,13 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
       </Box>
     );
   }
-  const content = safeJson(() => exportClientConfig(server, client).config);
+  const content = safeString(() => formatClientConfigSnippet(client, exportClientConfig(server, client).config).content.trimEnd());
+  const extension = client === "codex" ? "toml" : "json";
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
-      <ModalTitle title="config" file={`${client}.json`} />
+      <ModalTitle title="config" file={`${client}.${extension}`} />
       <Text color={MUTED}>client <Text color="white">{client}</Text>  scope <Text color="white">{installScope}</Text>  I install  s save</Text>
-      <JsonBlock value={content} width={width} maxLines={16} />
+      <CodeBlock content={content} width={width} maxLines={16} />
     </Box>
   );
 }
@@ -951,12 +954,12 @@ function PlanMetric({ label, value, width, valueColor }: { label: string; value:
   );
 }
 
-function JsonBlock({ value, width, maxLines }: { value: unknown; width: number; maxLines: number }) {
-  const lines = JSON.stringify(value, null, 2).split("\n");
+function CodeBlock({ content, width, maxLines }: { content: string; width: number; maxLines: number }) {
+  const lines = content.split("\n");
   return (
     <Box flexDirection="column" marginTop={1}>
       {lines.slice(0, maxLines).map((line, index) => (
-        <Text key={`${index}:${line}`} color={line.trim().startsWith('"') ? "white" : MUTED} wrap="truncate">
+        <Text key={`${index}:${line}`} color={line.trim().startsWith('"') || line.includes("=") ? "white" : MUTED} wrap="truncate">
           {truncate(line, width - 6)}
         </Text>
       ))}
@@ -993,7 +996,7 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
       case "opencode":
         return "opencode.json";
       case "codex":
-        return ".mcp.json (mcp_servers)";
+        return ".codex/config.toml";
       case "claude":
       case "cursor":
       default:
@@ -1007,7 +1010,7 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
     case "opencode":
       return "~/.config/opencode/opencode.json";
     case "codex":
-      return "~/.codex/mcp.json";
+      return "~/.codex/config.toml";
     case "claude":
     case "cursor":
     default:
@@ -1079,6 +1082,21 @@ function safeJson<T>(factory: () => T): T | { error: string } {
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function safeString(factory: () => string): string {
+  try {
+    return factory();
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : String(error) }, null, 2);
+  }
+}
+
+function formatClientConfigSnippet(client: ClientName, config: unknown): { extension: "json" | "toml"; content: string } {
+  if (client === "codex") {
+    return { extension: "toml", content: `${codexTomlFromClientConfig(config)}\n` };
+  }
+  return { extension: "json", content: `${JSON.stringify(config, null, 2)}\n` };
 }
 
 function asObject(value: unknown): Record<string, unknown> {
