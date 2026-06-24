@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.mpm/
+.claude/
+.contextrelay/
+.engram/
+mcp-lock.json
