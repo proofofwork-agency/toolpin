@@ -65,6 +65,40 @@ test("mergeCodexToml replaces only the matching server tables", () => {
   assert.match(merged, /command = "npx"/);
 });
 
+test("mergeCodexToml does not remove servers that share a name prefix", () => {
+  const existing = [
+    "[mcp_servers.foo]",
+    'command = "old-foo"',
+    "",
+    "[mcp_servers.foo.env]",
+    'FOO = "old"',
+    "",
+    "[mcp_servers.foobar]",
+    'command = "keep-foobar"',
+    "",
+    "[mcp_servers.foobar.env]",
+    'FOOBAR = "keep"',
+    "",
+  ].join("\n");
+
+  const merged = mergeCodexToml(existing, {
+    mcp_servers: {
+      foo: {
+        command: "new-foo",
+      },
+    },
+  });
+
+  assert.doesNotMatch(merged, /old-foo/);
+  assert.doesNotMatch(merged, /FOO = "old"/);
+  assert.match(merged, /\[mcp_servers\.foo\]/);
+  assert.match(merged, /command = "new-foo"/);
+  assert.match(merged, /\[mcp_servers\.foobar\]/);
+  assert.match(merged, /command = "keep-foobar"/);
+  assert.match(merged, /\[mcp_servers\.foobar\.env\]/);
+  assert.match(merged, /FOOBAR = "keep"/);
+});
+
 test("Codex export and project install use .codex/config.toml", async () => {
   const originalCwd = process.cwd();
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-codex-install-"));
