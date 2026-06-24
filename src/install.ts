@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { exportClientConfig, type ClientName } from "./config.js";
-import { mergeCodexToml } from "./codexToml.js";
+import { mergeCodexToml, removeCodexServerToml } from "./codexToml.js";
 import type { NormalizedServer } from "./types.js";
 
 export type InstallScope = "project" | "global";
@@ -13,6 +13,15 @@ export interface InstallResult {
   file: string;
   serverName: string;
   action: "created" | "updated";
+  notes: string[];
+}
+
+export interface RemoveResult {
+  client: ClientName;
+  scope: InstallScope;
+  file: string;
+  serverName: string;
+  action: "removed" | "missing";
   notes: string[];
 }
 
@@ -56,6 +65,35 @@ export async function installServerConfig(
   };
 }
 
+export async function removeServerConfig(
+  serverName: string,
+  client: ClientName,
+  scope: InstallScope,
+): Promise<RemoveResult> {
+  const target = resolveConfigTarget(client, scope);
+  if (client === "codex") {
+    const existing = await readText(target.file);
+    const next = removeCodexServerToml(existing, serverName);
+    if (next === existing) {
+      return { client, scope, file: target.file, serverName, action: "missing", notes: target.notes };
+    }
+
+    await mkdir(path.dirname(target.file), { recursive: true });
+    await writeFile(target.file, next, "utf8");
+    return { client, scope, file: target.file, serverName, action: "removed", notes: target.notes };
+  }
+
+  const existing = await readJsonObject(target.file);
+  const { config: next, removed } = removeClientConfig(existing, serverName, client);
+  if (!removed) {
+    return { client, scope, file: target.file, serverName, action: "missing", notes: target.notes };
+  }
+
+  await mkdir(path.dirname(target.file), { recursive: true });
+  await writeFile(target.file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return { client, scope, file: target.file, serverName, action: "removed", notes: target.notes };
+}
+
 function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: string; notes: string[] } {
   const cwd = process.cwd();
   const home = os.homedir();
@@ -89,6 +127,16 @@ function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: s
     default:
       return { file: path.join(home, ".config", "mpm", `${client}-mcp.json`), notes: ["Generic global MCP config written; client-specific import may still be required."] };
   }
+}
+
+function removeClientConfig(existing: Record<string, unknown>, serverName: string, client: ClientName): { config: Record<string, unknown>; removed: boolean } {
+  const next = { ...existing };
+  const key = client === "opencode" ? "mcp" : client === "vscode" ? "servers" : "mcpServers";
+  const servers = { ...asObject(next[key]) };
+  if (!(serverName in servers)) return { config: existing, removed: false };
+  delete servers[serverName];
+  next[key] = servers;
+  return { config: next, removed: true };
 }
 
 function mergeClientConfig(existing: Record<string, unknown>, incoming: unknown, client: ClientName): Record<string, unknown> {

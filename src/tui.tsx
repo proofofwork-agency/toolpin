@@ -4,8 +4,8 @@ import path from "node:path";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
-import { installServerConfig, type InstallScope } from "./install.js";
-import { buildInstallPlan, lockKey, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
+import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
+import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { testServer, type ServerTestResult } from "./tester.js";
@@ -16,7 +16,7 @@ type InputMode = "normal" | "search" | "command";
 type DataMode = "cache" | "live";
 type SourceMode = RegistrySourceId | "all";
 type ClientSelection = ClientName | "all";
-type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" | "test" | "lock" | "export-config" | "tui" | "help";
+type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" | "remove" | "test" | "lock" | "export-config" | "tui" | "help";
 
 const VIEWS: View[] = ["discover", "details", "plan", "config", "help"];
 const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
@@ -28,6 +28,7 @@ const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string
   { id: "audit", label: "Audit trust", description: "Show selected server trust score, badges, and issues.", requiresServer: true },
   { id: "plan", label: "Install plan", description: "Preview target, trust, secrets, and config writes.", requiresServer: true },
   { id: "install", label: "Install server", description: "Write selected server into the active client config.", requiresServer: true },
+  { id: "remove", label: "Remove server", description: "Delete selected server from active client config and lockfile.", requiresServer: true },
   { id: "test", label: "Test server", description: "Connect and run MCP tools/list.", requiresServer: true },
   { id: "lock", label: "Write lockfile", description: "Write selected server to mcp-lock.json.", requiresServer: true },
   { id: "export-config", label: "Export config", description: "Save client config snippets under .mpm/.", requiresServer: true },
@@ -66,6 +67,11 @@ interface TuiState {
   error?: string;
   lastAction?: string;
   commandLog?: CommandLog;
+  pendingRemove?: {
+    serverName: string;
+    client: ClientSelection;
+    scope: InstallScope;
+  };
 }
 
 interface CommandLog {
@@ -251,6 +257,44 @@ function MpmTui() {
     }
   }
 
+  async function removeSelected(): Promise<void> {
+    if (!selectedServer) return;
+    try {
+      await readLockfile("mcp-lock.json");
+      const results: string[] = [];
+      for (const client of selectedClients(state.client)) {
+        const configResult = await removeServerConfig(selectedServer.name, client, state.installScope);
+        const lockResult = await removeLockfileEntry(selectedServer.name, client, "mcp-lock.json");
+        results.push(`${client}:config=${configResult.action},lock=${lockResult.removed ? "removed" : "missing"}`);
+      }
+      setState((prev) => ({
+        ...prev,
+        pendingRemove: undefined,
+        lastAction: `removed ${selectedServer.name} (${results.join("; ")})`,
+      }));
+    } catch (error) {
+      setState((prev) => ({ ...prev, pendingRemove: undefined, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  function requestRemoveConfirmation(): void {
+    if (!selectedServer) return;
+    const pending = state.pendingRemove;
+    if (pending?.serverName === selectedServer.name && pending.client === state.client && pending.scope === state.installScope) {
+      void removeSelected();
+      return;
+    }
+    setState((prev) => ({
+      ...prev,
+      pendingRemove: {
+        serverName: selectedServer.name,
+        client: state.client,
+        scope: state.installScope,
+      },
+      lastAction: `press x again to remove ${selectedServer.name} from ${state.client} ${state.installScope}`,
+    }));
+  }
+
   async function testSelected(): Promise<void> {
     if (!selectedServer) return;
     setState((prev) => ({
@@ -342,6 +386,9 @@ function MpmTui() {
       case "install":
         await installSelected();
         break;
+      case "remove":
+        await removeSelected();
+        break;
       case "test":
         await testSelected();
         break;
@@ -375,16 +422,16 @@ function MpmTui() {
         return;
       }
       if (key.return) {
-        setState((prev) => ({ ...prev, inputMode: "normal", selected: 0, view: "discover" }));
+        setState((prev) => ({ ...prev, inputMode: "normal", selected: 0, view: "discover", pendingRemove: undefined }));
         if (state.dataMode === "live") void loadData("live", state.query);
         return;
       }
       if (key.backspace || key.delete) {
-        setState((prev) => ({ ...prev, query: prev.query.slice(0, -1), selected: 0 }));
+        setState((prev) => ({ ...prev, query: prev.query.slice(0, -1), selected: 0, pendingRemove: undefined }));
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        setState((prev) => ({ ...prev, query: prev.query + input, selected: 0 }));
+        setState((prev) => ({ ...prev, query: prev.query + input, selected: 0, pendingRemove: undefined }));
       }
       return;
     }
@@ -424,14 +471,14 @@ function MpmTui() {
       setState((prev) => ({ ...prev, view: nextView(prev.view) }));
       return;
     }
-    if (key.upArrow || input === "k") {
-      setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1) }));
-      return;
-    }
-    if (key.downArrow || input === "j") {
-      setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1) }));
-      return;
-    }
+      if (key.upArrow || input === "k") {
+        setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined }));
+        return;
+      }
+      if (key.downArrow || input === "j") {
+        setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1), pendingRemove: undefined }));
+        return;
+      }
     if (key.return) {
       setState((prev) => ({ ...prev, view: prev.view === "discover" ? "details" : prev.view }));
       return;
@@ -456,6 +503,9 @@ function MpmTui() {
       case "I":
         void installSelected();
         break;
+      case "x":
+        requestRemoveConfirmation();
+        break;
       case "t":
         void testSelected();
         break;
@@ -469,14 +519,15 @@ function MpmTui() {
         setState((prev) => ({
           ...prev,
           installScope: prev.installScope === "project" ? "global" : "project",
+          pendingRemove: undefined,
           lastAction: `install scope ${prev.installScope === "project" ? "global" : "project"}`,
         }));
         break;
       case "c":
-        setState((prev) => ({ ...prev, client: nextClient(prev.client) }));
+        setState((prev) => ({ ...prev, client: nextClient(prev.client), pendingRemove: undefined }));
         break;
       case "o":
-        setState((prev) => ({ ...prev, client: "opencode" }));
+        setState((prev) => ({ ...prev, client: "opencode", pendingRemove: undefined }));
         break;
       case "w":
         void writeSelectedLock();
@@ -828,6 +879,7 @@ function HelpView({ width }: { width: number }) {
     ["c", "client", "Cycle clients, including all."],
     ["t", "test", "Connect and run tools/list."],
     ["I", "install", "Install selected server into active scope."],
+    ["x", "remove", "Remove selected server from config and lockfile."],
     ["w", "lock", "Write selected server to mcp-lock.json."],
     ["s", "save", "Save config snippets under .mpm/."],
     ["q / ctrl-c", "quit", "Close the TUI."],
@@ -899,8 +951,8 @@ function Footer({ view, inputMode }: { view: View; inputMode: InputMode }) {
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["Enter", "open"], [":", "commands"], ["/", "search"], ["c", "client"], ["I", "install"], ["q", "quit"]]
-      : [["Esc", "close"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["q", "quit"]];
+      ? [["Enter", "open"], [":", "commands"], ["/", "search"], ["c", "client"], ["I", "install"], ["x", "remove"], ["q", "quit"]]
+      : [["Esc", "close"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["x", "remove"], ["q", "quit"]];
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0}>
       <Text wrap="truncate">
@@ -1039,6 +1091,8 @@ function commandLineFor(commandId: TuiCommandId, state: TuiState, server?: Norma
       return `mpm plan ${serverName} --client ${state.client} ${source}${live}`;
     case "install":
       return `mpm install ${serverName} --client ${state.client} --scope ${state.installScope} ${source}${live}`;
+    case "remove":
+      return `mpm remove ${serverName} --client ${state.client} --scope ${state.installScope} --file mcp-lock.json`;
     case "test":
       return `mpm test ${serverName} ${source}${live} --timeout 15000`;
     case "lock":

@@ -9,12 +9,18 @@ export function mergeCodexToml(existing: string, incoming: unknown): string {
 
   let next = existing;
   for (const serverName of Object.keys(servers)) {
-    next = removeServerTables(next, serverName);
+    next = removeServerTables(next, serverName).toml;
   }
 
   const prefix = next.trimEnd();
   const fragment = codexTomlFromClientConfig(incoming);
   return `${prefix ? `${prefix}\n\n` : ""}${fragment}\n`;
+}
+
+export function removeCodexServerToml(existing: string, serverName: string): string {
+  const result = removeServerTables(existing, serverName);
+  if (!result.removed) return existing;
+  return result.toml ? `${result.toml}\n` : "";
 }
 
 function codexServers(config: unknown): Record<string, Record<string, unknown>> {
@@ -48,23 +54,25 @@ function serverToToml(serverName: string, config: Record<string, unknown>): stri
   return [`[${table}]`, ...scalarLines, ...nestedTables].join("\n");
 }
 
-function removeServerTables(existing: string, serverName: string): string {
+function removeServerTables(existing: string, serverName: string): { toml: string; removed: boolean } {
   // Codex's documented writer uses [mcp_servers.<name>] headers; preserve unrelated TOML forms.
   const lines = existing.split(/\r?\n/);
   const kept: string[] = [];
   let skipping = false;
+  let removed = false;
 
   for (const line of lines) {
     const header = line.trim();
     if (header.startsWith("[") && header.endsWith("]")) {
       skipping = isServerTableHeader(header, serverName);
+      if (skipping) removed = true;
       if (!skipping) kept.push(line);
       continue;
     }
     if (!skipping) kept.push(line);
   }
 
-  return kept.join("\n").trimEnd();
+  return { toml: kept.join("\n").trimEnd(), removed };
 }
 
 function isServerTableHeader(header: string, serverName: string): boolean {

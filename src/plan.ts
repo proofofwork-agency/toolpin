@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
 import { exportClientConfig, selectLaunchTarget, type ClientName } from "./config.js";
 import { scoreServer } from "./trust.js";
@@ -120,6 +120,37 @@ export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", k
 
   await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return next;
+}
+
+export async function removeLockfileEntry(serverName: string, client: ClientName, path = "mcp-lock.json"): Promise<{ removed: boolean; key: string; lockfile: Lockfile }> {
+  const existed = await fileExists(path);
+  const existing = await readExistingLockfile(path);
+  const nextServers = { ...existing.servers };
+  const key = lockKey(serverName, client);
+  let removed = false;
+
+  for (const candidate of [key, serverName]) {
+    const entry = nextServers[candidate];
+    if (entry?.name === serverName && entry.client === client) {
+      delete nextServers[candidate];
+      removed = true;
+    }
+  }
+
+  if (!removed && !existed) {
+    return { removed, key, lockfile: existing };
+  }
+
+  const now = new Date().toISOString();
+  const next: Lockfile = {
+    lockfileVersion: LOCKFILE_VERSION,
+    generatedAt: existing.generatedAt === new Date(0).toISOString() ? now : existing.generatedAt,
+    updatedAt: now,
+    servers: nextServers,
+  };
+
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return { removed, key, lockfile: next };
 }
 
 export async function readLockfile(path = "mcp-lock.json"): Promise<Lockfile> {
@@ -344,4 +375,13 @@ function parseLocked(value: unknown): InstallPlan["locked"] {
 
 function isClientName(value: unknown): value is ClientName {
   return ["claude", "cursor", "vscode", "codex", "opencode", "generic"].includes(String(value));
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }

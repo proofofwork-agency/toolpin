@@ -2,8 +2,8 @@
 import { verifyFrozenInstall } from "./ci.js";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
-import { installServerConfig, type InstallScope } from "./install.js";
-import { buildInstallPlan, verifyAgainstLockfile, writeLockfile } from "./plan.js";
+import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
+import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { testServer } from "./tester.js";
@@ -44,6 +44,9 @@ async function main(): Promise<void> {
       return;
     case "install":
       await install(rest);
+      return;
+    case "remove":
+      await remove(rest);
       return;
     case "ci":
       await ci(rest);
@@ -305,6 +308,29 @@ async function install(rest: string[]): Promise<void> {
   console.log(`Installed ${server.name} for ${clients.join(", ")}`);
 }
 
+async function remove(rest: string[]): Promise<void> {
+  const values = positional(rest);
+  const name = values[0];
+  if (!name) throw new Error("Usage: mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]");
+
+  const client = hasFlag(rest, "--client") ? clientFlag(rest, "generic") : "all";
+  const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  if (scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be project or global");
+  }
+
+  await readLockfile(path);
+  const clients = client === "all" ? PROJECT_CLIENTS : [client];
+  for (const targetClient of clients) {
+    const configResult = await removeServerConfig(name, targetClient, scope);
+    const lockResult = await removeLockfileEntry(name, targetClient, path);
+    const status = configResult.action === "removed" || lockResult.removed ? "removed" : "missing";
+    console.log(`${status} ${targetClient} ${scope}: config=${configResult.action} lock=${lockResult.removed ? "removed" : "missing"}`);
+    for (const note of configResult.notes) console.log(`- ${note}`);
+  }
+}
+
 async function ci(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const verifyBeforeUse = hasFlag(rest, "--verify");
@@ -368,6 +394,7 @@ Commands:
   mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
   mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
   mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+  mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]
   mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]

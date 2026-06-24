@@ -14,6 +14,7 @@ node dist/cli.js verify io.github.github/github-mcp-server --live --skip-live-ve
 node dist/cli.js plan io.github.github/github-mcp-server --client claude --live
 node dist/cli.js install io.github.github/github-mcp-server --client claude --scope project --live --verify
 node dist/cli.js install io.github.github/github-mcp-server --client all --scope project --live
+node dist/cli.js remove io.github.github/github-mcp-server --client claude --scope project
 node dist/cli.js ci --live
 node dist/cli.js test io.github.github/github-mcp-server --live
 node dist/cli.js lock io.github.github/github-mcp-server --client claude --live
@@ -31,6 +32,7 @@ mpm audit <server-name> [--source official|docker|all] [--live]
 mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
 mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
 mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]
 mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
 mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
 mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]
@@ -52,6 +54,8 @@ mpm tui
 - Install drift checks: if an existing lock entry changes version, target, trust score, or generated client config, install refuses until the lock is reviewed and updated with `mpm lock` or `mpm install --update-lock`.
 - Frozen lockfile checks via `mpm ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
+- `mpm remove` cleanup for supported client config files and matching lockfile entries, including Codex TOML table removal.
+- `mpm remove` defaults to all supported project clients when `--client` is omitted; pass `--client <name>` for targeted cleanup.
 - Real install writes for project/global client config files, including `--client all` for all supported project clients, plus lockfile generation and install progress details.
 - MCP server test action that connects with the SDK and lists available tools when credentials/runtime are available.
 - Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status.
@@ -77,6 +81,7 @@ g               Cycle registry source: all, official, Docker
 G               Toggle install scope: project or global
 t               Test selected server by connecting and listing tools
 I               Install selected server into active scope and lockfile
+x               Remove selected server from active config and lockfile (press twice)
 l               Toggle live/cache source
 c               Cycle client target, including all
 o               Jump to opencode target
