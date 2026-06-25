@@ -5,7 +5,7 @@ import type { ServerTestResult } from "../tester.js";
 import type { ClientName } from "../config.js";
 import type { InstallScope } from "../install.js";
 import type { NormalizedServer } from "../types.js";
-import { compareVersionish, latestKnownVersion } from "../versions.js";
+import { compareVersionish } from "../versions.js";
 
 export type InstalledRuntimeStatus = "not_checked" | "reachable" | "stale" | "unknown";
 
@@ -26,6 +26,7 @@ export interface InstalledServerState {
   canUpdate: boolean;
   canDelete: boolean;
   canTest: boolean;
+  registryMatch?: "exact" | "alias";
   runningStatus: InstalledRuntimeStatus;
   testResult?: ServerTestResult;
   installableServer?: NormalizedServer;
@@ -61,12 +62,14 @@ export async function loadInstalledServerStates(options: {
   const issues = doctor?.issues ?? [];
   const rows = inventory.entries.map((entry) => {
     const locked = findLockedPlan(options.lockfile, entry.serverName, entry.client);
-    const latest = latestKnownVersion(options.servers, entry.serverName);
+    const latest = latestKnownInstalledVersion(options.servers, entry.serverName);
     const currentServer = findInstallableServer(options.servers, entry.serverName, locked?.version ?? latest?.version);
     const updateServer = findInstallableServer(options.servers, entry.serverName, latest?.version);
+    const registryMatch = updateServer ? matchKind(updateServer, entry.serverName) : undefined;
     const testResult = options.tests?.[installedId(entry.serverName, entry.client, entry.scope)];
     const lockDrift = issues.some((issue) => issueMatchesInstalled(issue, entry.serverName, entry.client, entry.scope));
     const updateAvailable = Boolean(locked?.version && latest?.version && compareVersionish(latest.version, locked.version) > 0);
+    const canAdopt = Boolean(!locked && updateServer?.installable);
     const runningStatus: InstalledRuntimeStatus = testResult?.ok
       ? "reachable"
       : lockDrift || updateAvailable
@@ -89,9 +92,10 @@ export async function loadInstalledServerStates(options: {
       latestVersion: latest?.version,
       updateAvailable,
       source: locked?.resolved?.source,
-      canUpdate: Boolean(updateAvailable && updateServer?.installable),
+      canUpdate: Boolean((updateAvailable || canAdopt) && updateServer?.installable),
       canDelete: true,
-      canTest: Boolean(currentServer),
+      canTest: Boolean(currentServer) || entry.client !== "zed",
+      registryMatch,
       runningStatus,
       testResult,
       installableServer: currentServer,
@@ -139,8 +143,74 @@ function findLockedPlan(lockfile: Lockfile | undefined, serverName: string, clie
 }
 
 function findInstallableServer(servers: NormalizedServer[], serverName: string, version: string | undefined): NormalizedServer | undefined {
-  const exact = version ? servers.find((server) => server.name === serverName && server.version === version) : undefined;
-  return exact ?? servers.find((server) => server.name === serverName);
+  const candidates = matchingServers(servers, serverName);
+  const exact = version ? candidates.find((server) => server.version === version) : undefined;
+  return exact ?? candidates[0];
+}
+
+function latestKnownInstalledVersion(servers: NormalizedServer[], serverName: string): { version: string; server: NormalizedServer } | undefined {
+  const candidates = matchingServers(servers, serverName);
+  const server = candidates.reduce<NormalizedServer | undefined>((best, candidate) => {
+    if (!best) return candidate;
+    if (candidate.isLatest && !best.isLatest) return candidate;
+    if (candidate.isLatest === best.isLatest && compareVersionish(candidate.version, best.version) > 0) return candidate;
+    return best;
+  }, undefined);
+  return server ? { version: server.version, server } : undefined;
+}
+
+function matchingServers(servers: NormalizedServer[], installedName: string): NormalizedServer[] {
+  const normalized = normalizeName(installedName);
+  return servers
+    .filter((server) => server.installable && serverAliases(server).has(normalized))
+    .sort((left, right) =>
+      matchWeight(left, installedName) - matchWeight(right, installedName)
+      || right.isLatest.toString().localeCompare(left.isLatest.toString())
+      || compareVersionish(right.version, left.version)
+      || left.name.localeCompare(right.name),
+    );
+}
+
+function matchKind(server: NormalizedServer, installedName: string): "exact" | "alias" {
+  return server.name === installedName ? "exact" : "alias";
+}
+
+function matchWeight(server: NormalizedServer, installedName: string): number {
+  if (server.name === installedName) return 0;
+  const normalized = normalizeName(installedName);
+  if (normalizeName(server.name.split("/").pop() ?? "") === normalized) return 1;
+  if (normalizeName(server.title) === normalized) return 2;
+  return 3;
+}
+
+function serverAliases(server: NormalizedServer): Set<string> {
+  const aliases = new Set<string>();
+  addAlias(aliases, server.name);
+  addAlias(aliases, server.name.split("/").pop());
+  addAlias(aliases, server.title);
+  addAlias(aliases, server.repositoryUrl?.split("/").filter(Boolean).pop());
+  for (const pkg of server.raw.packages ?? []) {
+    addAlias(aliases, pkg.identifier);
+    addAlias(aliases, pkg.identifier.split("/").pop());
+  }
+  return aliases;
+}
+
+function addAlias(aliases: Set<string>, value?: string): void {
+  const normalized = normalizeName(value);
+  if (!normalized) return;
+  aliases.add(normalized);
+  for (const prefix of ["server-", "mcp-", "mcp-server-", "@modelcontextprotocol/server-"]) {
+    if (normalized.startsWith(prefix)) aliases.add(normalized.slice(prefix.length));
+  }
+}
+
+function normalizeName(value?: string): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function issueMatchesInstalled(issue: DoctorIssue, serverName: string, client: ClientName, scope: InstallScope): boolean {

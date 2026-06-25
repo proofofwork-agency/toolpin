@@ -76,6 +76,89 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
   }
 }
 
+export async function testInstalledClientConfig(serverName: string, config: unknown, timeoutMs = 15000): Promise<ServerTestResult> {
+  const startedAt = Date.now();
+  const launch = installedConfigToLaunch(config);
+  if (!launch) {
+    return {
+      ok: false,
+      serverName,
+      target: "installed-config",
+      durationMs: Date.now() - startedAt,
+      tools: [],
+      message: `No stdio or remote launch target is available in the installed config for ${serverName}.`,
+    };
+  }
+
+  let client: Client | undefined;
+  try {
+    if (launch.kind === "remote") {
+      const transport = launch.type === "sse"
+        ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } })
+        : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } });
+
+      client = new Client({ name: "toolpin", version: "0.1.0" });
+      await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to installed remote MCP server.");
+    } else {
+      const transport = new StdioClientTransport({
+        command: launch.command,
+        args: launch.args,
+        env: { ...definedProcessEnv(), ...launch.env },
+        stderr: "pipe",
+      });
+
+      client = new Client({ name: "toolpin", version: "0.1.0" });
+      await withTimeout(client.connect(transport), timeoutMs, "Timed out starting installed local MCP server.");
+    }
+
+    const response = await withTimeout(client.listTools(), timeoutMs, "Timed out listing MCP tools.");
+    const tools = response.tools.map((tool) => ({ name: tool.name, description: tool.description }));
+
+    return {
+      ok: true,
+      serverName,
+      target: launch.kind === "remote" ? `installed-remote:${launch.type}` : `installed-stdio:${launch.command}`,
+      durationMs: Date.now() - startedAt,
+      tools,
+      message: `Connected and listed ${tools.length} tool(s).`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      serverName,
+      target: launch.kind === "remote" ? `installed-remote:${launch.type}` : `installed-stdio:${launch.command}`,
+      durationMs: Date.now() - startedAt,
+      tools: [],
+      message: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    await client?.close().catch(() => undefined);
+  }
+}
+
+type InstalledLaunch =
+  | { kind: "remote"; type: string; url: string; headers: Record<string, string> }
+  | { kind: "stdio"; command: string; args: string[]; env: Record<string, string> };
+
+function installedConfigToLaunch(config: unknown): InstalledLaunch | undefined {
+  const record = asRecord(config);
+  const url = firstString(record.url, record.httpUrl, record.serverUrl);
+  if (url) {
+    const headers = asStringRecord(record.headers) ?? asStringRecord(record.http_headers) ?? asStringRecord(asRecord(record.requestOptions).headers) ?? {};
+    return { kind: "remote", type: typeof record.type === "string" ? record.type : "streamable-http", url, headers };
+  }
+
+  const commandArray = Array.isArray(record.command) ? record.command.filter((value): value is string => typeof value === "string") : undefined;
+  const command = typeof record.command === "string" ? record.command : commandArray?.[0];
+  if (!command) return undefined;
+
+  const args = Array.isArray(record.args)
+    ? record.args.filter((value): value is string => typeof value === "string")
+    : commandArray?.slice(1) ?? [];
+  const env = asStringRecord(record.env) ?? asStringRecord(record.environment) ?? {};
+  return { kind: "stdio", command, args, env };
+}
+
 function packageToStdio(pkg: { registryType: string; identifier: string; version?: string; environmentVariables?: Array<{ name: string; default?: string; isRequired?: boolean }> }): {
   command: string;
   args: string[];
@@ -150,6 +233,20 @@ function extractEnvName(value?: string): string | undefined {
 
 function definedProcessEnv(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function asStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+  return entries.length ? Object.fromEntries(entries) : {};
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

@@ -40,7 +40,7 @@ export function InstalledServersView({
       ))}
       {selectedRow ? (
         <Text color={CHROME} wrap="truncate">
-          {"  "}selected {selected + 1} of {rows.length}  u update  U update all  x delete  t test  d doctor  g scope
+          {"  "}selected {selected + 1} of {rows.length}  u update/adopt  U all  x delete  t test  d drift check  g scope
         </Text>
       ) : null}
     </Box>
@@ -65,6 +65,7 @@ export function InstalledServerDetails({ row, width }: { row?: InstalledServerSt
       <Metric label="version" value={versionText(row)} color={row.updateAvailable ? WARN : row.locked ? OK : MUTED} />
       <Metric label="source" value={row.source ?? "unknown"} />
       <Metric label="runtime" value={row.runningStatus} color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED} />
+      <Metric label="match" value={row.registryMatch ? `${row.registryMatch} registry` : "none"} color={row.registryMatch ? OK : MUTED} />
       <Metric label="actions" value={actionText(row)} color={row.canUpdate ? WARN : MUTED} />
       {row.issue ? <Text color={WARN} wrap="truncate">drift       {truncate(row.issue, width - 18)}</Text> : null}
       {row.testResult ? (
@@ -120,7 +121,7 @@ function versionText(row: InstalledServerState): string {
 
 function actionText(row: InstalledServerState): string {
   const actions = [];
-  if (row.canUpdate) actions.push("update");
+  if (row.canUpdate) actions.push(row.locked ? "update" : "install+lock");
   if (row.canDelete) actions.push("delete");
   if (row.canTest) actions.push("test");
   return actions.join(", ") || "none";

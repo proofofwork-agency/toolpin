@@ -430,7 +430,7 @@ export function Footer({ view, inputMode }: { view: View; inputMode: InputMode }
     : view === "discover"
       ? [["/", "search"], ["m", "more"], ["i", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["u", "update"], ["U", "update all"], ["x", "delete"], ["t", "test"], ["d", "doctor"], ["q", "quit"]]
+        ? [["j/k", "move"], ["u", "update/adopt"], ["U", "all"], ["x", "delete"], ["t", "test"], ["d", "drift"], ["q", "quit"]]
       : view === "details"
         ? [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["I", "install"], ["q", "quit"]]
         : [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["I", "install"], ["q", "quit"]];

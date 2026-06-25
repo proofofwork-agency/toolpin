@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -45,6 +45,40 @@ test("installedViewReducer clamps selection across loaded row changes", () => {
   assert.equal(reloaded.selected, 0);
 });
 
+test("loadInstalledServerStates can match unlocked installed aliases to registry packages", async () => {
+  await withTempHomeAndCwd(async () => {
+    const registryServer = packageServer({
+      name: "io.modelcontextprotocol/github",
+      title: "GitHub MCP Server",
+      identifier: "@modelcontextprotocol/server-github",
+      version: "2.0.0",
+      isLatest: true,
+    });
+    await writeFile(".mcp.json", JSON.stringify({
+      mcpServers: {
+        github: {
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-github"],
+        },
+      },
+    }));
+
+    const rows = await loadInstalledServerStates({
+      servers: [registryServer],
+      scope: "project",
+    });
+
+    const row = rows.find((entry) => entry.serverName === "github" && entry.client === "claude");
+    assert.ok(row);
+    assert.equal(row.locked, false);
+    assert.equal(row.canUpdate, true);
+    assert.equal(row.canTest, true);
+    assert.equal(row.registryMatch, "alias");
+    assert.equal(row.latestVersion, "2.0.0");
+    assert.equal(row.updateServer.name, "io.modelcontextprotocol/github");
+  });
+});
+
 async function withTempHomeAndCwd(fn) {
   const originalCwd = process.cwd();
   const originalHome = process.env.HOME;
@@ -85,6 +119,7 @@ function row(serverName) {
 function packageServer(overrides = {}) {
   const name = overrides.name ?? "io.github/example";
   const version = overrides.version ?? "1.0.0";
+  const identifier = overrides.identifier ?? "@example/server";
   return {
     registrySource: "official",
     registryMode: "installable",
@@ -108,7 +143,7 @@ function packageServer(overrides = {}) {
       packages: [
         {
           registryType: "npm",
-          identifier: "@example/server",
+          identifier,
           version,
           transport: { type: "stdio" },
         },

@@ -10,6 +10,9 @@
   --toolpin-ink: #15171a;
   --toolpin-paper: #f8f6f1;
   --toolpin-line: #d7cfbf;
+  --toolpin-blue: #8aa7ff;
+  --toolpin-cyan: #22d3ee;
+  --toolpin-warn: #fbbf24;
 }
 
 .navbar__title,
@@ -45,6 +48,37 @@ h3 {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.homeHero .button--secondary {
+  background: #f8f6f1;
+  border-color: #f8f6f1;
+  color: var(--toolpin-ink);
+}
+
+.homeHero .button--secondary:hover {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: var(--toolpin-ink);
+}
+
+.homeHero .button--outline.button--secondary {
+  background: rgba(138, 167, 255, 0.12);
+  border-color: var(--toolpin-blue);
+  color: #edf2ff;
+}
+
+.homeHero .button--outline.button--secondary:hover {
+  background: var(--toolpin-blue);
+  border-color: var(--toolpin-blue);
+  color: #101216;
+}
+
+.homeHero code {
+  background: rgba(21, 23, 26, 0.76);
+  border: 1px solid rgba(251, 191, 36, 0.72);
+  color: #fff6d6;
+  text-shadow: none;
 }
 
 .heroClaim {
