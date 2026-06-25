@@ -93,8 +93,7 @@ export function runTui(): void {
 function MpmTui() {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const width = Math.max(72, stdout.columns ?? 110);
-  const height = Math.max(24, stdout.rows ?? 34);
+  const { width, height } = useTerminalSize(stdout);
   const [state, setState] = useState<TuiState>(() => ({
     entries: [],
     servers: [],
@@ -661,6 +660,25 @@ function MpmTui() {
       <Footer view={state.view} inputMode={state.inputMode} />
     </Box>
   );
+}
+
+function useTerminalSize(stdout: ReturnType<typeof useStdout>["stdout"]): { width: number; height: number } {
+  const readSize = () => ({
+    width: Math.max(72, stdout.columns ?? 110),
+    height: Math.max(24, stdout.rows ?? 34),
+  });
+  const [size, setSize] = useState(readSize);
+
+  useEffect(() => {
+    const onResize = () => setSize(readSize());
+    onResize();
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
+
+  return size;
 }
 
 function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
