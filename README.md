@@ -51,6 +51,7 @@ mpm tui
 - Search ranking over name, title, description, package type, transport, and repository.
 - Trust scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, and missing install targets.
 - Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
+- `mpm install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, and OpenCode `mcp`.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
 - Install drift checks: if an existing lock entry changes version, target, trust score, or generated client config, install refuses until the lock is reviewed and updated with `mpm lock` or `mpm install --update-lock`.

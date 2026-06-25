@@ -50,7 +50,7 @@ export interface LockVerification {
   locked?: InstallPlan;
 }
 
-export function buildInstallPlan(server: NormalizedServer, client: ClientName): InstallPlan {
+export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest } = {}): InstallPlan {
   const selected = selectLaunchTarget(server);
   if (!selected) {
     throw new Error(`No install target is available for ${server.name}@${server.version}`);
@@ -74,6 +74,7 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName): 
         };
 
   const resolvedAt = new Date().toISOString();
+  const capabilityManifest = options.capabilityManifest ?? deriveCapabilityManifest(server, { generatedAt: resolvedAt });
   const plan: InstallPlan = {
     name: server.name,
     version: server.version,
@@ -82,7 +83,7 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName): 
     trust: scoreServer(server),
     config: exported.config,
     notes: exported.notes,
-    capabilityManifest: deriveCapabilityManifest(server, { generatedAt: resolvedAt }),
+    capabilityManifest,
     resolvedAt,
     lockedAt: resolvedAt,
     resolved: {
@@ -98,7 +99,7 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName): 
     locked: {
       selectedTarget: target,
       config: exported.config,
-      capabilityManifest: deriveCapabilityManifest(server, { generatedAt: resolvedAt }),
+      capabilityManifest,
     },
   };
   return { ...plan, integrity: computePlanIntegrity(plan) };
@@ -256,6 +257,12 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   if (stableJson(locked.selectedTarget) !== stableJson(current.selectedTarget)) messages.push("selected install target changed");
   if (locked.trust.score > current.trust.score) messages.push(`trust score decreased ${locked.trust.score} -> ${current.trust.score}`);
   if (stableJson(locked.config) !== stableJson(current.config)) messages.push("client config changed");
+  if (stableJson(normalizeCapabilityManifest(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifest(current.capabilityManifest))) messages.push("capability manifest changed");
+  if (hasToolDescriptionHash(locked.capabilityManifest) && hasToolDescriptionHash(current.capabilityManifest)) {
+    if (stableJson(normalizeToolDescriptionHash(locked.capabilityManifest.toolDescriptionHash)) !== stableJson(normalizeToolDescriptionHash(current.capabilityManifest.toolDescriptionHash))) {
+      messages.push("tool-description hash changed");
+    }
+  }
   if (locked.integrity && current.integrity && locked.integrity !== current.integrity) messages.push("lock integrity changed");
   return messages;
 }
@@ -318,13 +325,18 @@ function normalizeCapabilityManifest(manifest?: CapabilityManifest): unknown {
     transports: manifest.transports,
     remoteHosts: manifest.remoteHosts,
     secrets: manifest.secrets,
-    toolDescriptionHash: manifest.toolDescriptionHash
-      ? {
-          algorithm: manifest.toolDescriptionHash.algorithm,
-          value: manifest.toolDescriptionHash.value,
-          toolCount: manifest.toolDescriptionHash.toolCount,
-        }
-      : undefined,
+  };
+}
+
+function hasToolDescriptionHash(manifest?: CapabilityManifest): manifest is CapabilityManifest & { toolDescriptionHash: NonNullable<CapabilityManifest["toolDescriptionHash"]> } {
+  return Boolean(manifest?.toolDescriptionHash);
+}
+
+function normalizeToolDescriptionHash(hash: NonNullable<CapabilityManifest["toolDescriptionHash"]>): unknown {
+  return {
+    algorithm: hash.algorithm,
+    value: hash.value,
+    toolCount: hash.toolCount,
   };
 }
 

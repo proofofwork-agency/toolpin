@@ -10,7 +10,7 @@ import { searchServers } from "./search.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
-import type { NormalizedServer, RegistryEntry, RegistrySourceId } from "./types.js";
+import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId } from "./types.js";
 
 const args = process.argv.slice(2);
 type ClientSelection = ClientName | "all";
@@ -272,6 +272,7 @@ async function install(rest: string[]): Promise<void> {
 
   console.error(`Resolving ${name} from ${sourceFlag(rest, "all")} registry source...`);
   const server = await findServer(rest, name);
+  let verifiedCapabilityManifest: CapabilityManifest | undefined;
   if (verifyBeforeInstall) {
     const report = await verifyServer(server, {
       liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
@@ -283,9 +284,10 @@ async function install(rest: string[]): Promise<void> {
         ...report.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
       ].join("\n"));
     }
+    verifiedCapabilityManifest = report.capabilityManifest;
   }
   const clients = client === "all" ? PROJECT_CLIENTS : [client];
-  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient));
+  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest }));
   if (!updateLock) {
     const mismatches = [];
     for (const plan of plans) {
@@ -340,6 +342,7 @@ async function ci(rest: string[]): Promise<void> {
   const verifyBeforeUse = hasFlag(rest, "--verify");
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
+    let verifiedCapabilityManifest: CapabilityManifest | undefined;
     if (verifyBeforeUse) {
       const verification = await verifyServer(server, {
         liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
@@ -351,8 +354,9 @@ async function ci(rest: string[]): Promise<void> {
           ...verification.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
         ].join("\n"));
       }
+      verifiedCapabilityManifest = verification.capabilityManifest;
     }
-    return buildInstallPlan(server, locked.client);
+    return buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest });
   });
 
   if (!report.ok) {

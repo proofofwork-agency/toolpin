@@ -45,6 +45,59 @@ test("writeLockfile writes v2 entries with stable integrity metadata", async () 
   });
 });
 
+test("buildInstallPlan can persist a verified tool-description hash", () => {
+  const server = packageServer();
+  const capabilityManifest = {
+    version: 1,
+    serverName: server.name,
+    serverVersion: server.version,
+    registrySource: server.registrySource,
+    packageTypes: ["npm"],
+    transports: ["stdio"],
+    remoteHosts: [],
+    secrets: [{ name: "EXAMPLE_TOKEN", source: "env", required: true }],
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    toolDescriptionHash: {
+      algorithm: "sha256",
+      value: "abc123",
+      toolCount: 2,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  };
+
+  const plan = buildInstallPlan(server, "claude", { capabilityManifest });
+
+  assert.equal(plan.capabilityManifest.toolDescriptionHash.value, "abc123");
+  assert.equal(plan.locked.capabilityManifest.toolDescriptionHash.value, "abc123");
+  assert.equal(plan.integrity, computePlanIntegrity(plan));
+});
+
+test("verifyAgainstLockfile ignores missing current tool-description hash", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }), lockfilePath);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+
+    assert.equal(verification.ok, true);
+    assert.deepEqual(verification.messages, []);
+  });
+});
+
+test("verifyAgainstLockfile rejects rechecked tool-description hash drift", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }), lockfilePath);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "new-hash") }), lockfilePath);
+
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool-description hash changed"));
+  });
+});
+
 test("verifyAgainstLockfile ignores timestamp churn but rejects missing integrity", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
@@ -95,6 +148,21 @@ test("verifyFrozenInstall fails on resolved drift and never mutates the lockfile
     assert.equal(report.issues[0].key, "io.github/example:claude");
     assert.ok(report.issues[0].messages.some((message) => message.includes("version changed 1.0.0 -> 2.0.0")));
     assert.equal(await readFile(lockfilePath, "utf8"), before);
+  });
+});
+
+test("verifyFrozenInstall reports rechecked tool-description hash drift", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }), lockfilePath);
+
+    const clean = await verifyFrozenInstall(lockfilePath, async () => buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }));
+    assert.equal(clean.ok, true);
+
+    const drift = await verifyFrozenInstall(lockfilePath, async () => buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "new-hash") }));
+    assert.equal(drift.ok, false);
+    assert.ok(drift.issues[0].messages.includes("tool-description hash changed"));
   });
 });
 
@@ -150,6 +218,26 @@ async function withTempDir(fn) {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+function capabilityManifest(server, value) {
+  return {
+    version: 1,
+    serverName: server.name,
+    serverVersion: server.version,
+    registrySource: server.registrySource,
+    packageTypes: ["npm"],
+    transports: ["stdio"],
+    remoteHosts: [],
+    secrets: [{ name: "EXAMPLE_TOKEN", source: "env", required: true }],
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    toolDescriptionHash: {
+      algorithm: "sha256",
+      value,
+      toolCount: 1,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  };
 }
 
 function packageServer(overrides = {}) {
