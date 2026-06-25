@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash } from "./types.js";
+import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan } from "./types.js";
 
 export interface ToolDescriptionInput {
   name: string;
@@ -11,7 +11,7 @@ const MPM_ATTESTATIONS_META = "dev.mpm/attestations";
 
 export function deriveCapabilityManifest(
   server: NormalizedServer,
-  options: { toolDescriptionHash?: ToolDescriptionHash; generatedAt?: string } = {},
+  options: { toolDescriptionHash?: ToolDescriptionHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
 ): CapabilityManifest {
   return {
     version: 1,
@@ -24,6 +24,7 @@ export function deriveCapabilityManifest(
     secrets: capabilitySecrets(server).sort((left, right) => `${left.source}:${left.name}`.localeCompare(`${right.source}:${right.name}`)),
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     toolDescriptionHash: options.toolDescriptionHash,
+    toolDescriptionScan: options.toolDescriptionScan,
   };
 }
 
@@ -107,7 +108,18 @@ export function isCapabilityManifest(value: unknown): value is CapabilityManifes
     Array.isArray(value.transports) &&
     Array.isArray(value.remoteHosts) &&
     Array.isArray(value.secrets) &&
-    typeof value.generatedAt === "string"
+    typeof value.generatedAt === "string" &&
+    (value.toolDescriptionScan === undefined || isToolDescriptionScan(value.toolDescriptionScan))
+  );
+}
+
+function isToolDescriptionScan(value: unknown): value is ToolDescriptionScan {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    typeof value.generatedAt === "string" &&
+    typeof value.scannedDescriptions === "number" &&
+    Array.isArray(value.findings)
   );
 }
 

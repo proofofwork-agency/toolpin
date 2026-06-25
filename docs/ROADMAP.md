@@ -48,7 +48,7 @@ Shipped in v0.1:
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
 - Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, frozen `mpm ci`, verified remote capability pins, local JSON policy gates, and client-config reconciliation exist; signed lock integrity and enterprise policy controls are still open.
+- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, frozen `mpm ci`, verified remote capability pins, advisory tool-description scans, local JSON policy gates, and client-config reconciliation exist; signed lock integrity and enterprise policy controls are still open.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -141,7 +141,7 @@ surface, then verification/CI modules.
 
 - **Task-first semantic search**: embed registry metadata; `mpm find "read Postgres and summarize"` returns ranked matches with confidence.
 - **Eval-gated listings**: optional per-server agent-eval pass rates published as a trust input — the signal npm structurally cannot offer.
-- **Tool-description scan**: detect prompt-injection / poisoning patterns in server-supplied descriptions; surface as a trust issue (defends against the attacks the spec calls "untrusted").
+- **Tool-description scan**: deterministic advisory scans for agent-directed instructions, hidden/control characters, and tool-name shadowing in server-supplied and verified live tool descriptions. Shipped as warnings for human review, not as prompt-injection detection or an install blocker.
 - **Secret brokering**: resolve `op://`, `vault://`, `doppler://` references at spawn; OS keychain default; per-server scoped credential namespaces; `mpm install --secret-source=...` never writes plaintext to client config.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
 - **Local policy hardening**: `.mpm/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.

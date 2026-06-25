@@ -85,6 +85,19 @@ test("verifyAgainstLockfile ignores missing current tool-description hash", asyn
   });
 });
 
+test("verifyAgainstLockfile ignores missing current tool-description scan", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "same-hash", "agent_hidden_behavior") }), lockfilePath);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+
+    assert.equal(verification.ok, true);
+    assert.deepEqual(verification.messages, []);
+  });
+});
+
 test("verifyAgainstLockfile rejects rechecked tool-description hash drift", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
@@ -220,7 +233,7 @@ async function withTempDir(fn) {
   }
 }
 
-function capabilityManifest(server, value) {
+function capabilityManifest(server, value, scanCode) {
   return {
     version: 1,
     serverName: server.name,
@@ -237,6 +250,21 @@ function capabilityManifest(server, value) {
       toolCount: 1,
       generatedAt: "2026-01-01T00:00:00.000Z",
     },
+    toolDescriptionScan: scanCode
+      ? {
+          version: 1,
+          generatedAt: "2026-01-01T00:00:00.000Z",
+          scannedDescriptions: 1,
+          findings: [
+            {
+              severity: "warning",
+              code: scanCode,
+              message: "synthetic advisory finding",
+              subject: "tool:example",
+            },
+          ],
+        }
+      : undefined,
   };
 }
 

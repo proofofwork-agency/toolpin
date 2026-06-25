@@ -131,6 +131,7 @@ export interface CapabilityManifest {
   secrets: CapabilitySecret[];
   generatedAt: string;
   toolDescriptionHash?: ToolDescriptionHash;
+  toolDescriptionScan?: ToolDescriptionScan;
 }
 
 export interface ToolDescriptionHash {
@@ -138,6 +139,20 @@ export interface ToolDescriptionHash {
   value: string;
   toolCount: number;
   generatedAt: string;
+}
+
+export interface ToolDescriptionScanFinding {
+  severity: "info" | "warning";
+  code: string;
+  message: string;
+  subject: string;
+}
+
+export interface ToolDescriptionScan {
+  version: 1;
+  generatedAt: string;
+  scannedDescriptions: number;
+  findings: ToolDescriptionScanFinding[];
 }
 
 export interface Attestation {

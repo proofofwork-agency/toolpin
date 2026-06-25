@@ -1,4 +1,5 @@
 import { attestationBadge, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { scanFindingsToTrustIssues, scanServerMetadata } from "./scan.js";
 import type { NormalizedServer, RegistryPackage, RegistryRemote, TrustIssue, TrustReport } from "./types.js";
 
 const STRONG_PACKAGE_TYPES = new Set(["oci", "mcpb"]);
@@ -69,6 +70,11 @@ export function scoreServer(server: NormalizedServer): TrustReport {
   if (readCapabilityManifest(server)) badges.push("capability-pinned");
   for (const attestation of readAttestations(server)) {
     badges.push(attestationBadge(attestation));
+  }
+  const metadataScan = scanServerMetadata(server);
+  if (metadataScan.findings.length) {
+    badges.push("description-scan-advisory");
+    issues.push(...scanFindingsToTrustIssues(metadataScan));
   }
 
   return {

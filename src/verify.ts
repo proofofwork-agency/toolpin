@@ -1,5 +1,6 @@
 import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
 import type { Attestation, CapabilityManifest, NormalizedServer, TrustIssue } from "./types.js";
 
@@ -26,6 +27,9 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
   const launch = selectLaunchTarget(server);
   const generatedAt = new Date().toISOString();
   let capabilityManifest = deriveCapabilityManifest(server, { generatedAt });
+  const metadataScan = scanServerMetadata(server, generatedAt);
+  issues.push(...scanFindingsToTrustIssues(metadataScan));
+  if (metadataScan.findings.length) badges.push("description-scan-advisory");
 
   if (declaredCapabilityManifest) {
     badges.push("capability-pinned");
@@ -49,8 +53,13 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
       const result = await testServer(server, options.timeoutMs);
       if (result.ok) {
         const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
-        capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash });
+        const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
+        capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
         badges.push("tool-description-pinned");
+        if (toolDescriptionScan.findings.length) {
+          badges.push("tool-description-scan-advisory");
+          issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));
+        }
       } else {
         issues.push({
           severity: "critical",

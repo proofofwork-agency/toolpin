@@ -578,6 +578,10 @@ function printVerificationReport(report: VerificationReport): void {
     const hash = report.capabilityManifest.toolDescriptionHash;
     console.log(`Tool descriptions: ${hash.algorithm}-${hash.value} (${hash.toolCount} tool(s))`);
   }
+  if (report.capabilityManifest.toolDescriptionScan) {
+    const scan = report.capabilityManifest.toolDescriptionScan;
+    console.log(`Tool-description scan: ${scan.findings.length} advisory finding(s) across ${scan.scannedDescriptions} description(s)`);
+  }
   for (const issue of report.issues) {
     console.log(`${issue.severity.toUpperCase()}: ${issue.code}: ${issue.message}`);
   }
