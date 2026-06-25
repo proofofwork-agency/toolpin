@@ -9,6 +9,7 @@ import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry
 import { enforcePolicy } from "./policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
+import { signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
@@ -185,10 +186,18 @@ async function lock(rest: string[]): Promise<void> {
     await lockDigest(rest.slice(1));
     return;
   }
+  if (rest[0] === "sign") {
+    await lockSign(rest.slice(1));
+    return;
+  }
+  if (rest[0] === "verify-signature") {
+    await lockVerifySignature(rest.slice(1));
+    return;
+  }
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]\n       mpm lock digest [--file mcp-lock.json] [--json]`);
+  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]\n       mpm lock digest [--file mcp-lock.json] [--json]\n       mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
@@ -213,6 +222,33 @@ async function lockDigest(rest: string[]): Promise<void> {
   } else {
     console.log(digest);
   }
+}
+
+async function lockSign(rest: string[]): Promise<void> {
+  const keyPath = stringFlag(rest, "--key", "");
+  if (!keyPath) throw new Error("Usage: mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
+  const envelope = await signLockfile(path, keyPath, signaturePath);
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ file: path, signature: signaturePath, envelope }, null, 2));
+  } else {
+    console.log(`Signed ${path} (${envelope.lockfileDigest}) -> ${signaturePath}`);
+  }
+}
+
+async function lockVerifySignature(rest: string[]): Promise<void> {
+  const keyPath = stringFlag(rest, "--key", "");
+  if (!keyPath) throw new Error("Usage: mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
+  const report = await verifyLockfileSignature(path, keyPath, signaturePath);
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ file: path, signature: signaturePath, report }, null, 2));
+  } else {
+    console.log(`${report.ok ? "OK" : "FAILED"} ${report.message}`);
+  }
+  if (!report.ok) process.exitCode = 1;
 }
 
 async function exportConfig(rest: string[]): Promise<void> {
@@ -379,9 +415,18 @@ async function remove(rest: string[]): Promise<void> {
 async function ci(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const expectedDigest = stringFlag(rest, "--expect-digest", "");
+  const signaturePath = stringFlag(rest, "--signature", "");
+  const publicKeyPath = stringFlag(rest, "--public-key", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
   const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
   const enforcePolicies = !hasFlag(rest, "--no-policy");
+  if (signaturePath || publicKeyPath) {
+    if (!signaturePath || !publicKeyPath) throw new Error("mpm ci requires both --signature and --public-key when verifying a lock signature.");
+    const signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath);
+    if (!signature.ok) {
+      throw new Error(`Lockfile signature verification failed for ${path}: ${signature.message}`);
+    }
+  }
   if (expectedDigest) {
     const actualDigest = await readLockfileDigest(path);
     if (actualDigest !== expectedDigest) {
@@ -513,11 +558,13 @@ Commands:
   mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
   mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
   mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
-  mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
+  mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
   mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
   mpm lock digest [--file mcp-lock.json] [--json]
+  mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
+  mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
   mpm export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
   mpm tui
 `);

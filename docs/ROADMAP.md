@@ -48,7 +48,7 @@ Shipped in v0.1:
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
 - Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, frozen `mpm ci`, verified remote capability pins, advisory tool-description scans, local JSON policy gates, and client-config reconciliation exist; signed lock integrity and enterprise policy controls are still open.
+- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `mpm ci`, verified remote capability pins, advisory tool-description scans, local JSON policy gates, and client-config reconciliation exist; sigstore/transparency and enterprise policy controls are still open.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -66,7 +66,7 @@ closed rows stay listed so the roadmap preserves the security history.
 | **Remote targets have no integrity pin** — remote entry is just `{kind, type, url}` | `src/plan.ts`, `src/tester.ts`, `src/verify.ts` | Reuse the MCP probe path (`initialize` → `tools/list`) to pin a tool-description hash + capability manifest; diff on install because no content digest exists for a URL (→ F1) | v0.2 | Closed for verified installs |
 | **No remove / unlock** — servers only accumulate; cleanup means hand-editing JSON | `src/cli.ts`, `src/plan.ts`, `src/install.ts`, `src/tui.tsx` | Add `mpm remove <server> [--client <c>]` that deletes from lock and client config | v0.2 | Closed in current code |
 | **`generatedAt` is global and overwritten** — original creation time and per-server provenance are lost | `src/plan.ts` | Preserve `generatedAt`, add top-level `updatedAt`, add per-entry resolution timestamp | v0.2 | Closed in current code |
-| **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts`, `src/cli.ts` | Per-entry integrity and whole-lock digest pins are shipped; signed lock integrity still requires user-supplied key custody or sigstore | v0.3 | Partially closed |
+| **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts`, `src/cli.ts`, `src/signing.ts` | Per-entry integrity, whole-lock digest pins, and detached Ed25519 signatures with user-supplied keys are shipped; sigstore transparency/provenance remains open | v0.3 | Closed for local/user-managed trust roots |
 | **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts`, `src/doctor.ts` | Add `mpm doctor` to reconcile lock ↔ client config and report drift | v0.3 | Closed in current code |
 
 Exit rule: a defect stays "open" until it has both a failing test (reproducing the bad
@@ -145,11 +145,12 @@ surface, then verification/CI modules.
 - **Secret brokering**: resolve `op://`, `vault://`, `doppler://` references at spawn; OS keychain default; per-server scoped credential namespaces; `mpm install --secret-source=...` never writes plaintext to client config.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
 - **Local policy hardening**: `.mpm/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.
-- **Whole-lock digest pins**: `mpm lock digest` and `mpm ci --expect-digest` provide a timestamp-insensitive set-level lockfile pin for CI systems holding the expected digest out-of-band. This is not signing or provenance; user-supplied-key signing remains a separate design gate.
+- **Whole-lock digest pins**: `mpm lock digest` and `mpm ci --expect-digest` provide a timestamp-insensitive set-level lockfile pin for CI systems holding the expected digest out-of-band. This is not signing or provenance.
+- **User-supplied-key lock signatures**: `mpm lock sign`, `mpm lock verify-signature`, and `mpm ci --signature ... --public-key ...` provide detached Ed25519 signatures over the canonical whole-lock digest. MPM does not generate or store keys; security depends on the private key and public trust root being managed outside the repo/lockfile trust path.
 
 ### v0.3 design gates
 
-- **Signed lock integrity**: honest signing requires a user/CI-held private key and a distributed public key. MPM should not generate, store, or rotate the signing key by default, because a local attacker who can modify the lockfile could otherwise re-sign it.
+- **Sigstore/transparency lock provenance**: detached signatures cover local/user-managed trust roots. Public transparency logs, identity-bound signing, and provenance attestations still need a separate sigstore design.
 - **Secret brokering**: resolving `op://`, `vault://`, or `doppler://` safely requires a runtime launcher/spawn model. Resolving secrets during install and writing plaintext to client config would defeat the purpose of secret brokering.
 
 ## Release v1.0 — Enterprise governance (paid tier)
