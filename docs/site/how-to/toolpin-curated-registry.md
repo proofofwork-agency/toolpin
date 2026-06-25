@@ -140,7 +140,14 @@ a starting point:
       "reviewedBy": "toolpin-maintainers",
       "reason": "Why ToolPin recommends this server.",
       "riskNotes": [],
-      "testedClients": ["claude"]
+      "testedClients": ["claude"],
+      "toolpinEnforcement": {
+        "status": "enforced",
+        "workflow": ".github/workflows/toolpin.yml",
+        "requiredCheck": "ToolPin lockfile check",
+        "protectedBranch": "main",
+        "file": "mcp-lock.json"
+      }
     }
   }
 }
@@ -160,11 +167,13 @@ The PR description should include:
 - how you tested it;
 - required environment variables or secrets;
 - supported clients, if known;
+- the required ToolPin status check name and protected branch;
 - risk notes such as network access, filesystem access, write operations, or
   hosted-service dependency.
 
 Reviewers should reject entries that are hosted-only, source-missing,
-non-installable, stale, duplicate, or not useful enough to recommend.
+non-installable, stale, duplicate, ToolPin-unenforced, or not useful enough to
+recommend.
 
 ## Curation Gates
 
@@ -179,7 +188,14 @@ a reviewable install plan. In practice that means:
 - required secrets are represented as metadata, not committed plaintext values;
 - it includes `_meta["dev.toolpin/curation"]`;
 - the curation status is `reviewed`;
+- `toolpinEnforcement.status` is `enforced`;
+- the ToolPin workflow path, required status-check name, protected branch, and
+  lockfile path are recorded;
 - risk notes and tested clients are explicit, even when the arrays are empty.
+
+Running ToolPin CI is not enough for curated inclusion. The ToolPin check must
+be required by branch protection or repository rulesets, so a failing lockfile
+check can block merges.
 
 These are not popularity gates. A small server can be accepted if it is useful,
 maintained, and installable. A popular server can still be rejected if the

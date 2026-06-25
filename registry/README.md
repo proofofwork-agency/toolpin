@@ -84,11 +84,20 @@ Required curation metadata:
       "reviewedBy": "toolpin-maintainers",
       "reason": "Why this server belongs in the curated registry.",
       "riskNotes": [],
-      "testedClients": ["claude"]
+      "testedClients": ["claude"],
+      "toolpinEnforcement": {
+        "status": "enforced",
+        "workflow": ".github/workflows/toolpin.yml",
+        "requiredCheck": "ToolPin lockfile check",
+        "protectedBranch": "main",
+        "file": "mcp-lock.json"
+      }
     }
   }
 }
 ```
 
-Do not add hosted-only, source-missing, stale, duplicate, or non-installable
-entries to this registry. Use discovery registries for broad search.
+Do not add hosted-only, source-missing, stale, duplicate, non-installable, or
+ToolPin-unenforced entries to this registry. A repo merely running ToolPin CI is
+not enough; the ToolPin check must be required by branch protection or rulesets.
+Use discovery registries for broad search.

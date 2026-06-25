@@ -139,6 +139,28 @@ function validateEntry(entry, label, output) {
   if (!Array.isArray(curation.testedClients)) {
     output.push(`${label} curation.testedClients must be an array.`);
   }
+  validateToolPinEnforcement(curation.toolpinEnforcement, label, output);
+}
+
+function validateToolPinEnforcement(enforcement, label, output) {
+  if (!isRecord(enforcement)) {
+    output.push(`${label} curation.toolpinEnforcement is required for curated entries.`);
+    return;
+  }
+  if (enforcement.status !== "enforced") {
+    output.push(`${label} curation.toolpinEnforcement.status must be enforced.`);
+  }
+  for (const field of ["workflow", "requiredCheck", "protectedBranch"]) {
+    if (typeof enforcement[field] !== "string" || enforcement[field].length === 0) {
+      output.push(`${label} curation.toolpinEnforcement.${field} is required.`);
+    }
+  }
+  if (enforcement.file !== undefined && (typeof enforcement.file !== "string" || enforcement.file.length === 0)) {
+    output.push(`${label} curation.toolpinEnforcement.file must be a non-empty string when present.`);
+  }
+  if (enforcement.notes !== undefined && typeof enforcement.notes !== "string") {
+    output.push(`${label} curation.toolpinEnforcement.notes must be a string when present.`);
+  }
 }
 
 function readCuration(entry) {

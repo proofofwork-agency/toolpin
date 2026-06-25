@@ -8,13 +8,14 @@
     "generatedAt": "2026-06-25T00:00:00.000Z",
     "source": {
       "type": "github",
-      "repository": "https://github.com/proofofworks/TPN",
+      "repository": "https://github.com/proofofwork-agency/toolpin",
       "path": "registry/v0/servers"
     },
     "policy": {
       "installableOnly": true,
       "reviewRequired": true,
-      "prBasedUpdates": true
+      "prBasedUpdates": true,
+      "toolpinCiRequired": true
     }
   }
 }
