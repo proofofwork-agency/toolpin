@@ -19,7 +19,7 @@ type InputMode = "normal" | "search" | "command";
 type DataMode = "cache" | "live";
 type SourceMode = RegistrySourceId | "all";
 type ClientSelection = ClientName | "all";
-type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" | "remove" | "ci" | "doctor" | "test" | "lock" | "export-config" | "tui" | "help";
+type TuiCommandId = "ingest" | "search" | "more-results" | "reset-view" | "info" | "audit" | "plan" | "install" | "remove" | "ci" | "doctor" | "test" | "lock" | "export-config" | "tui" | "help";
 
 const VIEWS: View[] = ["discover", "details", "plan", "config", "help"];
 const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
@@ -27,6 +27,8 @@ const CLIENTS: ClientSelection[] = [...ALL_CLIENTS.filter((client) => client !==
 const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string; requiresServer?: boolean }> = [
   { id: "ingest", label: "Ingest registries", description: "Fetch registry metadata and refresh .toolpin/registry-cache.json." },
   { id: "search", label: "Search servers", description: "Edit the current search query." },
+  { id: "more-results", label: "Show more results", description: "Increase the TUI result window by 50 matches." },
+  { id: "reset-view", label: "Reset view defaults", description: "Reset search/source/result count/client/scope to defaults." },
   { id: "info", label: "Server info", description: "Open selected server metadata and trust summary.", requiresServer: true },
   { id: "audit", label: "Audit trust", description: "Show selected server trust score, badges, and issues.", requiresServer: true },
   { id: "plan", label: "Install plan", description: "Preview target, trust, secrets, and config writes.", requiresServer: true },
@@ -53,6 +55,9 @@ const WARN = "#fbbf24";
 const ERR = "#f87171";
 const MENU_ROW = 6;
 const LIST_ROW_START = 8;
+const DEFAULT_RESULT_LIMIT = 50;
+const RESULT_LIMIT_STEP = 50;
+const MAX_RESULT_LIMIT = 500;
 
 interface TuiState {
   entries: RegistryEntry[];
@@ -65,6 +70,7 @@ interface TuiState {
   inputMode: InputMode;
   dataMode: DataMode;
   sourceMode: SourceMode;
+  resultLimit: number;
   client: ClientSelection;
   installScope: InstallScope;
   loading: boolean;
@@ -107,6 +113,7 @@ function MpmTui() {
     inputMode: "normal",
     dataMode: "cache",
     sourceMode: "all",
+    resultLimit: DEFAULT_RESULT_LIMIT,
     client: "claude",
     installScope: "project",
     loading: true,
@@ -126,10 +133,11 @@ function MpmTui() {
     };
   }, []);
 
-  const results = useMemo(() => {
+  const allResults = useMemo(() => {
     const latest = latestOnly(state.servers);
-    return searchServers(latest, state.query || "mcp", 50);
+    return searchServers(latest, state.query || "mcp", MAX_RESULT_LIMIT);
   }, [state.servers, state.query]);
+  const results = useMemo(() => allResults.slice(0, state.resultLimit), [allResults, state.resultLimit]);
 
   const selectedIndex = clamp(state.selected, 0, Math.max(0, results.length - 1));
   const selectedResult = results[selectedIndex];
@@ -168,6 +176,7 @@ function MpmTui() {
         entries,
         servers: filterBySource(servers, sourceMode),
         selected: 0,
+        resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
         error: undefined,
         dataMode: mode,
@@ -194,6 +203,7 @@ function MpmTui() {
         entries,
         servers: filterBySource(servers, state.sourceMode),
         selected: 0,
+        resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
         error: undefined,
         dataMode: "cache",
@@ -483,6 +493,12 @@ function MpmTui() {
       case "search":
         setState((prev) => ({ ...prev, inputMode: "search", view: "discover", commandLog: undefined }));
         break;
+      case "more-results":
+        showMoreResults();
+        break;
+      case "reset-view":
+        resetViewDefaults();
+        break;
       case "info":
         setState((prev) => ({
           ...prev,
@@ -583,6 +599,50 @@ function MpmTui() {
     }
   }
 
+  function showMoreResults(): void {
+    setState((prev) => {
+      const nextLimit = Math.min(MAX_RESULT_LIMIT, prev.resultLimit + RESULT_LIMIT_STEP);
+      return {
+        ...prev,
+        resultLimit: nextLimit,
+        commandLog: {
+          title: "results",
+          command: "toolpin tui",
+          ok: true,
+          lines: [
+            nextLimit === prev.resultLimit ? `already showing the maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
+            "Use / to edit the search, g to change source, i to refresh listings.",
+          ],
+        },
+        lastAction: nextLimit === prev.resultLimit ? `showing maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
+      };
+    });
+  }
+
+  function resetViewDefaults(): void {
+    setState((prev) => ({
+      ...prev,
+      query: "github",
+      commandQuery: "",
+      commandSelected: 0,
+      selected: 0,
+      view: "discover",
+      inputMode: "normal",
+      sourceMode: "all",
+      resultLimit: DEFAULT_RESULT_LIMIT,
+      client: "claude",
+      installScope: "project",
+      pendingRemove: undefined,
+      commandLog: {
+        title: "reset",
+        command: "toolpin tui",
+        ok: true,
+        lines: ["reset search, source, result count, client, and scope to defaults"],
+      },
+      lastAction: "reset TUI defaults",
+    }));
+  }
+
   useInput((input, key) => {
     const mouse = parseMouse(input);
     if (mouse?.pressed && handleMouseClick(mouse.x, mouse.y)) {
@@ -675,8 +735,15 @@ function MpmTui() {
       case "r":
         void loadData(state.dataMode);
         break;
+      case "R":
+        resetViewDefaults();
+        break;
       case "i":
         void refreshCache();
+        break;
+      case "m":
+      case "+":
+        showMoreResults();
         break;
       case "I":
         void installSelected();
@@ -788,7 +855,15 @@ function MpmTui() {
           </Centered>
         ) : (
           <>
-            <OptionList results={results} selected={selectedIndex} height={listHeight} width={width} dimmed={state.view !== "discover"} />
+            <OptionList
+              results={results}
+              totalMatches={allResults.length}
+              totalServers={latestOnly(state.servers).length}
+              selected={selectedIndex}
+              height={listHeight}
+              width={width}
+              dimmed={state.view !== "discover"}
+            />
             {SERVER_VIEWS.has(state.view) ? (
               <Centered width={width}>
                 <Box width={modalWidth}>
@@ -1025,7 +1100,23 @@ function ModeLine({ active, selectedServer, width }: { active: View; selectedSer
   );
 }
 
-function OptionList({ results, selected, height, width, dimmed }: { results: SearchResult[]; selected: number; height: number; width: number; dimmed?: boolean }) {
+function OptionList({
+  results,
+  totalMatches,
+  totalServers,
+  selected,
+  height,
+  width,
+  dimmed,
+}: {
+  results: SearchResult[];
+  totalMatches: number;
+  totalServers: number;
+  selected: number;
+  height: number;
+  width: number;
+  dimmed?: boolean;
+}) {
   const visibleCount = Math.max(2, height - 2);
   const start = listWindowStart(selected, visibleCount, results.length);
   const visible = results.slice(start, start + visibleCount);
@@ -1034,7 +1125,12 @@ function OptionList({ results, selected, height, width, dimmed }: { results: Sea
     <Box flexDirection="column" paddingX={3} height={height}>
       {results.length === 0 ? <Text color={MUTED}>No servers matched. Type / to search or l for live results.</Text> : null}
       {visible.map((result, index) => <OptionRow key={`${result.server.name}:${result.server.version}`} result={result} selected={start + index === selected} dimmed={dimmed} width={width} />)}
-      {results.length > 0 ? <Text color={CHROME}>  selected {selected + 1} of {results.length}</Text> : null}
+      {results.length > 0 ? (
+        <Text color={CHROME} wrap="truncate">
+          {"  "}selected {selected + 1} of {results.length} shown / {totalMatches} matches / {totalServers} cached servers
+          {results.length < totalMatches ? <Text color={MUTED}>  press m for more</Text> : null}
+        </Text>
+      ) : null}
     </Box>
   );
 }
@@ -1220,6 +1316,9 @@ function HelpView({ width }: { width: number }) {
     ["up/down or j/k", "select", "Move through server options."],
     ["enter", "open", "Open the selected server overview."],
     ["g", "registry", "Cycle all, official, and Docker sources."],
+    ["m / +", "more", "Show 50 more matching servers, up to 500."],
+    ["i", "refresh", "Refresh the local listing cache from enabled sources."],
+    ["R", "reset", "Reset search, source, result count, client, and scope defaults."],
     ["G", "scope", "Toggle project/global install target."],
     ["c", "client", "Cycle clients, including all."],
     ["t", "test", "Connect and run tools/list."],
@@ -1232,7 +1331,7 @@ function HelpView({ width }: { width: number }) {
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="help" file="shortcuts" />
-      <Text color={MUTED} wrap="wrap">Sources: {REGISTRY_SOURCES.map((source) => `${source.id}${source.enabled ? "" : " (known)"}`).join(", ")}.</Text>
+      <Text color={MUTED} wrap="wrap">Sources: {REGISTRY_SOURCES.map((source) => `${source.id}${source.enabled ? "" : " (known)"}`).join(", ")}. Enabled source adapters are fetched into .toolpin/registry-cache.json.</Text>
       <Spacer />
       {rows.map(([keyName, label, description]) => (
         <Text key={keyName} wrap="truncate">
@@ -1327,7 +1426,7 @@ function Footer({ view, inputMode }: { view: View; inputMode: InputMode }) {
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["Enter", "open"], ["click", "select"], [":", "commands"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["m", "more"], ["i", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : [["Esc", "browse"], ["click", "menu"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["q", "quit"]];
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0}>
@@ -1501,6 +1600,10 @@ function commandLineFor(commandId: TuiCommandId, state: TuiState, server?: Norma
       return `toolpin ingest ${source} --pages 6`;
     case "search":
       return `toolpin search ${shellQuote(state.query || "mcp")} ${source}${live}`;
+    case "more-results":
+      return "toolpin tui # show more matching results";
+    case "reset-view":
+      return "toolpin tui # reset view defaults";
     case "info":
       return `toolpin info ${serverName} ${source}${live}`;
     case "audit":
