@@ -6,6 +6,7 @@ import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
+import { enforcePolicy } from "./policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { testServer } from "./tester.js";
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
       return;
     case "install":
       await install(rest);
+      return;
+    case "policy":
+      await policy(rest);
       return;
     case "remove":
       await remove(rest);
@@ -270,6 +274,7 @@ async function install(rest: string[]): Promise<void> {
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
   const updateLock = hasFlag(rest, "--update-lock");
   const verifyBeforeInstall = hasFlag(rest, "--verify");
+  const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -292,6 +297,21 @@ async function install(rest: string[]): Promise<void> {
   }
   const clients = client === "all" ? clientsForScope(scope) : [client];
   const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest }));
+  if (!hasFlag(rest, "--no-policy")) {
+    const violations = [];
+    for (const plan of plans) {
+      const report = await enforcePolicy(plan, policyPath);
+      if (!report.ok) {
+        violations.push(`${report.key}: ${report.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ")}`);
+      }
+    }
+    if (violations.length) {
+      throw new Error([
+        `Install refused by policy ${policyPath}.`,
+        ...violations.map((violation) => `- ${violation}`),
+      ].join("\n"));
+    }
+  }
   if (!updateLock) {
     const mismatches = [];
     for (const plan of plans) {
@@ -344,6 +364,8 @@ async function remove(rest: string[]): Promise<void> {
 async function ci(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const verifyBeforeUse = hasFlag(rest, "--verify");
+  const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
+  const enforcePolicies = !hasFlag(rest, "--no-policy");
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
     let verifiedCapabilityManifest: CapabilityManifest | undefined;
@@ -360,7 +382,14 @@ async function ci(rest: string[]): Promise<void> {
       }
       verifiedCapabilityManifest = verification.capabilityManifest;
     }
-    return buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest });
+    const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest });
+    if (enforcePolicies) {
+      const policy = await enforcePolicy(plan, policyPath);
+      if (!policy.ok) {
+        throw new Error(policy.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; "));
+      }
+    }
+    return plan;
   });
 
   if (!report.ok) {
@@ -371,6 +400,38 @@ async function ci(rest: string[]): Promise<void> {
   }
 
   console.log(`Frozen install OK: ${report.checked} locked server/client entrie(s) verified.`);
+}
+
+async function policy(rest: string[]): Promise<void> {
+  const subcommand = rest[0] ?? "help";
+  const values = rest.slice(1);
+  if (subcommand !== "check") {
+    throw new Error(`Usage: mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--live]`);
+  }
+
+  const name = positional(values)[0];
+  if (!name) throw new Error(`Usage: mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--live]`);
+
+  const client = clientFlag(values, "generic");
+  const scope = (hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "project")) as InstallScope;
+  const policyPath = stringFlag(values, "--policy", ".mpm/policy.json");
+  if (scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be project or global");
+  }
+  const server = await findServer(values, name);
+  const clients = client === "all" ? clientsForScope(scope) : [client];
+  const reports = await Promise.all(clients.map(async (targetClient) => enforcePolicy(buildInstallPlan(server, targetClient), policyPath)));
+
+  if (hasFlag(values, "--json")) {
+    console.log(JSON.stringify({ ok: reports.every((report) => report.ok), reports }, null, 2));
+  } else {
+    for (const report of reports) {
+      console.log(`${report.ok ? "OK" : "DENIED"} ${report.key}`);
+      for (const issue of report.issues) console.log(`- ${issue.code}: ${issue.message}`);
+    }
+  }
+
+  if (reports.some((report) => !report.ok)) process.exitCode = 1;
 }
 
 async function doctor(rest: string[]): Promise<void> {
@@ -427,9 +488,10 @@ Commands:
   mpm audit <server-name> [--source official|docker|all] [--live]
   mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
   mpm plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
-  mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+  mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
+  mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
   mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
-  mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
+  mpm ci [--file mcp-lock.json] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
   mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
@@ -492,7 +554,7 @@ function positional(values: string[]): string[] {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value.startsWith("--")) {
-      if (!["--live", "--json", "--global", "--project", "--update-lock", "--verify", "--skip-live-verification", "--skip-live-verify"].includes(value)) index += 1;
+      if (!["--live", "--json", "--global", "--project", "--update-lock", "--verify", "--skip-live-verification", "--skip-live-verify", "--no-policy"].includes(value)) index += 1;
       continue;
     }
     result.push(value);

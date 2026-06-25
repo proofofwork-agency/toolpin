@@ -8,6 +8,7 @@ import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
+import { enforcePolicy } from "./policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { testServer, type ServerTestResult } from "./tester.js";
@@ -235,6 +236,14 @@ function MpmTui() {
       const files: string[] = [];
       const targetClients = selectedClientsForScope(state.client, state.installScope);
       const plans = targetClients.map((client) => buildInstallPlan(selectedServer, client));
+      const policyViolations = [];
+      for (const plan of plans) {
+        const policy = await enforcePolicy(plan);
+        if (!policy.ok) policyViolations.push(`${policy.key}: ${policy.issues.map((issue) => issue.message).join("; ")}`);
+      }
+      if (policyViolations.length) {
+        throw new Error(`policy refused install: ${policyViolations.join(" | ")}`);
+      }
       const mismatches = [];
       for (const plan of plans) {
         const verification = await verifyAgainstLockfile(plan, "mcp-lock.json");

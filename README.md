@@ -14,6 +14,7 @@ node dist/cli.js verify io.github.github/github-mcp-server --live --skip-live-ve
 node dist/cli.js plan io.github.github/github-mcp-server --client claude --live
 node dist/cli.js install io.github.github/github-mcp-server --client claude --scope project --live --verify
 node dist/cli.js install io.github.github/github-mcp-server --client all --scope project --live
+node dist/cli.js policy check io.github.github/github-mcp-server --client claude --live
 node dist/cli.js remove io.github.github/github-mcp-server --client claude --scope project
 node dist/cli.js ci --live
 node dist/cli.js doctor --scope project
@@ -32,9 +33,10 @@ mpm info <server-name> [--source official|docker|all] [--json] [--live]
 mpm audit <server-name> [--source official|docker|all] [--live]
 mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
 mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
-mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
+mpm policy check <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
 mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope project|global] [--file mcp-lock.json]
-mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
+mpm ci [--file mcp-lock.json] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
 mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
 mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
 mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--file mcp-lock.json] [--live]
@@ -56,6 +58,7 @@ mpm tui
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
 - Install drift checks: if an existing lock entry changes version, target, trust score, or generated client config, install refuses until the lock is reviewed and updated with `mpm lock` or `mpm install --update-lock`.
 - Frozen lockfile checks via `mpm ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
+- Local policy gate via optional `.mpm/policy.json`: `mpm install`, `mpm ci`, TUI installs, and `mpm policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
 - `mpm remove` cleanup for supported client config files and matching lockfile entries, including Codex TOML table removal.
 - `mpm remove` defaults to all supported project clients when `--client` is omitted; pass `--client <name>` for targeted cleanup.
@@ -95,6 +98,30 @@ s               Save selected client config under .mpm/
 h or ?          Help
 q / ctrl-c      Quit
 ```
+
+## Local Policy
+
+When `.mpm/policy.json` exists, `mpm install`, `mpm ci`, and TUI installs enforce it
+before writing config or accepting a frozen lock. Use `--policy <file>` to point at a
+different policy file or `--no-policy` for an explicit local bypass.
+
+```json
+{
+  "version": 1,
+  "minTrustScore": 70,
+  "allowedSources": ["official", "docker"],
+  "deniedClients": ["generic"],
+  "deniedServers": ["io.github/example/unsafe-server"],
+  "deniedPackageTypes": ["cargo"],
+  "deniedTransports": ["sse"],
+  "deniedRemoteHosts": ["untrusted.example.com"],
+  "requireDigestPinnedOci": true,
+  "requireMcpbSha256": true
+}
+```
+
+This is a local JSON enforcement gate, not the future Cedar/OPA enterprise policy
+engine.
 
 ## Product Direction
 

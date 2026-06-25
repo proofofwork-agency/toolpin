@@ -48,7 +48,7 @@ Shipped in v0.1:
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
 - Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, frozen `mpm ci`, verified remote capability pins, and client-config reconciliation exist; signed lock integrity and policy controls are still open.
+- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, frozen `mpm ci`, verified remote capability pins, local JSON policy gates, and client-config reconciliation exist; signed lock integrity and enterprise policy controls are still open.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -62,7 +62,7 @@ closed rows stay listed so the roadmap preserves the security history.
 | **Silent key collision** — locking same server for claude then cursor destroys the claude entry | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Key entries by `name + client` (→ F3) | v0.2 | Closed in current code |
 | **Unsafe cast on read** — `JSON.parse(raw) as Lockfile` accepts any hand-edited shape | `src/plan.ts` | Real `parseLockfile()` validator; reject malformed entries (→ F3) | v0.2 | Closed in current code |
 | **Records but never enforces** — `install` re-resolves and overwrites the lock without diffing | `src/cli.ts`, `src/tui.tsx`, `src/ci.ts` | Diff resolved vs locked; refuse install on drift unless explicitly updating lock; add frozen `mpm ci` (→ F3) | v0.2 | Closed in current code |
-| **Trust snapshot is cosmetic** — nothing blocks a downgrade | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Compare locked trust against resolved trust; refuse when resolved trust decreases | v0.2 | Closed for install; policy controls still open |
+| **Trust snapshot is cosmetic** — nothing blocks a downgrade | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx`, `src/policy.ts` | Compare locked trust against resolved trust; refuse when resolved trust decreases; add optional local policy gates for trust/source/client/server/package/transport rules | v0.2 | Closed for install and local policy gates; Cedar/OPA still open |
 | **Remote targets have no integrity pin** — remote entry is just `{kind, type, url}` | `src/plan.ts`, `src/tester.ts`, `src/verify.ts` | Reuse the MCP probe path (`initialize` → `tools/list`) to pin a tool-description hash + capability manifest; diff on install because no content digest exists for a URL (→ F1) | v0.2 | Closed for verified installs |
 | **No remove / unlock** — servers only accumulate; cleanup means hand-editing JSON | `src/cli.ts`, `src/plan.ts`, `src/install.ts`, `src/tui.tsx` | Add `mpm remove <server> [--client <c>]` that deletes from lock and client config | v0.2 | Closed in current code |
 | **`generatedAt` is global and overwritten** — original creation time and per-server provenance are lost | `src/plan.ts` | Preserve `generatedAt`, add top-level `updatedAt`, add per-entry resolution timestamp | v0.2 | Closed in current code |
@@ -144,11 +144,12 @@ surface, then verification/CI modules.
 - **Tool-description scan**: detect prompt-injection / poisoning patterns in server-supplied descriptions; surface as a trust issue (defends against the attacks the spec calls "untrusted").
 - **Secret brokering**: resolve `op://`, `vault://`, `doppler://` references at spawn; OS keychain default; per-server scoped credential namespaces; `mpm install --secret-source=...` never writes plaintext to client config.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
+- **Local policy hardening**: `.mpm/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.
 
 ## Release v1.0 — Enterprise governance (paid tier)
 
 - Signed **private registry** + curated mirrors; wire-compatible official API + `/owners`, `/advisories`, `/policy/evaluate`.
-- **Policy-as-code** per invocation: Cedar (preferred — provable for auditors) or OPA. Principal = agent/user, action = tool, resource = server.
+- **Policy-as-code** per invocation: Cedar (preferred — provable for auditors) or OPA. Principal = agent/user, action = tool, resource = server. Local JSON policy gates are the shipped precursor, not the enterprise engine.
 - **Immutable audit trail** for install, update, secret grant, tool invocation, policy override.
 - Org allowlists/deny rules by publisher, namespace, risk, license, package type, provenance.
 
