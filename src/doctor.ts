@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { readCodexServerConfig } from "./codexToml.js";
+import { clientConfigRootKey } from "./config.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile, type InstallPlan } from "./plan.js";
 import type { ClientName } from "./config.js";
@@ -27,7 +28,21 @@ export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: Inst
   const entries = Object.entries(lockfile.servers);
 
   for (const [key, plan] of entries) {
-    const target = resolveConfigTarget(plan.client, scope);
+    let target: ReturnType<typeof resolveConfigTarget>;
+    try {
+      target = resolveConfigTarget(plan.client, scope);
+    } catch (error) {
+      issues.push({
+        key,
+        kind: "invalid",
+        client: plan.client,
+        serverName: plan.name,
+        file: "",
+        message: `cannot check ${plan.client} at ${scope} scope: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+
     const expected = expectedServerConfig(plan);
     if (!expected) {
       issues.push({
@@ -119,7 +134,7 @@ async function readInstalledServerConfig(
 
 function serverConfigFromWrapped(config: unknown, serverName: string, client: ClientName): unknown {
   const root = asRecord(config);
-  const section = client === "opencode" ? "mcp" : client === "vscode" ? "servers" : client === "codex" ? "mcp_servers" : "mcpServers";
+  const section = clientConfigRootKey(client);
   return asRecord(root[section])[serverName];
 }
 

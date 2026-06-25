@@ -1,8 +1,34 @@
 import type { ClientConfig, NormalizedServer, RegistryPackage, RegistryRemote } from "./types.js";
 
-export type ClientName = "claude" | "cursor" | "vscode" | "codex" | "opencode" | "generic";
+export type ClientName =
+  | "claude"
+  | "cursor"
+  | "vscode"
+  | "codex"
+  | "opencode"
+  | "windsurf"
+  | "cline"
+  | "gemini"
+  | "zed"
+  | "roo"
+  | "generic";
 
-export const PROJECT_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode"];
+export const ALL_CLIENTS: ClientName[] = [
+  "claude",
+  "cursor",
+  "vscode",
+  "codex",
+  "opencode",
+  "windsurf",
+  "cline",
+  "gemini",
+  "zed",
+  "roo",
+  "generic",
+];
+
+export const PROJECT_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "gemini", "roo"];
+export const GLOBAL_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "windsurf", "cline", "gemini"];
 
 export type LaunchTarget = { kind: "remote"; remote: RegistryRemote } | { kind: "package"; pkg: RegistryPackage };
 
@@ -22,13 +48,13 @@ export function exportClientConfig(server: NormalizedServer, client: ClientName)
       config: wrapClientConfig(client, server.name, {
         type: launch.remote.type,
         url: launch.remote.url,
-        headers: headersToInputs(launch.remote),
+        headers: headersToInputs(launch.remote, client),
       }),
       notes,
     };
   }
 
-  const localConfig = packageToLocalConfig(launch.pkg, notes);
+  const localConfig = packageToLocalConfig(launch.pkg, notes, client);
   return {
     client,
     serverName: server.name,
@@ -50,8 +76,8 @@ export function selectLaunchTarget(server: NormalizedServer): LaunchTarget | und
   return preferredPackage ? { kind: "package", pkg: preferredPackage } : undefined;
 }
 
-function packageToLocalConfig(pkg: RegistryPackage, notes: string[]): Record<string, unknown> {
-  const env = environmentToPlaceholders(pkg);
+function packageToLocalConfig(pkg: RegistryPackage, notes: string[], client: ClientName): Record<string, unknown> {
+  const env = environmentToPlaceholders(pkg, client);
 
   switch (pkg.registryType) {
     case "npm": {
@@ -87,35 +113,73 @@ function packageToLocalConfig(pkg: RegistryPackage, notes: string[]): Record<str
   }
 }
 
-function environmentToPlaceholders(pkg: RegistryPackage): Record<string, string> {
+function environmentToPlaceholders(pkg: RegistryPackage, client: ClientName): Record<string, string> {
   const env: Record<string, string> = {};
   for (const variable of pkg.environmentVariables ?? []) {
-    env[variable.name] = variable.default ?? `<${variable.name}>`;
+    env[variable.name] = variable.default ?? placeholderFor(client, variable.name);
   }
   return env;
 }
 
-function headersToInputs(remote: RegistryRemote): Record<string, string> | undefined {
+function headersToInputs(remote: RegistryRemote, client: ClientName): Record<string, string> | undefined {
   if (!remote.headers?.length) return undefined;
-  return Object.fromEntries(remote.headers.map((header) => [header.name, `<${header.name}>`]));
+  return Object.fromEntries(remote.headers.map((header) => [header.name, placeholderFor(client, header.name)]));
 }
 
 function wrapClientConfig(client: ClientName, serverName: string, config: Record<string, unknown>): unknown {
-  const mcpServers = { [serverName]: config };
-
   switch (client) {
     case "vscode":
-      return { servers: mcpServers };
+      return { servers: { [serverName]: config } };
     case "codex":
       return { mcp_servers: { [serverName]: toCodexMcp(config) } };
     case "opencode":
       return { $schema: "https://opencode.ai/config.json", mcp: { [serverName]: toOpenCodeMcp(config) } };
+    case "windsurf":
+      return { mcpServers: { [serverName]: toWindsurfMcp(config) } };
+    case "cline":
+      return { mcpServers: { [serverName]: toClineMcp(config) } };
+    case "gemini":
+      return { mcpServers: { [serverName]: toGeminiMcp(config) } };
+    case "zed":
+      return { context_servers: { [serverName]: toZedMcp(config) } };
+    case "roo":
+      return { mcpServers: { [serverName]: toRooMcp(config) } };
     case "claude":
     case "cursor":
     case "generic":
     default:
-      return { mcpServers };
+      return { mcpServers: { [serverName]: config } };
   }
+}
+
+export function clientConfigRootKey(client: ClientName): "mcp" | "mcpServers" | "mcp_servers" | "servers" | "context_servers" {
+  switch (client) {
+    case "opencode":
+      return "mcp";
+    case "vscode":
+      return "servers";
+    case "codex":
+      return "mcp_servers";
+    case "zed":
+      return "context_servers";
+    case "claude":
+    case "cursor":
+    case "windsurf":
+    case "cline":
+    case "gemini":
+    case "roo":
+    case "generic":
+    default:
+      return "mcpServers";
+  }
+}
+
+export function clientsForScope(scope: "project" | "global"): ClientName[] {
+  return scope === "project" ? PROJECT_CLIENTS : GLOBAL_CLIENTS;
+}
+
+export function isClientName(value: unknown): value is ClientName {
+  return ALL_CLIENTS.includes(String(value) as ClientName);
 }
 
 function toCodexMcp(config: Record<string, unknown>): Record<string, unknown> {
@@ -152,4 +216,112 @@ function toOpenCodeMcp(config: Record<string, unknown>): Record<string, unknown>
     enabled: true,
     environment: config.env,
   };
+}
+
+function toWindsurfMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      serverUrl: config.url,
+      headers: config.headers,
+    });
+  }
+
+  return omitUndefined({
+    command: config.command,
+    args: config.args,
+    env: config.env,
+  });
+}
+
+function toClineMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      type: config.type === "streamable-http" ? "streamableHttp" : config.type,
+      url: config.url,
+      headers: config.headers,
+      disabled: false,
+      autoApprove: [],
+    });
+  }
+
+  return omitUndefined({
+    command: config.command,
+    args: config.args,
+    env: config.env,
+    disabled: false,
+    autoApprove: [],
+  });
+}
+
+function toGeminiMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      ...(config.type === "streamable-http" ? { httpUrl: config.url } : { url: config.url }),
+      headers: config.headers,
+    });
+  }
+
+  return omitUndefined({
+    command: config.command,
+    args: config.args,
+    env: config.env,
+  });
+}
+
+function toZedMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      url: config.url,
+      headers: config.headers,
+    });
+  }
+
+  return omitUndefined({
+    command: config.command,
+    args: config.args,
+    env: config.env,
+  });
+}
+
+function toRooMcp(config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      type: config.type,
+      url: config.url,
+      headers: config.headers,
+      disabled: false,
+    });
+  }
+
+  return omitUndefined({
+    command: config.command,
+    args: config.args,
+    env: config.env,
+    disabled: false,
+  });
+}
+
+function placeholderFor(client: ClientName, name: string): string {
+  switch (client) {
+    case "windsurf":
+      return `\${env:${name}}`;
+    case "gemini":
+      return `\${${name}}`;
+    case "roo":
+      return `<${name}>`;
+    case "cline":
+    case "zed":
+    case "claude":
+    case "cursor":
+    case "vscode":
+    case "codex":
+    case "opencode":
+    case "generic":
+    default:
+      return `<${name}>`;
+  }
+}
+
+function omitUndefined(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, child]) => child !== undefined));
 }

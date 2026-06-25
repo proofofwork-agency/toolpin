@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { verifyFrozenInstall } from "./ci.js";
-import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
+import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
@@ -14,6 +14,7 @@ import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourc
 
 const args = process.argv.slice(2);
 type ClientSelection = ClientName | "all";
+const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all";
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -163,7 +164,7 @@ async function verify(rest: string[]): Promise<void> {
 async function plan(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--live]");
+  if (!name) throw new Error(`Usage: mpm plan <server-name> --client ${CLIENT_USAGE} [--live]`);
 
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
@@ -177,7 +178,7 @@ async function plan(rest: string[]): Promise<void> {
 async function lock(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--live]");
+  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
@@ -197,7 +198,7 @@ async function lock(rest: string[]): Promise<void> {
 async function exportConfig(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|all [--live]");
+  if (!name) throw new Error(`Usage: mpm export-config <server-name> --client ${CLIENT_USAGE} [--live]`);
 
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
@@ -260,7 +261,7 @@ async function loadServers(rest: string[], liveOptions: { search?: string; sourc
 async function install(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--live]");
+  if (!name) throw new Error(`Usage: mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--live]`);
 
   const client = clientFlag(rest, "generic");
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
@@ -286,7 +287,7 @@ async function install(rest: string[]): Promise<void> {
     }
     verifiedCapabilityManifest = report.capabilityManifest;
   }
-  const clients = client === "all" ? PROJECT_CLIENTS : [client];
+  const clients = client === "all" ? clientsForScope(scope) : [client];
   const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest }));
   if (!updateLock) {
     const mismatches = [];
@@ -317,7 +318,7 @@ async function install(rest: string[]): Promise<void> {
 async function remove(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]");
+  if (!name) throw new Error(`Usage: mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
 
   const client = hasFlag(rest, "--client") ? clientFlag(rest, "generic") : "all";
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
@@ -327,7 +328,7 @@ async function remove(rest: string[]): Promise<void> {
   }
 
   await readLockfile(path);
-  const clients = client === "all" ? PROJECT_CLIENTS : [client];
+  const clients = client === "all" ? clientsForScope(scope) : [client];
   for (const targetClient of clients) {
     const configResult = await removeServerConfig(name, targetClient, scope);
     const lockResult = await removeLockfileEntry(name, targetClient, path);
@@ -422,14 +423,14 @@ Commands:
   mpm info <server-name> [--source official|docker|all] [--json] [--live]
   mpm audit <server-name> [--source official|docker|all] [--live]
   mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
-  mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
-  mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
-  mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]
+  mpm plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
+  mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+  mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
   mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
   mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
-  mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]
-  mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
+  mpm lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
+  mpm export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
   mpm tui
 `);
 }
@@ -464,10 +465,10 @@ function numberFlag(values: string[], flag: string, fallback: number): number {
 
 function clientFlag(values: string[], fallback: ClientName): ClientSelection {
   const value = stringFlag(values, "--client", fallback);
-  if (["claude", "cursor", "vscode", "codex", "opencode", "generic", "all"].includes(value)) {
+  if (value === "all" || isClientName(value)) {
     return value as ClientSelection;
   }
-  throw new Error("--client must be claude, cursor, vscode, codex, opencode, generic, or all");
+  throw new Error(`--client must be ${CLIENT_USAGE.replaceAll("|", ", ")}`);
 }
 
 function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): RegistrySourceId | "all" {

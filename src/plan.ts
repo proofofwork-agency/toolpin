@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
-import { exportClientConfig, selectLaunchTarget, type ClientName } from "./config.js";
+import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import { scoreServer } from "./trust.js";
 import type { CapabilityManifest, NormalizedServer } from "./types.js";
 
@@ -383,10 +383,6 @@ function parseLocked(value: unknown): InstallPlan["locked"] {
     config: value.config,
     capabilityManifest,
   };
-}
-
-function isClientName(value: unknown): value is ClientName {
-  return ["claude", "cursor", "vscode", "codex", "opencode", "generic"].includes(String(value));
 }
 
 async function fileExists(path: string): Promise<boolean> {

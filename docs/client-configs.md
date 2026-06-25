@@ -20,7 +20,7 @@ verified here from primary documentation.
 
 ### Windsurf / Cascade
 
-Status: **ready to implement**.
+Status: **implemented for global writes; project path still gated**.
 
 Source: https://docs.devin.ai/desktop/cascade/mcp
 
@@ -46,7 +46,7 @@ Open implementation questions:
 
 ### Cline
 
-Status: **ready to implement**.
+Status: **implemented for global writes; project path still gated**.
 
 Source: https://docs.cline.bot/mcp/mcp-overview
 
@@ -73,7 +73,7 @@ Open implementation questions:
 
 ### Continue
 
-Status: **ready to implement carefully**.
+Status: **researched; implementation pending separate YAML merge slice**.
 
 Sources:
 - https://docs.continue.dev/guides/understanding-configs
@@ -109,7 +109,7 @@ Open implementation questions:
 
 ### Gemini CLI
 
-Status: **ready to implement**.
+Status: **implemented for project and global writes**.
 
 Source: https://google-gemini.github.io/gemini-cli/docs/tools/mcp-server.html
 
@@ -137,7 +137,7 @@ Open implementation questions:
 
 ### Zed
 
-Status: **ready to implement with path caveat**.
+Status: **config export implemented; install path still gated**.
 
 Source: https://zed.dev/docs/ai/mcp
 
@@ -166,7 +166,7 @@ Open implementation questions:
 
 ### Roo Code
 
-Status: **ready to implement**.
+Status: **implemented for project writes; global path still gated**.
 
 Source: https://roocodeinc.github.io/Roo-Code/features/mcp/using-mcp-in-roo/
 
@@ -198,13 +198,10 @@ Open implementation questions:
 
 ## Implementation order
 
-1. Add schema metadata in a data table rather than expanding switch statements.
-2. Add client config serializers for object-map clients first:
-   Windsurf, Cline, Gemini CLI, Zed, Roo project scope.
-3. Add Continue after YAML merge/update tests are in place.
-4. Add global path discovery for clients whose docs expose UI-opened files but not
+1. Add Continue after YAML merge/update tests are in place.
+2. Add global path discovery for clients whose docs expose UI-opened files but not
    stable platform paths.
-5. Add one test per client for local, remote, env placeholder, merge, remove, and doctor.
+3. Add one test per client for local, remote, env placeholder, merge, remove, and doctor.
 
 ## Do not implement yet
 

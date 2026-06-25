@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
-import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
+import { ALL_CLIENTS, clientsForScope, exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
@@ -21,7 +21,7 @@ type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" 
 
 const VIEWS: View[] = ["discover", "details", "plan", "config", "help"];
 const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
-const CLIENTS: ClientSelection[] = ["claude", "cursor", "vscode", "codex", "opencode", "all"];
+const CLIENTS: ClientSelection[] = [...ALL_CLIENTS.filter((client) => client !== "generic"), "all"];
 const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string; requiresServer?: boolean }> = [
   { id: "ingest", label: "Ingest registries", description: "Fetch registry metadata and refresh .mpm/registry-cache.json." },
   { id: "search", label: "Search servers", description: "Edit the current search query." },
@@ -232,7 +232,8 @@ function MpmTui() {
     setState((prev) => ({ ...prev, installing: true, error: undefined, lastAction: `installing ${selectedServer.name}` }));
     try {
       const files: string[] = [];
-      const plans = selectedClients(state.client).map((client) => buildInstallPlan(selectedServer, client));
+      const targetClients = selectedClientsForScope(state.client, state.installScope);
+      const plans = targetClients.map((client) => buildInstallPlan(selectedServer, client));
       const mismatches = [];
       for (const plan of plans) {
         const verification = await verifyAgainstLockfile(plan, "mcp-lock.json");
@@ -241,7 +242,7 @@ function MpmTui() {
       if (mismatches.length) {
         throw new Error(`lock drift: ${mismatches.join(" | ")}. Press w to update the lock after review.`);
       }
-      for (const [index, client] of selectedClients(state.client).entries()) {
+      for (const [index, client] of targetClients.entries()) {
         const result = await installServerConfig(selectedServer, client, state.installScope);
         await writeLockfile(
           plans[index],
@@ -265,7 +266,7 @@ function MpmTui() {
     try {
       await readLockfile("mcp-lock.json");
       const results: string[] = [];
-      for (const client of selectedClients(state.client)) {
+      for (const client of selectedClientsForScope(state.client, state.installScope)) {
         const configResult = await removeServerConfig(selectedServer.name, client, state.installScope);
         const lockResult = await removeLockfileEntry(selectedServer.name, client, "mcp-lock.json");
         results.push(`${client}:config=${configResult.action},lock=${lockResult.removed ? "removed" : "missing"}`);
@@ -872,7 +873,7 @@ function PlanView({ server, client, installScope, width }: { server?: Normalized
       <Spacer />
       <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
       <PlanMetric label="trust" value={`${plan.trust.score} ${plan.trust.badges.join(", ") || "no badges"}`} width={width} valueColor={trustColor(plan.trust.score)} />
-      <PlanMetric label="writes" value={client === "all" ? `${installScope} configs for ${PROJECT_CLIENTS.join(", ")} + mcp-lock.json` : `${installScope} ${client} config + mcp-lock.json`} width={width} />
+      <PlanMetric label="writes" value={client === "all" ? `${installScope} configs for ${clientsForScope(installScope).join(", ")} + mcp-lock.json` : `${installScope} ${client} config + mcp-lock.json`} width={width} />
       {server.requiresSecrets ? <PlanMetric label="secrets" value="required before runtime/test can succeed" width={width} valueColor={WARN} /> : null}
       {plan.trust.issues.slice(0, 4).map((issue) => (
         <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
@@ -891,7 +892,7 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
         <ModalTitle title="config" file="targets" />
         <Text color={MUTED}>client <Text color="white">all</Text>  scope <Text color="white">{installScope}</Text></Text>
         <Spacer />
-        {PROJECT_CLIENTS.map((targetClient) => (
+        {clientsForScope(installScope).map((targetClient) => (
           <PlanMetric key={targetClient} label={targetClient} value={projectConfigTargetLabel(targetClient, installScope)} width={width} />
         ))}
       </Box>
@@ -1077,6 +1078,10 @@ function selectedClients(client: ClientSelection): ClientName[] {
   return client === "all" ? PROJECT_CLIENTS : [client];
 }
 
+function selectedClientsForScope(client: ClientSelection, scope: InstallScope): ClientName[] {
+  return client === "all" ? clientsForScope(scope) : [client];
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -1090,6 +1095,16 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
         return "opencode.json";
       case "codex":
         return ".codex/config.toml";
+      case "gemini":
+        return ".gemini/settings.json";
+      case "roo":
+        return ".roo/mcp.json";
+      case "windsurf":
+        return "global-only";
+      case "cline":
+        return "global-only";
+      case "zed":
+        return "path not verified";
       case "claude":
       case "cursor":
       default:
@@ -1104,6 +1119,16 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
       return "~/.config/opencode/opencode.json";
     case "codex":
       return "~/.codex/config.toml";
+    case "windsurf":
+      return "~/.codeium/windsurf/mcp_config.json";
+    case "cline":
+      return "~/.cline/mcp.json";
+    case "gemini":
+      return "~/.gemini/settings.json";
+    case "roo":
+      return "project-only";
+    case "zed":
+      return "path not verified";
     case "claude":
     case "cursor":
     default:

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { exportClientConfig, type ClientName } from "./config.js";
+import { clientConfigRootKey, exportClientConfig, type ClientName } from "./config.js";
 import { mergeCodexToml, removeCodexServerToml } from "./codexToml.js";
 import type { NormalizedServer } from "./types.js";
 
@@ -106,6 +106,16 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
         return { file: path.join(cwd, ".codex", "config.toml"), notes: ["Project Codex config.toml written. Project must be trusted by Codex before this layer loads."] };
       case "opencode":
         return { file: path.join(cwd, "opencode.json"), notes: ["Project opencode config written. Restart opencode to load it."] };
+      case "gemini":
+        return { file: path.join(cwd, ".gemini", "settings.json"), notes: ["Project Gemini CLI settings.json written."] };
+      case "roo":
+        return { file: path.join(cwd, ".roo", "mcp.json"), notes: ["Project Roo Code MCP config written."] };
+      case "windsurf":
+        throw new Error("Project Windsurf/Cascade MCP config path is not documented; use --scope global.");
+      case "cline":
+        throw new Error("Project Cline MCP config path is not documented; use --scope global.");
+      case "zed":
+        throw new Error("Zed settings path is not verified yet; export the config snippet and add it through Zed settings.");
       case "claude":
       case "cursor":
       case "generic":
@@ -121,6 +131,16 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
       return { file: path.join(home, ".config", "Code", "User", "mcp.json"), notes: ["Global VS Code user MCP config path written."] };
     case "codex":
       return { file: path.join(home, ".codex", "config.toml"), notes: ["Global Codex config.toml written."] };
+    case "windsurf":
+      return { file: path.join(home, ".codeium", "windsurf", "mcp_config.json"), notes: ["Global Windsurf/Cascade MCP config written. Restart Windsurf to load it."] };
+    case "cline":
+      return { file: path.join(home, ".cline", "mcp.json"), notes: ["Global Cline CLI MCP config written. Reload Cline to load it."] };
+    case "gemini":
+      return { file: path.join(home, ".gemini", "settings.json"), notes: ["Global Gemini CLI settings.json written."] };
+    case "zed":
+      throw new Error("Zed settings path is not verified yet; export the config snippet and add it through Zed settings.");
+    case "roo":
+      throw new Error("Global Roo Code mcp_settings.json path is not verified yet; use --scope project.");
     case "claude":
     case "cursor":
     case "generic":
@@ -131,7 +151,7 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
 
 function removeClientConfig(existing: Record<string, unknown>, serverName: string, client: ClientName): { config: Record<string, unknown>; removed: boolean } {
   const next = { ...existing };
-  const key = client === "opencode" ? "mcp" : client === "vscode" ? "servers" : "mcpServers";
+  const key = clientConfigRootKey(client);
   const servers = { ...asObject(next[key]) };
   if (!(serverName in servers)) return { config: existing, removed: false };
   delete servers[serverName];
@@ -141,32 +161,13 @@ function removeClientConfig(existing: Record<string, unknown>, serverName: strin
 
 function mergeClientConfig(existing: Record<string, unknown>, incoming: unknown, client: ClientName): Record<string, unknown> {
   const incomingObject = asObject(incoming);
-  if (client === "opencode") {
-    return {
-      ...existing,
-      ...incomingObject,
-      mcp: {
-        ...asObject(existing.mcp),
-        ...asObject(incomingObject.mcp),
-      },
-    };
-  }
-
-  if (client === "vscode") {
-    return {
-      ...existing,
-      servers: {
-        ...asObject(existing.servers),
-        ...asObject(incomingObject.servers),
-      },
-    };
-  }
-
+  const key = clientConfigRootKey(client);
   return {
     ...existing,
-    mcpServers: {
-      ...asObject(existing.mcpServers),
-      ...asObject(incomingObject.mcpServers),
+    ...incomingObject,
+    [key]: {
+      ...asObject(existing[key]),
+      ...asObject(incomingObject[key]),
     },
   };
 }
