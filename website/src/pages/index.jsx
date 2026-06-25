@@ -31,6 +31,62 @@ export default function Home() {
             </div>
           </div>
         </section>
+        <section className="demoBand">
+          <div className="container demoLayout">
+            <div className="terminalPanel" aria-label="ToolPin install output">
+              <div className="terminalChrome" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <pre>
+                <code>
+                  <span className="prompt">$</span> toolpin install io.github.10iii/air --client claude --verify{"\n"}
+                  <span className="muted">Resolving io.github.10iii/air from all registry source...</span>{"\n"}
+                  <span className="muted">Installing io.github.10iii/air@0.2.8 into claude project config...</span>{"\n\n"}
+                  <span className="heading">Install</span>{"\n"}
+                  <span className="rule">--------</span>{"\n"}
+                  {"  "}<span className="label">server</span>     <span className="value">io.github.10iii/air@0.2.8</span>{"\n"}
+                  {"  "}<span className="label">registry</span>   <span className="value">official</span>{"\n"}
+                  {"  "}<span className="label">trust</span>      <span className="value">87/100</span>{"\n"}
+                  {"  "}<span className="label">verify</span>     <span className="ok">passed</span>{"\n"}
+                  {"  "}<span className="label">scope</span>      <span className="value">project folder</span>{"\n"}
+                  {"  "}<span className="label">clients</span>    <span className="value">claude</span>{"\n\n"}
+                  {"  "}<span className="subhead">claude project</span>{"\n"}
+                  {"  "}<span className="label">config</span>     <span className="ok">updated</span>: <span className="path">.mcp.json</span>{"\n"}
+                  {"  "}<span className="label">lock</span>       <span className="ok">mcp-lock.json updated</span>{"\n"}
+                  {"  "}<span className="note">- Project MCP config written.</span>{"\n"}
+                  {"  "}<span className="note">- Requires Node.js and npm/npx on PATH.</span>{"\n"}
+                  {"  "}<span className="label">done</span>       <span className="ok">installed for claude</span>
+                </code>
+              </pre>
+            </div>
+            <div className="artifactStack" aria-label="ToolPin generated artifacts">
+              <div className="lockArtifact">
+                <span className="fileIcon">{`{}`}</span>
+                <strong>mcp-lock.json</strong>
+                <span>sha256-9f2c3e...</span>
+              </div>
+              <div className="ciChip">
+                <span>✓</span>
+                toolpin ci --live · ready for required checks
+              </div>
+              <pre className="lockPreview">
+                <code>{`{
+  "lockfileVersion": 2,
+  "servers": {
+    "io.github.10iii/air:claude": {
+      "name": "io.github.10iii/air",
+      "version": "0.2.8",
+      "client": "claude",
+      "integrity": "sha256-9f2c3e..."
+    }
+  }
+}`}</code>
+              </pre>
+            </div>
+          </div>
+        </section>
         <section className="homeBand">
           <div className="container featureGrid">
             <article>

@@ -39,6 +39,9 @@ const VALUE_FLAGS = new Set([
   "--source",
   "--timeout",
 ]);
+const OK_COLOR = "\x1b[32m";
+const CYAN_COLOR = "\x1b[36m";
+const MUTED_COLOR = "\x1b[90m";
 
 main().catch((error) => {
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -493,6 +496,7 @@ async function install(rest: string[]): Promise<void> {
   console.error(`Resolving ${name} from ${sourceFlag(rest, "all")} registry source...`);
   const server = await findServer(rest, name);
   let verifiedCapabilityManifest: CapabilityManifest | undefined;
+  let verificationReport: VerificationReport | undefined;
   if (verifyBeforeInstall) {
     const report = await verifyServer(server, {
       liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
@@ -504,6 +508,7 @@ async function install(rest: string[]): Promise<void> {
         ...report.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
       ].join("\n"));
     }
+    verificationReport = report;
     verifiedCapabilityManifest = report.capabilityManifest;
   }
   const clients = client === "all" ? clientsForScope(scope) : [client];
@@ -541,18 +546,21 @@ async function install(rest: string[]): Promise<void> {
   }
   console.error(`Installing ${server.name}@${server.version} into ${client} ${scope} config...`);
   printHeader("Install");
-  printField("server", `${server.name}@${server.version}`);
+  printField("server", `${server.name}@${server.version}`, OK_COLOR);
+  printField("registry", server.registrySource, CYAN_COLOR);
+  printField("trust", `${scoreServer(server).score}/100`, OK_COLOR);
+  printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? OK_COLOR : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
     const result = await installServerConfig(server, targetClient, scope);
     await writeLockfile(plans[index], "mcp-lock.json");
     printSubhead(`${result.client} ${result.scope}`);
-    printField("config", `${result.action}: ${result.file}`);
-    printField("lock", "mcp-lock.json updated");
+    printField("config", `${result.action}: ${result.file}`, OK_COLOR);
+    printField("lock", "mcp-lock.json updated", OK_COLOR);
     for (const note of result.notes) printBullet(note);
   }
-  printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`);
+  printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`, OK_COLOR);
 }
 
 async function testInstalled(rest: string[]): Promise<void> {
@@ -994,12 +1002,12 @@ function printSubhead(title: string): void {
   console.log(`\n  ${title}`);
 }
 
-function printField(label: string, value: string): void {
-  console.log(`  ${label.padEnd(10)} ${value}`);
+function printField(label: string, value: string, color?: string): void {
+  console.log(`  ${label.padEnd(10)} ${colorize(value, color)}`);
 }
 
 function printBullet(value: string): void {
-  console.log(`  - ${value}`);
+  console.log(`  - ${colorize(value, MUTED_COLOR)}`);
 }
 
 function scopeDescription(scope: "all" | InstallScope): string {
@@ -1134,6 +1142,16 @@ function positional(values: string[]): string[] {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
+}
+
+function verificationStatus(verifyRequested: boolean, report?: VerificationReport): string {
+  if (!verifyRequested) return "skipped";
+  return report?.ok ? "passed" : "failed";
+}
+
+function colorize(value: string, color?: string): string {
+  if (!color || !process.stdout.isTTY || process.env.NO_COLOR) return value;
+  return `${color}${value}\x1b[0m`;
 }
 
 function printVerificationReport(report: VerificationReport): void {
