@@ -36,7 +36,7 @@ test("CLI ci --expect-digest fails closed on digest mismatch", async () => {
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-lock-digest-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-lock-digest-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);

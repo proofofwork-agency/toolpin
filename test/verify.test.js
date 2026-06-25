@@ -64,7 +64,7 @@ test("tool-description hash is stable across order and generatedAt", () => {
 test("attestation metadata is declared, not verified", async () => {
   const server = packageServer("oci", { identifier: "ghcr.io/example/server@sha256:abc123" });
   server.raw._meta = {
-    "dev.mpm/attestations": [{ type: "sigstore", verified: true }],
+    "dev.toolpin/attestations": [{ type: "sigstore", verified: true }],
   };
 
   const verification = await verifyServer(server);

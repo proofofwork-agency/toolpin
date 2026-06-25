@@ -1,10 +1,11 @@
 import { readInstalledServerConfig } from "./doctor.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile } from "./plan.js";
-import type { CapabilitySecret } from "./types.js";
 import type { ClientName } from "./config.js";
+import type { CapabilitySecret } from "./types.js";
 
 export type SecretAuditFindingKind = "plaintext_secret" | "secret_prefix" | "missing_config" | "unreadable_config" | "invalid_scope";
+export type SecretAuditScope = InstallScope | "all";
 
 export interface SecretAuditFinding {
   kind: SecretAuditFindingKind;
@@ -12,6 +13,7 @@ export interface SecretAuditFinding {
   client: ClientName;
   serverName: string;
   file: string;
+  scope?: InstallScope;
   secretName?: string;
   secretSource?: CapabilitySecret["source"];
   message: string;
@@ -33,85 +35,73 @@ const SECRET_PREFIXES: Array<{ label: string; pattern: RegExp }> = [
   { label: "private key", pattern: /^-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
-export async function auditSecrets(lockfilePath = "mcp-lock.json", scope: InstallScope = "project"): Promise<SecretAuditReport> {
+export async function auditSecrets(lockfilePath = "mcp-lock.json", scope: SecretAuditScope = "all"): Promise<SecretAuditReport> {
   const lockfile = await readLockfile(lockfilePath);
   const findings: SecretAuditFinding[] = [];
   const entries = Object.entries(lockfile.servers);
 
   for (const [key, plan] of entries) {
-    let target: ReturnType<typeof resolveConfigTarget>;
-    try {
-      target = resolveConfigTarget(plan.client, scope);
-    } catch (error) {
+    const missing: Array<{ scope: InstallScope; file: string }> = [];
+    const invalidScopes: string[] = [];
+    let foundConfig = false;
+    let foundUnreadable = false;
+
+    for (const currentScope of scopesToAudit(scope)) {
+      let target: ReturnType<typeof resolveConfigTarget>;
+      try {
+        target = resolveConfigTarget(plan.client, currentScope);
+      } catch (error) {
+        invalidScopes.push(`${currentScope}: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+
+      const actual = await readInstalledServerConfig(target.file, plan.name, plan.client);
+      if (actual.kind === "missing") {
+        missing.push({ scope: currentScope, file: target.file });
+        continue;
+      }
+      if (actual.kind === "unreadable") {
+        foundUnreadable = true;
+        findings.push({
+          kind: "unreadable_config",
+          key,
+          client: plan.client,
+          serverName: plan.name,
+          file: target.file,
+          scope: currentScope,
+          message: actual.message,
+        });
+        continue;
+      }
+
+      foundConfig = true;
+      findings.push(...auditConfigSecrets(key, plan.client, plan.name, target.file, currentScope, actual.config, plan.capabilityManifest?.secrets ?? []));
+    }
+
+    if (!foundConfig && !foundUnreadable && missing.length > 0) {
+      findings.push({
+        kind: "missing_config",
+        key,
+        client: plan.client,
+        serverName: plan.name,
+        file: missing.map((entry) => entry.file).join(", "),
+        scope: scope === "all" ? undefined : missing[0]?.scope,
+        message: scope === "all"
+          ? `missing ${plan.client} config entry for ${plan.name} in checked scopes: ${missing.map((entry) => entry.scope).join(", ")}`
+          : `missing ${plan.client} config entry for ${plan.name}`,
+      });
+      continue;
+    }
+
+    if (!foundConfig && !foundUnreadable && missing.length === 0 && invalidScopes.length > 0) {
       findings.push({
         kind: "invalid_scope",
         key,
         client: plan.client,
         serverName: plan.name,
         file: "",
-        message: `cannot audit ${plan.client} at ${scope} scope: ${error instanceof Error ? error.message : String(error)}`,
+        message: `cannot audit ${plan.client} at ${scope} scope: ${invalidScopes.join("; ")}`,
       });
-      continue;
-    }
-
-    const actual = await readInstalledServerConfig(target.file, plan.name, plan.client);
-    if (actual.kind === "missing") {
-      findings.push({
-        kind: "missing_config",
-        key,
-        client: plan.client,
-        serverName: plan.name,
-        file: target.file,
-        message: `missing ${plan.client} config entry for ${plan.name}`,
-      });
-      continue;
-    }
-    if (actual.kind === "unreadable") {
-      findings.push({
-        kind: "unreadable_config",
-        key,
-        client: plan.client,
-        serverName: plan.name,
-        file: target.file,
-        message: actual.message,
-      });
-      continue;
-    }
-
-    const secretHints = plan.capabilityManifest?.secrets ?? [];
-    for (const secret of secretHints) {
-      const value = secretValue(actual.config, secret);
-      if (typeof value !== "string" || !value) continue;
-      if (!isSecretReference(value, secret.name)) {
-        findings.push({
-          kind: "plaintext_secret",
-          key,
-          client: plan.client,
-          serverName: plan.name,
-          file: target.file,
-          secretName: secret.name,
-          secretSource: secret.source,
-          message: `${secret.source}:${secret.name} is stored as a plaintext value; replace it with a placeholder or external secret reference`,
-          redactedValue: redact(value),
-        });
-      }
-    }
-
-    for (const candidate of collectSecretCandidates(actual.config)) {
-      const matched = SECRET_PREFIXES.find((prefix) => prefix.pattern.test(candidate.value));
-      if (matched) {
-        findings.push({
-          kind: "secret_prefix",
-          key,
-          client: plan.client,
-          serverName: plan.name,
-          file: target.file,
-          secretName: candidate.name,
-          secretSource: candidate.source,
-          message: `${candidate.source}:${candidate.name} resembles a ${matched.label}; replace it with a placeholder or external secret reference`,
-          redactedValue: redact(candidate.value),
-        });
-      }
     }
   }
 
@@ -120,6 +110,64 @@ export async function auditSecrets(lockfilePath = "mcp-lock.json", scope: Instal
     checked: entries.length,
     findings,
   };
+}
+
+function auditConfigSecrets(
+  key: string,
+  client: ClientName,
+  serverName: string,
+  file: string,
+  scope: InstallScope,
+  config: unknown,
+  secretHints: CapabilitySecret[],
+): SecretAuditFinding[] {
+  const findings: SecretAuditFinding[] = [];
+  const plaintextKeys = new Set<string>();
+
+  for (const secret of secretHints) {
+    const value = secretValue(config, secret);
+    if (typeof value !== "string" || !value) continue;
+    if (!isSecretReference(value, secret.name)) {
+      plaintextKeys.add(`${secret.source}:${secret.name}`);
+      findings.push({
+        kind: "plaintext_secret",
+        key,
+        client,
+        serverName,
+        file,
+        scope,
+        secretName: secret.name,
+        secretSource: secret.source,
+        message: `${secret.source}:${secret.name} is stored as a plaintext value; replace it with a placeholder or external secret reference`,
+        redactedValue: redact(value),
+      });
+    }
+  }
+
+  for (const candidate of collectSecretCandidates(config)) {
+    if (plaintextKeys.has(`${candidate.source}:${candidate.name}`)) continue;
+    const matched = SECRET_PREFIXES.find((prefix) => prefix.pattern.test(candidate.value));
+    if (matched) {
+      findings.push({
+        kind: "secret_prefix",
+        key,
+        client,
+        serverName,
+        file,
+        scope,
+        secretName: candidate.name,
+        secretSource: candidate.source,
+        message: `${candidate.source}:${candidate.name} resembles a ${matched.label}; replace it with a placeholder or external secret reference`,
+        redactedValue: redact(candidate.value),
+      });
+    }
+  }
+
+  return findings;
+}
+
+function scopesToAudit(scope: SecretAuditScope): InstallScope[] {
+  return scope === "all" ? ["project", "global"] : [scope];
 }
 
 function secretValue(config: unknown, secret: CapabilitySecret): unknown {

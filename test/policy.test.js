@@ -50,34 +50,34 @@ test("evaluatePolicy enforces OCI and MCPB pin requirements", () => {
 
 test("readPolicy rejects malformed policy schema", async () => {
   await withTempCwd(async () => {
-    await mkdir(".mpm", { recursive: true });
-    await writeFile(".mpm/policy.json", '{"minTrustScore": 101}\n', "utf8");
+    await mkdir(".toolpin", { recursive: true });
+    await writeFile(".toolpin/policy.json", '{"minTrustScore": 101}\n', "utf8");
 
-    await assert.rejects(() => readPolicy(".mpm/policy.json"), /minTrustScore must be 0-100/);
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /minTrustScore must be 0-100/);
 
-    await writeFile(".mpm/policy.json", JSON.stringify({ deniedClient: ["codex"] }), "utf8");
-    await assert.rejects(() => readPolicy(".mpm/policy.json"), /unknown policy key deniedClient/);
+    await writeFile(".toolpin/policy.json", JSON.stringify({ deniedClient: ["codex"] }), "utf8");
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /unknown policy key deniedClient/);
 
-    await writeFile(".mpm/policy.json", JSON.stringify({ requireDigestPinnedOci: "yes" }), "utf8");
-    await assert.rejects(() => readPolicy(".mpm/policy.json"), /requireDigestPinnedOci must be a boolean/);
+    await writeFile(".toolpin/policy.json", JSON.stringify({ requireDigestPinnedOci: "yes" }), "utf8");
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /requireDigestPinnedOci must be a boolean/);
   });
 });
 
 test("readPolicy rejects unknown clients and sources", async () => {
   await withTempCwd(async () => {
-    await mkdir(".mpm", { recursive: true });
-    await writeFile(".mpm/policy.json", JSON.stringify({ allowedClients: ["not-a-client"] }), "utf8");
-    await assert.rejects(() => readPolicy(".mpm/policy.json"), /allowedClients contains an unknown client/);
+    await mkdir(".toolpin", { recursive: true });
+    await writeFile(".toolpin/policy.json", JSON.stringify({ allowedClients: ["not-a-client"] }), "utf8");
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /allowedClients contains an unknown client/);
 
-    await writeFile(".mpm/policy.json", JSON.stringify({ allowedSources: ["not-a-source"] }), "utf8");
-    await assert.rejects(() => readPolicy(".mpm/policy.json"), /allowedSources contains an unknown registry source/);
+    await writeFile(".toolpin/policy.json", JSON.stringify({ allowedSources: ["not-a-source"] }), "utf8");
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /allowedSources contains an unknown registry source/);
   });
 });
 
-test("enforcePolicy reads .mpm/policy.json when present", async () => {
+test("enforcePolicy reads .toolpin/policy.json when present", async () => {
   await withTempCwd(async () => {
-    await mkdir(".mpm", { recursive: true });
-    await writeFile(".mpm/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
+    await mkdir(".toolpin", { recursive: true });
+    await writeFile(".toolpin/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
 
     const report = await enforcePolicy(buildInstallPlan(packageServer(), "claude"));
 
@@ -89,8 +89,8 @@ test("enforcePolicy reads .mpm/policy.json when present", async () => {
 test("CLI install refuses policy violations before writing client config", async () => {
   await withTempCwd(async () => {
     await writeCache([registryEntry(packageServer())]);
-    await mkdir(".mpm", { recursive: true });
-    await writeFile(".mpm/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
+    await mkdir(".toolpin", { recursive: true });
+    await writeFile(".toolpin/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
 
     await assert.rejects(
       () => execFileAsync(process.execPath, [CLI, "install", "io.github/example", "--client", "claude", "--source", "official"]),
@@ -105,10 +105,10 @@ test("CLI ci reports policy violations as frozen-install issues", async () => {
     const server = packageServer();
     await writeCache([registryEntry(server)]);
     await writeLockfile(buildInstallPlan(server, "claude"));
-    await writeFile(".mpm/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
+    await writeFile(".toolpin/policy.json", JSON.stringify({ deniedServers: ["io.github/example"] }), "utf8");
 
     await assert.rejects(
-      () => execFileAsync(process.execPath, [CLI, "ci", "--source", "official", "--policy", ".mpm/policy.json"]),
+      () => execFileAsync(process.execPath, [CLI, "ci", "--source", "official", "--policy", ".toolpin/policy.json"]),
       /server_denied/,
     );
   });
@@ -128,7 +128,7 @@ test("allowedSources denies plans with an unknown source", () => {
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-policy-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-policy-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);
@@ -139,8 +139,8 @@ async function withTempCwd(fn) {
 }
 
 async function writeCache(entries) {
-  await mkdir(".mpm", { recursive: true });
-  await writeFile(".mpm/registry-cache.json", JSON.stringify({ generatedAt: new Date().toISOString(), entries }, null, 2), "utf8");
+  await mkdir(".toolpin", { recursive: true });
+  await writeFile(".toolpin/registry-cache.json", JSON.stringify({ generatedAt: new Date().toISOString(), entries }, null, 2), "utf8");
 }
 
 function registryEntry(server) {

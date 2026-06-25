@@ -6,8 +6,8 @@ export interface ToolDescriptionInput {
   description?: string;
 }
 
-const MPM_CAPABILITIES_META = "dev.mpm/capabilities";
-const MPM_ATTESTATIONS_META = "dev.mpm/attestations";
+const TOOLPIN_CAPABILITIES_META = "dev.toolpin/capabilities";
+const TOOLPIN_ATTESTATIONS_META = "dev.toolpin/attestations";
 
 export function deriveCapabilityManifest(
   server: NormalizedServer,
@@ -45,12 +45,12 @@ export function hashToolDescriptions(tools: ToolDescriptionInput[], generatedAt 
 }
 
 export function readCapabilityManifest(server: NormalizedServer): CapabilityManifest | undefined {
-  const value = server.raw._meta?.[MPM_CAPABILITIES_META] ?? server.registryMeta?.[MPM_CAPABILITIES_META];
+  const value = server.raw._meta?.[TOOLPIN_CAPABILITIES_META] ?? server.registryMeta?.[TOOLPIN_CAPABILITIES_META];
   return isCapabilityManifest(value) ? value : undefined;
 }
 
 export function readAttestations(server: NormalizedServer): Attestation[] {
-  const value = server.raw._meta?.[MPM_ATTESTATIONS_META] ?? server.registryMeta?.[MPM_ATTESTATIONS_META];
+  const value = server.raw._meta?.[TOOLPIN_ATTESTATIONS_META] ?? server.registryMeta?.[TOOLPIN_ATTESTATIONS_META];
   return Array.isArray(value) ? value.filter(isAttestation) : [];
 }
 

@@ -25,7 +25,7 @@ const VIEWS: View[] = ["discover", "details", "plan", "config", "help"];
 const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
 const CLIENTS: ClientSelection[] = [...ALL_CLIENTS.filter((client) => client !== "generic"), "all"];
 const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string; requiresServer?: boolean }> = [
-  { id: "ingest", label: "Ingest registries", description: "Fetch registry metadata and refresh .mpm/registry-cache.json." },
+  { id: "ingest", label: "Ingest registries", description: "Fetch registry metadata and refresh .toolpin/registry-cache.json." },
   { id: "search", label: "Search servers", description: "Edit the current search query." },
   { id: "info", label: "Server info", description: "Open selected server metadata and trust summary.", requiresServer: true },
   { id: "audit", label: "Audit trust", description: "Show selected server trust score, badges, and issues.", requiresServer: true },
@@ -36,7 +36,7 @@ const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string
   { id: "test", label: "Test server", description: "Connect and run MCP tools/list.", requiresServer: true },
   { id: "ci", label: "Frozen lock check", description: "Re-resolve lockfile entries and reject metadata drift." },
   { id: "lock", label: "Write lockfile", description: "Write selected server to mcp-lock.json.", requiresServer: true },
-  { id: "export-config", label: "Export config", description: "Save client config snippets under .mpm/.", requiresServer: true },
+  { id: "export-config", label: "Export config", description: "Save client config snippets under .toolpin/.", requiresServer: true },
   { id: "tui", label: "Open TUI", description: "Current interactive session." },
   { id: "help", label: "Help", description: "Open keyboard and command reference." },
 ];
@@ -214,12 +214,12 @@ function MpmTui() {
   async function saveSelectedConfig(): Promise<void> {
     if (!selectedServer) return;
     try {
-      await mkdir(".mpm", { recursive: true });
+      await mkdir(".toolpin", { recursive: true });
       const files: string[] = [];
       for (const client of selectedClients(state.client)) {
         const exported = exportClientConfig(selectedServer, client);
         const formatted = formatClientConfigSnippet(client, exported.config);
-        const file = path.join(".mpm", `${safeFileName(selectedServer.name)}.${client}.${formatted.extension}`);
+        const file = path.join(".toolpin", `${safeFileName(selectedServer.name)}.${client}.${formatted.extension}`);
         await writeFile(file, formatted.content, "utf8");
         files.push(file);
       }
@@ -703,7 +703,7 @@ function PromptBar({ state, width }: { state: TuiState; width: number }) {
           <Text> </Text>
           {commandActive ? (
             <>
-              <Text color={MUTED}>mpm </Text>
+              <Text color={MUTED}>toolpin </Text>
               <Text color="white">{state.commandQuery || "command"}</Text>
             </>
           ) : (
@@ -713,7 +713,7 @@ function PromptBar({ state, width }: { state: TuiState; width: number }) {
             </>
           )}
         </Text>
-        <Text color={active || commandActive ? BLUE : MUTED}>{commandActive ? "command" : "mpm"}</Text>
+        <Text color={active || commandActive ? BLUE : MUTED}>{commandActive ? "command" : "toolpin"}</Text>
       </Box>
     </Box>
   );
@@ -939,7 +939,7 @@ function HelpView({ width }: { width: number }) {
     ["I", "install", "Install selected server into active scope."],
     ["x", "remove", "Remove selected server from config and lockfile."],
     ["w", "lock", "Write selected server to mcp-lock.json."],
-    ["s", "save", "Save config snippets under .mpm/."],
+    ["s", "save", "Save config snippets under .toolpin/."],
     ["q / ctrl-c", "quit", "Close the TUI."],
   ];
   return (
@@ -980,7 +980,7 @@ function CommandPalette({
   }).join("\n");
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
-      <ModalTitle title="commands" file="mpm" />
+      <ModalTitle title="commands" file="toolpin" />
       <Text color={MUTED} wrap="truncate">Enter runs the selected CLI-equivalent command with the active server/client/source.</Text>
       {commands.length === 0 ? <Text color={MUTED}>No command matched.</Text> : null}
       {commands.length > 0 ? <Text color="white">{commandRows}</Text> : null}
@@ -1152,7 +1152,7 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
     case "claude":
     case "cursor":
     default:
-      return `~/.config/mpm/${client}-mcp.json`;
+      return `~/.config/toolpin/${client}-mcp.json`;
   }
 }
 
@@ -1166,33 +1166,33 @@ function commandLineFor(commandId: TuiCommandId, state: TuiState, server?: Norma
   const serverName = server ? shellQuote(server.name) : "<server-name>";
   switch (commandId) {
     case "ingest":
-      return `mpm ingest ${source} --pages 6`;
+      return `toolpin ingest ${source} --pages 6`;
     case "search":
-      return `mpm search ${shellQuote(state.query || "mcp")} ${source}${live}`;
+      return `toolpin search ${shellQuote(state.query || "mcp")} ${source}${live}`;
     case "info":
-      return `mpm info ${serverName} ${source}${live}`;
+      return `toolpin info ${serverName} ${source}${live}`;
     case "audit":
-      return `mpm audit ${serverName} ${source}${live}`;
+      return `toolpin audit ${serverName} ${source}${live}`;
     case "plan":
-      return `mpm plan ${serverName} --client ${state.client} ${source}${live}`;
+      return `toolpin plan ${serverName} --client ${state.client} ${source}${live}`;
     case "install":
-      return `mpm install ${serverName} --client ${state.client} --scope ${state.installScope} ${source}${live}`;
+      return `toolpin install ${serverName} --client ${state.client} --scope ${state.installScope} ${source}${live}`;
     case "remove":
-      return `mpm remove ${serverName} --client ${state.client} --scope ${state.installScope} --file mcp-lock.json`;
+      return `toolpin remove ${serverName} --client ${state.client} --scope ${state.installScope} --file mcp-lock.json`;
     case "doctor":
-      return `mpm doctor --scope ${state.installScope} --file mcp-lock.json`;
+      return `toolpin doctor --scope ${state.installScope} --file mcp-lock.json`;
     case "ci":
-      return `mpm ci --file mcp-lock.json ${source}${live}`;
+      return `toolpin ci --file mcp-lock.json ${source}${live}`;
     case "test":
-      return `mpm test ${serverName} ${source}${live} --timeout 15000`;
+      return `toolpin test ${serverName} ${source}${live} --timeout 15000`;
     case "lock":
-      return `mpm lock ${serverName} --client ${state.client} ${source}${live} --file mcp-lock.json`;
+      return `toolpin lock ${serverName} --client ${state.client} ${source}${live} --file mcp-lock.json`;
     case "export-config":
-      return `mpm export-config ${serverName} --client ${state.client} ${source}${live}`;
+      return `toolpin export-config ${serverName} --client ${state.client} ${source}${live}`;
     case "tui":
-      return "mpm tui";
+      return "toolpin tui";
     case "help":
-      return "mpm help";
+      return "toolpin help";
   }
 }
 

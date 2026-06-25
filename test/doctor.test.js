@@ -21,6 +21,22 @@ test("doctorLockfile passes when JSON config matches the lock", async () => {
   });
 });
 
+test("doctorLockfile checks global config by default without false project missing", async () => {
+  await withTempCwd(async (tempDir) => {
+    await withTempHome(tempDir, async () => {
+      const server = packageServer("io.github/global");
+      await installServerConfig(server, "claude", "global");
+      await writeLockfile(buildInstallPlan(server, "claude"));
+
+      const report = await doctorLockfile("mcp-lock.json");
+
+      assert.equal(report.ok, true);
+      assert.equal(report.checked, 1);
+      assert.deepEqual(report.issues, []);
+    });
+  });
+});
+
 test("doctorLockfile reports missing config entries", async () => {
   await withTempCwd(async () => {
     const server = packageServer("io.github/example");
@@ -91,13 +107,24 @@ test("doctorLockfile reports unreadable JSON configs", async () => {
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-doctor-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-doctor-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);
   } finally {
     process.chdir(originalCwd);
     await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function withTempHome(tempDir, fn) {
+  const originalHome = process.env.HOME;
+  process.env.HOME = tempDir;
+  try {
+    await fn();
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
   }
 }
 

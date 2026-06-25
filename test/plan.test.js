@@ -284,7 +284,7 @@ test("verifyFrozenInstall reports every resolver failure", async () => {
 });
 
 async function withTempDir(fn) {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-lockfile-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-lockfile-"));
   try {
     await fn(tempDir);
   } finally {

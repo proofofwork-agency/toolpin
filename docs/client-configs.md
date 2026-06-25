@@ -9,7 +9,7 @@ verified here from primary documentation.
 
 ## Current supported clients
 
-| Client | Current MPM status | Notes |
+| Client | Current ToolPin status | Notes |
 |--------|--------------------|-------|
 | Claude / Cursor / generic | Implemented as `mcpServers` JSON | Generic project `.mcp.json` behavior. |
 | VS Code | Implemented as `servers` JSON | Project `.vscode/mcp.json`, global user MCP JSON. |
@@ -33,7 +33,7 @@ Evidence:
 - Interpolation: `${env:VAR_NAME}` and `${file:/path/to/file}` are supported in
   `command`, `args`, `env`, `serverUrl`, `url`, and `headers`.
 
-MPM mapping:
+ToolPin mapping:
 - Local packages can map directly to `mcpServers.<name>.command/args/env`.
 - Remote servers should prefer `serverUrl` for Streamable HTTP because that is the
   documented remote example, with headers under `headers`.
@@ -60,7 +60,7 @@ Evidence:
 - Docs say omitting `type` defaults to legacy SSE; use explicit `streamableHttp`
   for modern remote servers.
 
-MPM mapping:
+ToolPin mapping:
 - Local packages can map directly to `mcpServers.<name>.command/args/env`.
 - Remote servers should use `type: "streamableHttp"` and `url`.
 - Default generated entries should set `disabled: false` and `autoApprove: []`.
@@ -91,12 +91,12 @@ Evidence:
   `apiKey`.
 - Examples use secret references like `${{ secrets.GITHUB_TOKEN }}`.
 
-MPM mapping:
+ToolPin mapping:
 - Use the existing `yaml` dependency rather than ad hoc text manipulation.
 - Preserve the rest of `config.yaml`; add/update an entry in the `mcpServers` array
   by matching `name`.
 - If creating a new file, include at minimum:
-  `name: MPM Config`, `version: 1.0.0`, `schema: v1`, and `mcpServers: []`.
+  `name: ToolPin Config`, `version: 1.0.0`, `schema: v1`, and `mcpServers: []`.
 - Secret placeholders should use `${{ secrets.VAR_NAME }}`.
 
 Open implementation questions:
@@ -120,7 +120,7 @@ Evidence:
 - Env interpolation supports `$VAR_NAME` and `${VAR_NAME}`.
 - CLI transport names are `stdio`, `sse`, and `http`.
 
-MPM mapping:
+ToolPin mapping:
 - Project scope should write `.gemini/settings.json`; global scope should write
   `~/.gemini/settings.json`.
 - Local packages map to `mcpServers.<name>.command/args/env`.
@@ -149,7 +149,7 @@ Evidence:
 - Zed reloads tool lists on `notifications/tools/list_changed`.
 - Agent tool approval is controlled by `agent.tool_permissions.default`.
 
-MPM mapping:
+ToolPin mapping:
 - Local packages map to `context_servers.<name>.command/args/env`.
 - Remote servers map to `context_servers.<name>.url/headers`.
 - This should be a global settings write unless a project-specific Zed settings path
@@ -179,7 +179,7 @@ Evidence:
   `alwaysAllow`, `disabled`, `timeout`, `disabledTools`.
 - SSE is supported as legacy transport.
 
-MPM mapping:
+ToolPin mapping:
 - Project scope should write `.roo/mcp.json`.
 - Global scope should write the Roo-opened `mcp_settings.json`; the primary docs name
   the file but do not expose a platform path, so global write should be gated until

@@ -1,7 +1,8 @@
 node_modules/
 dist/
-.mpm/
+.toolpin/
 .claude/
 .contextrelay/
 .engram/
+.watcher/
 mcp-lock.json

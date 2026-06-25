@@ -1,18 +1,18 @@
 # Secret Brokering Design Gate
 
-MPM must not resolve secret-manager references during install.
+ToolPin must not resolve secret-manager references during install.
 
 Install-time resolution writes plaintext credentials into client config files, which is
 the exact failure mode secret brokering is meant to avoid. The supported behavior today
-is reference generation and pass-through: MPM writes client-appropriate placeholders such
+is reference generation and pass-through: ToolPin writes client-appropriate placeholders such
 as `<TOKEN>`, `${env:TOKEN}`, `${TOKEN}`, or `${{ secrets.TOKEN }}` and leaves actual
 resolution to the client/runtime environment.
 
 ## Shipped Guardrail
 
-`mpm secrets audit` is a read-only advisory check. It reads `mcp-lock.json`, locates the
-current client config entries, and reports likely plaintext secrets without printing the
-secret value.
+`toolpin secrets audit` is a read-only advisory check. It reads `mcp-lock.json`, locates
+matching client config entries across all supported project/global config locations by
+default, and reports likely plaintext secrets without printing the secret value.
 
 The audit is intentionally conservative:
 
@@ -27,7 +27,7 @@ The audit is intentionally conservative:
 
 - **Install-time secret resolution**: rejected because it writes plaintext credentials to
   disk.
-- **Implicit runtime brokering**: rejected because MPM currently writes config; it does
+- **Implicit runtime brokering**: rejected because ToolPin currently writes config; it does
   not spawn MCP servers for clients.
 - **Automatic blocking policy**: deferred. A future policy rule such as
   `denyPlaintextSecrets` should be opt-in after the read-only audit has proven useful.
@@ -37,7 +37,7 @@ The audit is intentionally conservative:
 
 ## Future Runtime Model
 
-Real brokering requires a deliberate launcher model. A future MPM-managed spawn shim could
+Real brokering requires a deliberate launcher model. A future ToolPin-managed spawn shim could
 resolve `op://`, `vault://`, or `doppler://` at process start, inject values into the child
 environment, and keep plaintext out of client config files. That is a product/runtime
 decision, not a package-install side effect.

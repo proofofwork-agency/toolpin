@@ -15,7 +15,7 @@ test("Continue export serializes documented local YAML shape", () => {
   const yaml = continueYamlFromClientConfig(exported);
   const parsed = parseYaml(yaml);
 
-  assert.equal(parsed.name, "MPM Config");
+  assert.equal(parsed.name, "ToolPin Config");
   assert.equal(parsed.version, "1.0.0");
   assert.equal(parsed.schema, "v1");
   assert.equal(parsed.mcpServers[0].name, "io.github/example");
@@ -118,7 +118,7 @@ test("Continue doctor reports malformed YAML as unreadable", async () => {
 async function withTempHomeAndCwd(fn) {
   const originalCwd = process.cwd();
   const originalHome = process.env.HOME;
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-continue-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-continue-"));
   const tempHome = path.join(tempDir, "home");
   const tempProject = path.join(tempDir, "project");
   try {

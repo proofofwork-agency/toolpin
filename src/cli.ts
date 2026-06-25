@@ -84,7 +84,7 @@ async function main(): Promise<void> {
       help();
       return;
     default:
-      throw new Error(`Unknown command: ${command}. Run \`mpm help\`.`);
+      throw new Error(`Unknown command: ${command}. Run \`toolpin help\`.`);
   }
 }
 
@@ -94,12 +94,12 @@ async function ingest(rest: string[]): Promise<void> {
   const source = sourceFlag(rest, "all");
   const entries = await fetchRegistry({ limit, maxPages: pages, source });
   await writeCache(entries);
-  console.log(`Cached ${entries.length} registry versions from ${source} in .mpm/registry-cache.json`);
+  console.log(`Cached ${entries.length} registry versions from ${source} in .toolpin/registry-cache.json`);
 }
 
 async function search(rest: string[]): Promise<void> {
   const query = positional(rest).join(" ");
-  if (!query) throw new Error("Usage: mpm search <query> [--limit 10] [--live]");
+  if (!query) throw new Error("Usage: toolpin search <query> [--limit 10] [--live]");
 
   const limit = numberFlag(rest, "--limit", 10);
   const servers = await loadServers(rest, { search: query });
@@ -119,7 +119,7 @@ async function search(rest: string[]): Promise<void> {
 
 async function info(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: mpm info <server-name> [--json] [--live]");
+  if (!name) throw new Error("Usage: toolpin info <server-name> [--json] [--live]");
   const server = await findServer(rest, name);
   const trust = scoreServer(server);
 
@@ -144,7 +144,7 @@ async function info(rest: string[]): Promise<void> {
 
 async function audit(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: mpm audit <server-name> [--live]");
+  if (!name) throw new Error("Usage: toolpin audit <server-name> [--live]");
   const server = await findServer(rest, name);
   const trust = scoreServer(server);
   console.log(JSON.stringify({ name: server.name, version: server.version, trust }, null, 2));
@@ -152,7 +152,7 @@ async function audit(rest: string[]): Promise<void> {
 
 async function verify(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]");
+  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]");
 
   const server = await findServer(rest, name);
   const report = await verifyServer(server, {
@@ -174,7 +174,7 @@ async function verify(rest: string[]): Promise<void> {
 async function plan(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm plan <server-name> --client ${CLIENT_USAGE} [--live]`);
+  if (!name) throw new Error(`Usage: toolpin plan <server-name> --client ${CLIENT_USAGE} [--live]`);
 
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
@@ -201,7 +201,7 @@ async function lock(rest: string[]): Promise<void> {
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]\n       mpm lock digest [--file mcp-lock.json] [--json]\n       mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
+  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
@@ -230,7 +230,7 @@ async function lockDigest(rest: string[]): Promise<void> {
 
 async function lockSign(rest: string[]): Promise<void> {
   const keyPath = stringFlag(rest, "--key", "");
-  if (!keyPath) throw new Error("Usage: mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  if (!keyPath) throw new Error("Usage: toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
   const envelope = await signLockfile(path, keyPath, signaturePath);
@@ -243,7 +243,7 @@ async function lockSign(rest: string[]): Promise<void> {
 
 async function lockVerifySignature(rest: string[]): Promise<void> {
   const keyPath = stringFlag(rest, "--key", "");
-  if (!keyPath) throw new Error("Usage: mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  if (!keyPath) throw new Error("Usage: toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
   const report = await verifyLockfileSignature(path, keyPath, signaturePath);
@@ -258,7 +258,7 @@ async function lockVerifySignature(rest: string[]): Promise<void> {
 async function exportConfig(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm export-config <server-name> --client ${CLIENT_USAGE} [--live]`);
+  if (!name) throw new Error(`Usage: toolpin export-config <server-name> --client ${CLIENT_USAGE} [--live]`);
 
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
@@ -289,14 +289,14 @@ async function findServer(rest: string[], name: string): Promise<NormalizedServe
   const partial = searchServers(latestOnly(servers), name, 1)[0]?.server;
   if (partial) return partial;
 
-  throw new Error(`No server found for ${name}. Try \`mpm ingest\` or pass --live.`);
+  throw new Error(`No server found for ${name}. Try \`toolpin ingest\` or pass --live.`);
 }
 
 async function findExactServer(rest: string[], name: string, source: RegistrySourceId | "all"): Promise<NormalizedServer> {
   const servers = await loadServers(rest, { search: name, source });
   const exact = latestOnly(servers).find((server) => server.name === name);
   if (exact) return exact;
-  throw new Error(`No exact server found for ${name} in ${source}. Try \`mpm ingest\` or pass --live.`);
+  throw new Error(`No exact server found for ${name} in ${source}. Try \`toolpin ingest\` or pass --live.`);
 }
 
 async function loadServers(rest: string[], liveOptions: { search?: string; source?: RegistrySourceId | "all" } = {}): Promise<NormalizedServer[]> {
@@ -323,13 +323,13 @@ async function loadServers(rest: string[], liveOptions: { search?: string; sourc
 async function install(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--live]`);
+  if (!name) throw new Error(`Usage: toolpin install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--live]`);
 
   const client = clientFlag(rest, "generic");
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
   const updateLock = hasFlag(rest, "--update-lock");
   const verifyBeforeInstall = hasFlag(rest, "--verify");
-  const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
+  const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -379,7 +379,7 @@ async function install(rest: string[]): Promise<void> {
       throw new Error([
         "Install refused because resolved metadata differs from mcp-lock.json.",
         ...mismatches.map((message) => `- ${message}`),
-        "Run `mpm lock <server-name> --client ...` or repeat install with `--update-lock` after reviewing the drift.",
+        "Run `toolpin lock <server-name> --client ...` or repeat install with `--update-lock` after reviewing the drift.",
       ].join("\n"));
     }
   }
@@ -396,7 +396,7 @@ async function install(rest: string[]): Promise<void> {
 async function remove(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
+  if (!name) throw new Error(`Usage: toolpin remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
 
   const client = hasFlag(rest, "--client") ? clientFlag(rest, "generic") : "all";
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
@@ -422,10 +422,10 @@ async function ci(rest: string[]): Promise<void> {
   const signaturePath = stringFlag(rest, "--signature", "");
   const publicKeyPath = stringFlag(rest, "--public-key", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
-  const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
+  const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
   const enforcePolicies = !hasFlag(rest, "--no-policy");
   if (signaturePath || publicKeyPath) {
-    if (!signaturePath || !publicKeyPath) throw new Error("mpm ci requires both --signature and --public-key when verifying a lock signature.");
+    if (!signaturePath || !publicKeyPath) throw new Error("toolpin ci requires both --signature and --public-key when verifying a lock signature.");
     const signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath);
     if (!signature.ok) {
       throw new Error(`Lockfile signature verification failed for ${path}: ${signature.message}`);
@@ -477,15 +477,15 @@ async function policy(rest: string[]): Promise<void> {
   const subcommand = rest[0] ?? "help";
   const values = rest.slice(1);
   if (subcommand !== "check") {
-    throw new Error(`Usage: mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--live]`);
+    throw new Error(`Usage: toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
   }
 
   const name = positional(values)[0];
-  if (!name) throw new Error(`Usage: mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--live]`);
+  if (!name) throw new Error(`Usage: toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
 
   const client = clientFlag(values, "generic");
   const scope = (hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "project")) as InstallScope;
-  const policyPath = stringFlag(values, "--policy", ".mpm/policy.json");
+  const policyPath = stringFlag(values, "--policy", ".toolpin/policy.json");
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -509,26 +509,27 @@ async function secrets(rest: string[]): Promise<void> {
   const subcommand = rest[0] ?? "help";
   const values = rest.slice(1);
   if (subcommand !== "audit") {
-    throw new Error("Usage: mpm secrets audit [--file mcp-lock.json] [--scope project|global] [--json]");
+    throw new Error("Usage: toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]");
   }
 
   const path = stringFlag(values, "--file", "mcp-lock.json");
-  const scope = (hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "project")) as InstallScope;
-  if (scope !== "project" && scope !== "global") {
-    throw new Error("--scope must be project or global");
+  const scope = hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "all");
+  if (scope !== "all" && scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be all, project, or global");
   }
 
   const report = await auditSecrets(path, scope);
   if (hasFlag(values, "--json")) {
     console.log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
-    console.log(`Secrets audit OK: ${report.checked} locked server/client entrie(s) checked for ${scope} config.`);
+    console.log(`Secrets audit OK: ${report.checked} locked server/client entrie(s) checked for ${scopeDescription(scope)}.`);
   } else {
     console.log(`Secrets audit found ${report.findings.length} finding(s) across ${report.checked} locked server/client entrie(s).`);
     for (const finding of report.findings) {
       const secret = finding.secretName ? ` ${finding.secretSource}:${finding.secretName}` : "";
       const redacted = finding.redactedValue ? ` value=${finding.redactedValue}` : "";
-      console.log(`- ${finding.kind} ${finding.key}${secret}: ${finding.message} (${finding.file || "no file"})${redacted}`);
+      const scopeLabel = finding.scope ? ` [${finding.scope}]` : "";
+      console.log(`- ${finding.kind} ${finding.key}${scopeLabel}${secret}: ${finding.message} (${finding.file || "no file"})${redacted}`);
     }
   }
 
@@ -537,20 +538,21 @@ async function secrets(rest: string[]): Promise<void> {
 
 async function doctor(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
-  const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
-  if (scope !== "project" && scope !== "global") {
-    throw new Error("--scope must be project or global");
+  const scope = hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "all");
+  if (scope !== "all" && scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be all, project, or global");
   }
 
   const report = await doctorLockfile(path, scope);
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
-    console.log(`Doctor OK: ${report.checked} locked server/client entrie(s) match ${scope} config.`);
+    console.log(`Doctor OK: ${report.checked} locked server/client entrie(s) match ${scopeDescription(scope)}.`);
   } else {
     console.log(`Doctor found ${report.issues.length} issue(s) across ${report.checked} locked server/client entrie(s).`);
     for (const issue of report.issues) {
-      console.log(`- ${issue.kind} ${issue.key}: ${issue.message} (${issue.file})`);
+      const scopeLabel = issue.scope ? ` [${issue.scope}]` : "";
+      console.log(`- ${issue.kind} ${issue.key}${scopeLabel}: ${issue.message} (${issue.file})`);
     }
   }
 
@@ -560,7 +562,7 @@ async function doctor(rest: string[]): Promise<void> {
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]");
+  if (!name) throw new Error("Usage: toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000]");
 
   const timeout = numberFlag(rest, "--timeout", 15000);
   const server = await findServer(rest, name);
@@ -580,34 +582,38 @@ async function test(rest: string[]): Promise<void> {
 }
 
 function help(): void {
-  console.log(`mpm - MCP package manager prototype
+  console.log(`toolpin - trusted install, lockfile, and governance for MCP servers
 
 Commands:
-  mpm ingest [--source official|docker|all] [--limit 100] [--pages 10]
-  mpm search <query> [--source official|docker|all] [--limit 10] [--live]
-  mpm info <server-name> [--source official|docker|all] [--json] [--live]
-  mpm audit <server-name> [--source official|docker|all] [--live]
-  mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
-  mpm plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
-  mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
-  mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
-  mpm secrets audit [--file mcp-lock.json] [--scope project|global] [--json]
-  mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
-  mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
-  mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
-  mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
-  mpm lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
-  mpm lock digest [--file mcp-lock.json] [--json]
-  mpm lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-  mpm lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-  mpm export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
-  mpm tui
+  toolpin ingest [--source official|docker|all] [--limit 100] [--pages 10]
+  toolpin search <query> [--source official|docker|all] [--limit 10] [--live]
+  toolpin info <server-name> [--source official|docker|all] [--json] [--live]
+  toolpin audit <server-name> [--source official|docker|all] [--live]
+  toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
+  toolpin plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
+  toolpin install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source official|docker|all] [--live]
+  toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
+  toolpin remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
+  toolpin doctor [--file mcp-lock.json] [--scope all|project|global] [--json]
+  toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
+  toolpin lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
+  toolpin lock digest [--file mcp-lock.json] [--json]
+  toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
+  toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
+  toolpin export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
+  toolpin tui
 `);
+}
+
+function scopeDescription(scope: "all" | InstallScope): string {
+  return scope === "all" ? "all supported project/global configs" : `${scope} config`;
 }
 
 async function runTui(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
-    console.log("Usage: mpm tui\n\nOpens the MPM full-screen terminal UI.");
+    console.log("Usage: toolpin tui\n\nOpens the ToolPin full-screen terminal UI.");
     return;
   }
   const { runTui: renderTui } = await import("./tui.js");

@@ -14,6 +14,7 @@ export interface DoctorIssue {
   client: ClientName;
   serverName: string;
   file: string;
+  scope?: InstallScope;
   message: string;
 }
 
@@ -23,27 +24,14 @@ export interface DoctorReport {
   issues: DoctorIssue[];
 }
 
-export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: InstallScope = "project"): Promise<DoctorReport> {
+export type DoctorScope = InstallScope | "all";
+
+export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: DoctorScope = "all"): Promise<DoctorReport> {
   const lockfile = await readLockfile(lockfilePath);
   const issues: DoctorIssue[] = [];
   const entries = Object.entries(lockfile.servers);
 
   for (const [key, plan] of entries) {
-    let target: ReturnType<typeof resolveConfigTarget>;
-    try {
-      target = resolveConfigTarget(plan.client, scope);
-    } catch (error) {
-      issues.push({
-        key,
-        kind: "invalid",
-        client: plan.client,
-        serverName: plan.name,
-        file: "",
-        message: `cannot check ${plan.client} at ${scope} scope: ${error instanceof Error ? error.message : String(error)}`,
-      });
-      continue;
-    }
-
     const expected = expectedServerConfig(plan);
     if (!expected) {
       issues.push({
@@ -51,43 +39,82 @@ export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: Inst
         kind: "invalid",
         client: plan.client,
         serverName: plan.name,
-        file: target.file,
+        file: "",
         message: "locked plan does not contain a comparable client config entry",
       });
       continue;
     }
 
-    const actual = await readInstalledServerConfig(target.file, plan.name, plan.client);
-    if (actual.kind === "missing") {
+    const missing: Array<{ scope: InstallScope; file: string }> = [];
+    const invalidScopes: string[] = [];
+    let foundConfig = false;
+    let foundUnreadable = false;
+
+    for (const currentScope of scopesToCheck(scope)) {
+      let target: ReturnType<typeof resolveConfigTarget>;
+      try {
+        target = resolveConfigTarget(plan.client, currentScope);
+      } catch (error) {
+        invalidScopes.push(`${currentScope}: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+
+      const actual = await readInstalledServerConfig(target.file, plan.name, plan.client);
+      if (actual.kind === "missing") {
+        missing.push({ scope: currentScope, file: target.file });
+        continue;
+      }
+      if (actual.kind === "unreadable") {
+        foundUnreadable = true;
+        issues.push({
+          key,
+          kind: "unreadable",
+          client: plan.client,
+          serverName: plan.name,
+          file: target.file,
+          scope: currentScope,
+          message: actual.message,
+        });
+        continue;
+      }
+
+      foundConfig = true;
+      if (stableJson(actual.config) !== stableJson(expected)) {
+        issues.push({
+          key,
+          kind: "drift",
+          client: plan.client,
+          serverName: plan.name,
+          file: target.file,
+          scope: currentScope,
+          message: `client config entry differs from ${lockfilePath}`,
+        });
+      }
+    }
+
+    if (!foundConfig && !foundUnreadable && missing.length > 0) {
       issues.push({
         key,
         kind: "missing",
         client: plan.client,
         serverName: plan.name,
-        file: target.file,
-        message: `missing ${plan.client} config entry for ${plan.name}`,
+        file: missing.map((entry) => entry.file).join(", "),
+        scope: scope === "all" ? undefined : missing[0]?.scope,
+        message: scope === "all"
+          ? `missing ${plan.client} config entry for ${plan.name} in checked scopes: ${missing.map((entry) => entry.scope).join(", ")}`
+          : `missing ${plan.client} config entry for ${plan.name}`,
       });
       continue;
     }
-    if (actual.kind === "unreadable") {
+
+    if (!foundConfig && !foundUnreadable && missing.length === 0 && invalidScopes.length > 0) {
       issues.push({
         key,
-        kind: "unreadable",
+        kind: "invalid",
         client: plan.client,
         serverName: plan.name,
-        file: target.file,
-        message: actual.message,
-      });
-      continue;
-    }
-    if (stableJson(actual.config) !== stableJson(expected)) {
-      issues.push({
-        key,
-        kind: "drift",
-        client: plan.client,
-        serverName: plan.name,
-        file: target.file,
-        message: `client config entry differs from ${lockfilePath}`,
+        file: "",
+        message: `cannot check ${plan.client} at ${scope} scope: ${invalidScopes.join("; ")}`,
       });
     }
   }
@@ -97,6 +124,10 @@ export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: Inst
     checked: entries.length,
     issues,
   };
+}
+
+function scopesToCheck(scope: DoctorScope): InstallScope[] {
+  return scope === "all" ? ["project", "global"] : [scope];
 }
 
 function expectedServerConfig(plan: InstallPlan): unknown {

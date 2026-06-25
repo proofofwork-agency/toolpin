@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { installServerConfig } from "../dist/install.js";
 import { buildInstallPlan, writeLockfile } from "../dist/plan.js";
 import { auditSecrets } from "../dist/secrets.js";
 
@@ -35,7 +36,30 @@ test("auditSecrets flags isSecret fields that contain plaintext-looking values",
 
     assert.equal(report.ok, false);
     assert.ok(report.findings.some((finding) => finding.kind === "plaintext_secret" && finding.secretName === "EXAMPLE_TOKEN"));
+    assert.equal(report.findings.filter((finding) => finding.secretName === "EXAMPLE_TOKEN").length, 1);
     assert.ok(report.findings.every((finding) => !JSON.stringify(finding).includes(SECRET)));
+  });
+});
+
+test("auditSecrets checks global config by default without false project missing", async () => {
+  await withTempCwd(async (tempDir) => {
+    await withTempHome(tempDir, async () => {
+      const server = packageServer();
+      await installServerConfig(server, "claude", "global");
+      await writeLockfile(buildInstallPlan(server, "claude"));
+
+      const globalConfigPath = path.join(tempDir, ".config", "toolpin", "claude-mcp.json");
+      const config = JSON.parse(await readFile(globalConfigPath, "utf8"));
+      config.mcpServers[server.name].env.EXAMPLE_TOKEN = SECRET;
+      await writeFile(globalConfigPath, JSON.stringify(config, null, 2), "utf8");
+
+      const report = await auditSecrets("mcp-lock.json");
+
+      assert.equal(report.ok, false);
+      assert.ok(report.findings.some((finding) => finding.kind === "plaintext_secret" && finding.scope === "global"));
+      assert.equal(report.findings.some((finding) => finding.kind === "missing_config"), false);
+      assert.ok(report.findings.every((finding) => !JSON.stringify(finding).includes(SECRET)));
+    });
   });
 });
 
@@ -104,14 +128,25 @@ test("auditSecrets checks remote header secrets", async () => {
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-secrets-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-secrets-"));
   try {
     process.chdir(tempDir);
-    await mkdir(".mpm", { recursive: true });
+    await mkdir(".toolpin", { recursive: true });
     await fn(tempDir);
   } finally {
     process.chdir(originalCwd);
     await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function withTempHome(tempDir, fn) {
+  const originalHome = process.env.HOME;
+  process.env.HOME = tempDir;
+  try {
+    await fn();
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
   }
 }
 

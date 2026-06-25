@@ -45,7 +45,7 @@ const POLICY_KEYS = new Set([
   "requireMcpbSha256",
 ]);
 
-export async function readPolicy(path = ".mpm/policy.json"): Promise<PolicyConfig | undefined> {
+export async function readPolicy(path = ".toolpin/policy.json"): Promise<PolicyConfig | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -65,7 +65,7 @@ export async function readPolicy(path = ".mpm/policy.json"): Promise<PolicyConfi
   }
 }
 
-export async function enforcePolicy(plan: InstallPlan, path = ".mpm/policy.json"): Promise<PolicyReport> {
+export async function enforcePolicy(plan: InstallPlan, path = ".toolpin/policy.json"): Promise<PolicyReport> {
   const policy = await readPolicy(path);
   return evaluatePolicy(plan, policy);
 }

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { codexTomlFromClientConfig, mergeCodexToml } from "../dist/codexToml.js";
+import { codexTomlFromClientConfig, mergeCodexToml, readCodexServerConfig } from "../dist/codexToml.js";
 import { exportClientConfig } from "../dist/config.js";
 import { installServerConfig } from "../dist/install.js";
 
@@ -23,6 +23,24 @@ test("codexTomlFromClientConfig serializes quoted MCP server tables", () => {
   assert.match(toml, /args = \["-y", "example@1\.0\.0"\]/);
   assert.match(toml, /\[mcp_servers\."io\.github\/example"\.env\]/);
   assert.match(toml, /EXAMPLE_TOKEN = "<EXAMPLE_TOKEN>"/);
+});
+
+test("codexTomlFromClientConfig serializes remote URL and http_headers", () => {
+  const server = remoteServer();
+  const exported = exportClientConfig(server, "codex");
+  const toml = codexTomlFromClientConfig(exported.config);
+  const parsed = readCodexServerConfig(toml, server.name);
+
+  assert.match(toml, /\[mcp_servers\."io\.github\/remote"\]/);
+  assert.match(toml, /url = "https:\/\/example\.com\/mcp"/);
+  assert.match(toml, /\[mcp_servers\."io\.github\/remote"\.http_headers\]/);
+  assert.match(toml, /AUTH_TOKEN = "<AUTH_TOKEN>"/);
+  assert.deepEqual(parsed, {
+    url: "https://example.com/mcp",
+    http_headers: {
+      AUTH_TOKEN: "<AUTH_TOKEN>",
+    },
+  });
 });
 
 test("mergeCodexToml replaces only the matching server tables", () => {
@@ -101,7 +119,7 @@ test("mergeCodexToml does not remove servers that share a name prefix", () => {
 
 test("Codex export and project install use .codex/config.toml", async () => {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-codex-install-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-codex-install-"));
   try {
     process.chdir(tempDir);
     const server = packageServer();
@@ -147,6 +165,35 @@ function packageServer() {
           version: "1.0.0",
           transport: { type: "stdio" },
           environmentVariables: [{ name: "EXAMPLE_TOKEN", isRequired: true, isSecret: true }],
+        },
+      ],
+    },
+  };
+}
+
+function remoteServer() {
+  return {
+    registrySource: "official",
+    name: "io.github/remote",
+    title: "Remote Server",
+    description: "Synthetic remote server",
+    version: "1.0.0",
+    isLatest: true,
+    repositoryUrl: "https://github.com/example/remote",
+    packageTypes: [],
+    remoteTypes: ["streamable-http"],
+    transports: ["streamable-http"],
+    requiresSecrets: true,
+    raw: {
+      name: "io.github/remote",
+      title: "Remote Server",
+      description: "Synthetic remote server",
+      version: "1.0.0",
+      remotes: [
+        {
+          type: "streamable-http",
+          url: "https://example.com/mcp",
+          headers: [{ name: "AUTH_TOKEN", isRequired: true, isSecret: true }],
         },
       ],
     },

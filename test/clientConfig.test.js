@@ -116,7 +116,7 @@ test("doctor reports scope-incompatible client entries without aborting", async 
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-client-config-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-client-config-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);

@@ -1,10 +1,10 @@
 {
-  "name": "mpm",
+  "name": "toolpin",
   "version": "0.1.0",
-  "description": "Language-agnostic MCP package network prototype",
+  "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "type": "module",
   "bin": {
-    "mpm": "./dist/cli.js"
+    "toolpin": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -143,7 +143,7 @@ function wrapClientConfig(client: ClientName, serverName: string, config: Record
     case "gemini":
       return { mcpServers: { [serverName]: toGeminiMcp(config) } };
     case "continue":
-      return { name: "MPM Config", version: "1.0.0", schema: "v1", mcpServers: [toContinueMcp(serverName, config)] };
+      return { name: "ToolPin Config", version: "1.0.0", schema: "v1", mcpServers: [toContinueMcp(serverName, config)] };
     case "zed":
       return { context_servers: { [serverName]: toZedMcp(config) } };
     case "roo":

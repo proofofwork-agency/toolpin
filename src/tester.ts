@@ -39,7 +39,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
         ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } })
         : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } });
 
-      client = new Client({ name: "mpm", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: "0.1.0" });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to remote MCP server.");
     } else {
       const local = packageToStdio(launch.pkg);
@@ -54,7 +54,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
         stderr: "pipe",
       });
 
-      client = new Client({ name: "mpm", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: "0.1.0" });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out starting local MCP server.");
     }
 

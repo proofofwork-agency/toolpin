@@ -179,7 +179,7 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
     case "cursor":
     case "generic":
     default:
-      return { file: path.join(home, ".config", "mpm", `${client}-mcp.json`), notes: ["Generic global MCP config written; client-specific import may still be required."] };
+      return { file: path.join(home, ".config", "toolpin", `${client}-mcp.json`), notes: ["Generic global MCP config written; client-specific import may still be required."] };
   }
 }
 

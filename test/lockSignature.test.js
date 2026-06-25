@@ -103,7 +103,7 @@ async function withSignedLock(fn) {
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-lock-signature-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-lock-signature-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);

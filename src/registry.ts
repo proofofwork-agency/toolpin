@@ -4,7 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type { NormalizedServer, RegistryEntry, RegistryListResponse, RegistryServer, RegistrySourceId, RegistrySourceInfo } from "./types.js";
 
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
-const DEFAULT_CACHE_PATH = path.join(process.cwd(), ".mpm", "registry-cache.json");
+const DEFAULT_CACHE_PATH = path.join(process.cwd(), ".toolpin", "registry-cache.json");
 const DOCKER_TREE_URL = "https://api.github.com/repos/docker/mcp-registry/git/trees/main?recursive=1";
 const DOCKER_RAW_BASE = "https://raw.githubusercontent.com/docker/mcp-registry/main";
 
@@ -162,7 +162,7 @@ function dockerYamlToEntry(raw: string, entryPath: string): RegistryEntry | null
       source: "github",
     },
     _meta: {
-      "dev.mpm/source": {
+      "dev.toolpin/source": {
         source: "docker",
         path: entryPath,
         category: parsed.meta?.category,
@@ -200,7 +200,7 @@ function dockerYamlToEntry(raw: string, entryPath: string): RegistryEntry | null
     server,
     source: "docker",
     _meta: {
-      "dev.mpm/source": {
+      "dev.toolpin/source": {
         source: "docker",
         path: entryPath,
         curated: true,
@@ -252,7 +252,7 @@ export function normalizeEntry(entry: RegistryEntry): NormalizedServer {
 }
 
 function detectSource(entry: RegistryEntry): RegistrySourceId {
-  const sourceMeta = entry._meta?.["dev.mpm/source"];
+  const sourceMeta = entry._meta?.["dev.toolpin/source"];
   if (sourceMeta && typeof sourceMeta === "object" && (sourceMeta as { source?: unknown }).source === "docker") {
     return "docker";
   }

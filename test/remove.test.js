@@ -97,7 +97,7 @@ test("removeLockfileEntry rejects malformed lockfiles before rewriting", async (
 
 async function withTempCwd(fn) {
   const originalCwd = process.cwd();
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "mpm-remove-"));
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-remove-"));
   try {
     process.chdir(tempDir);
     await fn(tempDir);

@@ -1,7 +1,7 @@
 import { parseDocument, stringify } from "yaml";
 
 const DEFAULT_CONTINUE_CONFIG = {
-  name: "MPM Config",
+  name: "ToolPin Config",
   version: "1.0.0",
   schema: "v1",
   mcpServers: [] as unknown[],
