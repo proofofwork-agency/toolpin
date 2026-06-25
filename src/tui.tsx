@@ -239,11 +239,38 @@ function MpmTui() {
   }
 
   async function installSelected(): Promise<void> {
-    if (!selectedServer) return;
-    setState((prev) => ({ ...prev, installing: true, error: undefined, lastAction: `installing ${selectedServer.name}` }));
+    if (!selectedServer) {
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "install",
+          command: commandLineFor("install", state, selectedServer),
+          ok: false,
+          lines: ["Select a server before installing."],
+        },
+      }));
+      return;
+    }
+    const targetClients = selectedClientsForScope(state.client, state.installScope);
+    const command = commandLineFor("install", state, selectedServer);
+    setState((prev) => ({
+      ...prev,
+      installing: true,
+      error: undefined,
+      commandLog: {
+        title: "install",
+        command,
+        ok: true,
+        lines: [
+          `starting install for ${selectedServer.name}`,
+          `target clients: ${targetClients.join(", ")}`,
+          "checking policy and lock drift...",
+        ],
+      },
+      lastAction: `installing ${selectedServer.name}`,
+    }));
     try {
       const files: string[] = [];
-      const targetClients = selectedClientsForScope(state.client, state.installScope);
       const plans = targetClients.map((client) => buildInstallPlan(selectedServer, client));
       const policyViolations = [];
       for (const plan of plans) {
@@ -261,6 +288,18 @@ function MpmTui() {
       if (mismatches.length) {
         throw new Error(`lock drift: ${mismatches.join(" | ")}. Press w to update the lock after review.`);
       }
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "install",
+          command,
+          ok: true,
+          lines: [
+            `policy and lock checks passed for ${targetClients.length} client(s)`,
+            "writing client config and mcp-lock.json...",
+          ],
+        },
+      }));
       for (const [index, client] of targetClients.entries()) {
         const result = await installServerConfig(selectedServer, client, state.installScope);
         await writeLockfile(
@@ -274,9 +313,30 @@ function MpmTui() {
         ...prev,
         installing: false,
         lastAction: `installed for ${state.client} -> ${unique(files).join(", ")}`,
+        commandLog: {
+          title: "install",
+          command,
+          ok: true,
+          lines: [
+            `installed ${selectedServer.name}`,
+            ...unique(files).map((file) => `wrote ${file}`),
+            "updated mcp-lock.json",
+          ],
+        },
       }));
     } catch (error) {
-      setState((prev) => ({ ...prev, installing: false, error: error instanceof Error ? error.message : String(error) }));
+      const message = error instanceof Error ? error.message : String(error);
+      setState((prev) => ({
+        ...prev,
+        installing: false,
+        error: message,
+        commandLog: {
+          title: "install",
+          command,
+          ok: false,
+          lines: [message],
+        },
+      }));
     }
   }
 
@@ -319,21 +379,69 @@ function MpmTui() {
   }
 
   async function testSelected(): Promise<void> {
-    if (!selectedServer) return;
+    if (!selectedServer) {
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "test",
+          command: commandLineFor("test", state, selectedServer),
+          ok: false,
+          lines: ["Select a server before testing."],
+        },
+      }));
+      return;
+    }
+    const command = commandLineFor("test", state, selectedServer);
     setState((prev) => ({
       ...prev,
       testing: true,
       error: undefined,
       testResult: undefined,
+      commandLog: {
+        title: "test",
+        command,
+        ok: true,
+        lines: [
+          `connecting to ${selectedServer.name}`,
+          "running MCP initialize handshake and tools/list...",
+        ],
+      },
       lastAction: `testing ${selectedServer.name}`,
     }));
-    const result = await testServer(selectedServer, 15000);
-    setState((prev) => ({
-      ...prev,
-      testing: false,
-      testResult: result,
-      lastAction: result.ok ? `test passed: ${result.tools.length} tool(s)` : `test failed: ${result.message}`,
-    }));
+    try {
+      const result = await testServer(selectedServer, 15000);
+      setState((prev) => ({
+        ...prev,
+        testing: false,
+        testResult: result,
+        commandLog: {
+          title: "test",
+          command,
+          ok: result.ok,
+          lines: [
+            result.message,
+            `target: ${result.target}`,
+            `duration: ${result.durationMs}ms`,
+            ...result.tools.slice(0, 4).map((tool) => `tool ${tool.name}${tool.description ? ` - ${tool.description}` : ""}`),
+          ],
+        },
+        lastAction: result.ok ? `test passed: ${result.tools.length} tool(s)` : `test failed: ${result.message}`,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setState((prev) => ({
+        ...prev,
+        testing: false,
+        error: message,
+        commandLog: {
+          title: "test",
+          command,
+          ok: false,
+          lines: [message],
+        },
+        lastAction: `test failed: ${message}`,
+      }));
+    }
   }
 
   async function executeCommand(commandId: TuiCommandId): Promise<void> {
@@ -645,7 +753,8 @@ function MpmTui() {
     return false;
   }
 
-  const listHeight = state.view === "discover" ? Math.max(6, height - 12) : Math.min(6, Math.max(4, height - 18));
+  const activityRows = state.commandLog?.lines.length ? Math.min(3, state.commandLog.lines.length) : 1;
+  const listHeight = state.view === "discover" ? Math.max(4, height - 12 - activityRows) : Math.min(6, Math.max(3, height - 18 - activityRows));
   const modalWidth = Math.min(width - 4, 104);
   const modalContentWidth = Math.max(40, modalWidth - 4);
 
@@ -695,6 +804,7 @@ function MpmTui() {
           </>
         )}
       </Box>
+      <ActivityStrip state={state} width={width} />
       {state.error ? <Text color={ERR} wrap="truncate"> error: {truncate(state.error, width - 8)}</Text> : null}
       <Footer view={state.view} inputMode={state.inputMode} />
     </Box>
@@ -1170,6 +1280,30 @@ function CommandPalette({
           ))}
         </>
       ) : null}
+    </Box>
+  );
+}
+
+function ActivityStrip({ state, width }: { state: TuiState; width: number }) {
+  const active = state.installing || state.testing || state.loading;
+  const log = state.commandLog;
+  const color = state.error || log?.ok === false ? ERR : active ? WARN : log ? OK : MUTED;
+  const label = active ? "working" : log ? log.title : "status";
+  const primary = log?.lines[0] ?? state.lastAction ?? "ready";
+  const secondary = log?.lines.slice(1, 3) ?? [];
+
+  return (
+    <Box flexDirection="column" paddingX={2} marginTop={1} flexShrink={0}>
+      <Text wrap="truncate">
+        <Text bold color={color}>{label.padEnd(8)}</Text>
+        <Text color="white">{truncate(primary, width - 14)}</Text>
+      </Text>
+      {secondary.map((line, index) => (
+        <Text key={`${index}:${line}`} color={MUTED} wrap="truncate">
+          <Text color={CHROME}>         </Text>
+          {truncate(line, width - 11)}
+        </Text>
+      ))}
     </Box>
   );
 }
