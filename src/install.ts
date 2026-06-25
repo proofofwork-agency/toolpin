@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { clientConfigRootKey, exportClientConfig, type ClientName } from "./config.js";
 import { mergeCodexToml, removeCodexServerToml } from "./codexToml.js";
+import { mergeContinueYaml, removeContinueServerYaml } from "./continueYaml.js";
 import type { NormalizedServer } from "./types.js";
 
 export type InstallScope = "project" | "global";
@@ -35,6 +36,23 @@ export async function installServerConfig(
   if (client === "codex") {
     const existing = await readText(target.file);
     const next = mergeCodexToml(existing, exported.config);
+
+    await mkdir(path.dirname(target.file), { recursive: true });
+    await writeFile(target.file, next, "utf8");
+
+    return {
+      client,
+      scope,
+      file: target.file,
+      serverName: server.name,
+      action: existing.trim().length === 0 ? "created" : "updated",
+      notes: [...target.notes, ...exported.notes],
+    };
+  }
+
+  if (client === "continue") {
+    const existing = await readText(target.file);
+    const next = mergeContinueYaml(existing, exported.config);
 
     await mkdir(path.dirname(target.file), { recursive: true });
     await writeFile(target.file, next, "utf8");
@@ -83,6 +101,18 @@ export async function removeServerConfig(
     return { client, scope, file: target.file, serverName, action: "removed", notes: target.notes };
   }
 
+  if (client === "continue") {
+    const existing = await readText(target.file);
+    const next = removeContinueServerYaml(existing, serverName);
+    if (next === existing) {
+      return { client, scope, file: target.file, serverName, action: "missing", notes: target.notes };
+    }
+
+    await mkdir(path.dirname(target.file), { recursive: true });
+    await writeFile(target.file, next, "utf8");
+    return { client, scope, file: target.file, serverName, action: "removed", notes: target.notes };
+  }
+
   const existing = await readJsonObject(target.file);
   const { config: next, removed } = removeClientConfig(existing, serverName, client);
   if (!removed) {
@@ -114,6 +144,8 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
         throw new Error("Project Windsurf/Cascade MCP config path is not documented; use --scope global.");
       case "cline":
         throw new Error("Project Cline MCP config path is not documented; use --scope global.");
+      case "continue":
+        throw new Error("Project Continue config path is not documented; use --scope global.");
       case "zed":
         throw new Error("Zed settings path is not verified yet; export the config snippet and add it through Zed settings.");
       case "claude":
@@ -135,6 +167,8 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
       return { file: path.join(home, ".codeium", "windsurf", "mcp_config.json"), notes: ["Global Windsurf/Cascade MCP config written. Restart Windsurf to load it."] };
     case "cline":
       return { file: path.join(home, ".cline", "mcp.json"), notes: ["Global Cline CLI MCP config written. Reload Cline to load it."] };
+    case "continue":
+      return { file: path.join(home, ".continue", "config.yaml"), notes: ["Global Continue config.yaml written. Continue reloads config on save."] };
     case "gemini":
       return { file: path.join(home, ".gemini", "settings.json"), notes: ["Global Gemini CLI settings.json written."] };
     case "zed":

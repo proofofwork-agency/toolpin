@@ -2,6 +2,7 @@
 import { verifyFrozenInstall } from "./ci.js";
 import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
+import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
@@ -14,7 +15,7 @@ import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourc
 
 const args = process.argv.slice(2);
 type ClientSelection = ClientName | "all";
-const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all";
+const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -211,6 +212,8 @@ async function exportConfig(rest: string[]): Promise<void> {
 
   if (client === "codex") {
     console.log(codexTomlFromClientConfig(exported.config));
+  } else if (client === "continue") {
+    console.log(continueYamlFromClientConfig(exported.config));
   } else {
     console.log(JSON.stringify(exported.config, null, 2));
   }

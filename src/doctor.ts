@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { readCodexServerConfig } from "./codexToml.js";
 import { clientConfigRootKey } from "./config.js";
+import { readContinueServerConfig } from "./continueYaml.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile, type InstallPlan } from "./plan.js";
 import type { ClientName } from "./config.js";
@@ -120,6 +121,18 @@ async function readInstalledServerConfig(
     return config ? { kind: "ok", config } : { kind: "missing" };
   }
 
+  if (client === "continue") {
+    try {
+      const config = readContinueServerConfig(raw, serverName);
+      return config ? { kind: "ok", config } : { kind: "missing" };
+    } catch (error) {
+      return {
+        kind: "unreadable",
+        message: `invalid YAML in ${file}: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
   try {
     const parsed = JSON.parse(raw) as unknown;
     const config = serverConfigFromWrapped(parsed, serverName, client);
@@ -133,6 +146,11 @@ async function readInstalledServerConfig(
 }
 
 function serverConfigFromWrapped(config: unknown, serverName: string, client: ClientName): unknown {
+  if (client === "continue") {
+    const servers = asRecord(config).mcpServers;
+    return Array.isArray(servers) ? servers.find((server) => asRecord(server).name === serverName) : undefined;
+  }
+
   const root = asRecord(config);
   const section = clientConfigRootKey(client);
   return asRecord(root[section])[serverName];

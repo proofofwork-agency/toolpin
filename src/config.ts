@@ -8,6 +8,7 @@ export type ClientName =
   | "opencode"
   | "windsurf"
   | "cline"
+  | "continue"
   | "gemini"
   | "zed"
   | "roo"
@@ -21,6 +22,7 @@ export const ALL_CLIENTS: ClientName[] = [
   "opencode",
   "windsurf",
   "cline",
+  "continue",
   "gemini",
   "zed",
   "roo",
@@ -28,7 +30,7 @@ export const ALL_CLIENTS: ClientName[] = [
 ];
 
 export const PROJECT_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "gemini", "roo"];
-export const GLOBAL_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "windsurf", "cline", "gemini"];
+export const GLOBAL_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "windsurf", "cline", "continue", "gemini"];
 
 export type LaunchTarget = { kind: "remote"; remote: RegistryRemote } | { kind: "package"; pkg: RegistryPackage };
 
@@ -140,6 +142,8 @@ function wrapClientConfig(client: ClientName, serverName: string, config: Record
       return { mcpServers: { [serverName]: toClineMcp(config) } };
     case "gemini":
       return { mcpServers: { [serverName]: toGeminiMcp(config) } };
+    case "continue":
+      return { name: "MPM Config", version: "1.0.0", schema: "v1", mcpServers: [toContinueMcp(serverName, config)] };
     case "zed":
       return { context_servers: { [serverName]: toZedMcp(config) } };
     case "roo":
@@ -167,6 +171,7 @@ export function clientConfigRootKey(client: ClientName): "mcp" | "mcpServers" | 
     case "windsurf":
     case "cline":
     case "gemini":
+    case "continue":
     case "roo":
     case "generic":
     default:
@@ -268,6 +273,24 @@ function toGeminiMcp(config: Record<string, unknown>): Record<string, unknown> {
   });
 }
 
+function toContinueMcp(serverName: string, config: Record<string, unknown>): Record<string, unknown> {
+  if (typeof config.url === "string") {
+    return omitUndefined({
+      name: serverName,
+      type: config.type,
+      url: config.url,
+      requestOptions: headersRequestOptions(config.headers),
+    });
+  }
+
+  return omitUndefined({
+    name: serverName,
+    command: config.command,
+    args: config.args,
+    env: config.env,
+  });
+}
+
 function toZedMcp(config: Record<string, unknown>): Record<string, unknown> {
   if (typeof config.url === "string") {
     return omitUndefined({
@@ -307,6 +330,8 @@ function placeholderFor(client: ClientName, name: string): string {
       return `\${env:${name}}`;
     case "gemini":
       return `\${${name}}`;
+    case "continue":
+      return `\${{ secrets.${name} }}`;
     case "roo":
       return `<${name}>`;
     case "cline":
@@ -324,4 +349,9 @@ function placeholderFor(client: ClientName, name: string): string {
 
 function omitUndefined(value: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, child]) => child !== undefined));
+}
+
+function headersRequestOptions(headers: unknown): Record<string, unknown> | undefined {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers) || Object.keys(headers).length === 0) return undefined;
+  return { headers };
 }

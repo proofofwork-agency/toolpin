@@ -31,14 +31,14 @@ mpm search <query> [--source official|docker|all] [--limit 10] [--live]
 mpm info <server-name> [--source official|docker|all] [--json] [--live]
 mpm audit <server-name> [--source official|docker|all] [--live]
 mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
-mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
-mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
-mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all] [--scope project|global] [--file mcp-lock.json]
+mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
+mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
+mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope project|global] [--file mcp-lock.json]
 mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
 mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
 mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
-mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all [--source official|docker|all] [--file mcp-lock.json] [--live]
-mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
+mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--file mcp-lock.json] [--live]
+mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
 mpm tui
 ```
 
@@ -52,7 +52,7 @@ mpm tui
 - Trust scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, and missing install targets.
 - Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - `mpm install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
-- Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Gemini CLI, Zed `context_servers`, and Roo Code.
+- Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
 - Install drift checks: if an existing lock entry changes version, target, trust score, or generated client config, install refuses until the lock is reviewed and updated with `mpm lock` or `mpm install --update-lock`.
 - Frozen lockfile checks via `mpm ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
@@ -61,7 +61,7 @@ mpm tui
 - `mpm remove` defaults to all supported project clients when `--client` is omitted; pass `--client <name>` for targeted cleanup.
 - `mpm doctor` read-only reconciliation from `mcp-lock.json` to current project/global client config entries, including Codex TOML.
 - Codex doctor support reads the documented `[mcp_servers.<name>]` TOML tables MPM writes; hand-authored inline/dotted TOML forms may be reported as missing or drift.
-- Real install writes for project/global client config files, including scope-aware `--client all`, plus lockfile generation and install progress details. Newly verified paths include Windsurf/Cascade global, Cline global, Gemini CLI project/global, and Roo Code project. Zed install and Roo global writes fail closed until their settings paths are verified.
+- Real install writes for project/global client config files, including scope-aware `--client all`, plus lockfile generation and install progress details. Newly verified paths include Windsurf/Cascade global, Cline global, Continue global, Gemini CLI project/global, and Roo Code project. Zed install and Roo global writes fail closed until their settings paths are verified.
 - MCP server test action that connects with the SDK and lists available tools when credentials/runtime are available.
 - Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status.
 

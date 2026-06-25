@@ -73,7 +73,7 @@ Open implementation questions:
 
 ### Continue
 
-Status: **researched; implementation pending separate YAML merge slice**.
+Status: **implemented for global writes; project/profile paths still gated**.
 
 Sources:
 - https://docs.continue.dev/guides/understanding-configs
@@ -103,9 +103,6 @@ Open implementation questions:
 - Continue documentation mentions global local config clearly. Workspace/profile
   directories have changed over time and should not be targeted until primary docs
   explicitly document current project-scoped behavior.
-- Continue's repository/docs status should be checked before shipping code because
-  the docs currently say the repository is read-only and recommend Continue CLI for
-  JetBrains.
 
 ### Gemini CLI
 
@@ -198,10 +195,9 @@ Open implementation questions:
 
 ## Implementation order
 
-1. Add Continue after YAML merge/update tests are in place.
-2. Add global path discovery for clients whose docs expose UI-opened files but not
+1. Add global path discovery for clients whose docs expose UI-opened files but not
    stable platform paths.
-3. Add one test per client for local, remote, env placeholder, merge, remove, and doctor.
+2. Add one test per client for local, remote, env placeholder, merge, remove, and doctor.
 
 ## Do not implement yet
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import { ALL_CLIENTS, clientsForScope, exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
+import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
@@ -898,8 +899,14 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
       </Box>
     );
   }
-  const content = safeString(() => formatClientConfigSnippet(client, exportClientConfig(server, client).config).content.trimEnd());
-  const extension = client === "codex" ? "toml" : "json";
+  const formatted = safeJson(() => formatClientConfigSnippet(client, exportClientConfig(server, client).config));
+  const formattedError = asObject(formatted).error;
+  const content = typeof formattedError === "string"
+    ? JSON.stringify(formatted, null, 2)
+    : (formatted as ReturnType<typeof formatClientConfigSnippet>).content.trimEnd();
+  const extension = typeof formattedError === "string"
+    ? "json"
+    : (formatted as ReturnType<typeof formatClientConfigSnippet>).extension;
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="config" file={`${client}.${extension}`} />
@@ -1103,6 +1110,8 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
         return "global-only";
       case "cline":
         return "global-only";
+      case "continue":
+        return "global-only";
       case "zed":
         return "path not verified";
       case "claude":
@@ -1123,6 +1132,8 @@ function projectConfigTargetLabel(client: ClientName, scope: InstallScope): stri
       return "~/.codeium/windsurf/mcp_config.json";
     case "cline":
       return "~/.cline/mcp.json";
+    case "continue":
+      return "~/.continue/config.yaml";
     case "gemini":
       return "~/.gemini/settings.json";
     case "roo":
@@ -1216,9 +1227,12 @@ function safeString(factory: () => string): string {
   }
 }
 
-function formatClientConfigSnippet(client: ClientName, config: unknown): { extension: "json" | "toml"; content: string } {
+function formatClientConfigSnippet(client: ClientName, config: unknown): { extension: "json" | "toml" | "yaml"; content: string } {
   if (client === "codex") {
     return { extension: "toml", content: `${codexTomlFromClientConfig(config)}\n` };
+  }
+  if (client === "continue") {
+    return { extension: "yaml", content: continueYamlFromClientConfig(config) };
   }
   return { extension: "json", content: `${JSON.stringify(config, null, 2)}\n` };
 }
