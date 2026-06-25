@@ -116,6 +116,14 @@ function MpmTui() {
     void loadData("cache");
   }, []);
 
+  useEffect(() => {
+    if (!process.stdout.isTTY) return;
+    process.stdout.write("\x1b[?1000h\x1b[?1006h");
+    return () => {
+      process.stdout.write("\x1b[?1000l\x1b[?1006l");
+    };
+  }, []);
+
   const results = useMemo(() => {
     const latest = latestOnly(state.servers);
     return searchServers(latest, state.query || "mcp", 50);
@@ -462,6 +470,11 @@ function MpmTui() {
   }
 
   useInput((input, key) => {
+    const mouse = parseMouse(input);
+    if (mouse?.pressed && handleMouseClick(mouse.x, mouse.y)) {
+      return;
+    }
+
     if (key.ctrl && input === "c") {
       exit();
       return;
@@ -522,14 +535,14 @@ function MpmTui() {
       setState((prev) => ({ ...prev, view: nextView(prev.view) }));
       return;
     }
-      if (key.upArrow || input === "k") {
-        setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined }));
-        return;
-      }
-      if (key.downArrow || input === "j") {
-        setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1), pendingRemove: undefined }));
-        return;
-      }
+    if (key.upArrow || input === "k") {
+      setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined }));
+      return;
+    }
+    if (key.downArrow || input === "j") {
+      setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1), pendingRemove: undefined }));
+      return;
+    }
     if (key.return) {
       setState((prev) => ({ ...prev, view: prev.view === "discover" ? "details" : prev.view }));
       return;
@@ -608,6 +621,29 @@ function MpmTui() {
     }
   });
 
+  function handleMouseClick(x: number, y: number): boolean {
+    if (y === 6) {
+      const tab = x < 14 ? "discover" : x < 27 ? "details" : x < 39 ? "plan" : x < 50 ? "config" : x < 62 ? "help" : undefined;
+      if (tab) {
+        setState((prev) => ({ ...prev, view: tab }));
+        return true;
+      }
+    }
+
+    if (state.inputMode === "normal" && state.view === "discover") {
+      const row = y - 8;
+      const visibleCount = Math.max(2, listHeight - 2);
+      const start = listWindowStart(selectedIndex, visibleCount, results.length);
+      const clickedIndex = start + row;
+      if (row >= 0 && row < visibleCount && clickedIndex < results.length) {
+        setState((prev) => ({ ...prev, selected: clickedIndex, pendingRemove: undefined }));
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   const listHeight = state.view === "discover" ? Math.max(6, height - 12) : Math.min(6, Math.max(4, height - 18));
   const modalWidth = Math.min(width - 4, 104);
   const modalContentWidth = Math.max(40, modalWidth - 4);
@@ -617,45 +653,47 @@ function MpmTui() {
       <ChromeHeader state={state} resultCount={results.length} selectedServer={selectedServer} width={width} />
       <PromptBar state={state} width={width} />
       <ModeLine active={state.view} selectedServer={selectedServer} width={width} />
-      {state.inputMode === "command" ? (
-        <Centered width={width}>
-          <Box width={modalWidth}>
-            <CommandPalette
-              commands={commandResults}
-              selected={selectedCommandIndex}
-              state={state}
-              selectedServer={selectedServer}
-              width={modalContentWidth}
-            />
-          </Box>
-        </Centered>
-      ) : state.view === "help" ? (
-        <Centered width={width}>
-          <Box width={modalWidth}>
-            <HelpView width={modalContentWidth} />
-          </Box>
-        </Centered>
-      ) : (
-        <>
-          <OptionList results={results} selected={selectedIndex} height={listHeight} width={width} dimmed={state.view !== "discover"} />
-          {SERVER_VIEWS.has(state.view) ? (
-            <Centered width={width}>
-              <Box width={modalWidth}>
-                <SelectedServerPanel
-                  view={state.view}
-                  result={selectedResult}
-                  server={selectedServer}
-                  client={state.client}
-                  installScope={state.installScope}
-                  width={modalContentWidth}
-                  testResult={state.testResult}
-                  testing={state.testing}
-                />
-              </Box>
-            </Centered>
-          ) : null}
-        </>
-      )}
+      <Box flexDirection="column" flexGrow={1}>
+        {state.inputMode === "command" ? (
+          <Centered width={width}>
+            <Box width={modalWidth}>
+              <CommandPalette
+                commands={commandResults}
+                selected={selectedCommandIndex}
+                state={state}
+                selectedServer={selectedServer}
+                width={modalContentWidth}
+              />
+            </Box>
+          </Centered>
+        ) : state.view === "help" ? (
+          <Centered width={width}>
+            <Box width={modalWidth}>
+              <HelpView width={modalContentWidth} />
+            </Box>
+          </Centered>
+        ) : (
+          <>
+            <OptionList results={results} selected={selectedIndex} height={listHeight} width={width} dimmed={state.view !== "discover"} />
+            {SERVER_VIEWS.has(state.view) ? (
+              <Centered width={width}>
+                <Box width={modalWidth}>
+                  <SelectedServerPanel
+                    view={state.view}
+                    result={selectedResult}
+                    server={selectedServer}
+                    client={state.client}
+                    installScope={state.installScope}
+                    width={modalContentWidth}
+                    testResult={state.testResult}
+                    testing={state.testing}
+                  />
+                </Box>
+              </Centered>
+            ) : null}
+          </>
+        )}
+      </Box>
       {state.error ? <Text color={ERR} wrap="truncate"> error: {truncate(state.error, width - 8)}</Text> : null}
       <Footer view={state.view} inputMode={state.inputMode} />
     </Box>
@@ -679,6 +717,17 @@ function useTerminalSize(stdout: ReturnType<typeof useStdout>["stdout"]): { widt
   }, [stdout]);
 
   return size;
+}
+
+function parseMouse(input: string): { x: number; y: number; pressed: boolean } | undefined {
+  const match = /^\x1b\[<(\d+);(\d+);(\d+)([mM])$/.exec(input);
+  if (!match) return undefined;
+  const button = Number(match[1]);
+  return {
+    x: Number(match[2]),
+    y: Number(match[3]),
+    pressed: match[4] === "M" && button === 0,
+  };
 }
 
 function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
@@ -713,6 +762,7 @@ function ChromeHeader({ state, resultCount, selectedServer, width }: { state: Tu
 function PromptBar({ state, width }: { state: TuiState; width: number }) {
   const active = state.inputMode === "search";
   const commandActive = state.inputMode === "command";
+  const hint = active ? "Enter applies, Esc cancels" : "press / to search, : for commands";
   return (
     <Box marginX={2} marginBottom={1} backgroundColor={SURFACE_2} paddingX={1} paddingY={1}>
       <Box justifyContent="space-between" width={Math.max(1, width - 6)}>
@@ -727,7 +777,7 @@ function PromptBar({ state, width }: { state: TuiState; width: number }) {
           ) : (
             <>
               <Text color="white">{state.query || "Search MCP servers"}</Text>
-              {!active ? <Text color={MUTED}>  / search  : commands</Text> : null}
+              <Text color={MUTED}>  {hint}</Text>
             </>
           )}
         </Text>
@@ -758,15 +808,13 @@ function ModeLine({ active, selectedServer, width }: { active: View; selectedSer
 
 function OptionList({ results, selected, height, width, dimmed }: { results: SearchResult[]; selected: number; height: number; width: number; dimmed?: boolean }) {
   const visibleCount = Math.max(2, height - 2);
-  const selectedResult = results[selected];
-  const start = Math.max(0, Math.min(selected + 1, Math.max(0, results.length - visibleCount)));
-  const visible = results.slice(start, start + visibleCount).filter((result) => result !== selectedResult);
+  const start = listWindowStart(selected, visibleCount, results.length);
+  const visible = results.slice(start, start + visibleCount);
 
   return (
     <Box flexDirection="column" paddingX={3} height={height}>
       {results.length === 0 ? <Text color={MUTED}>No servers matched. Type / to search or l for live results.</Text> : null}
-      {selectedResult ? <OptionRow result={selectedResult} selected dimmed={dimmed} width={width} /> : null}
-      {visible.map((result) => <OptionRow key={`${result.server.name}:${result.server.version}`} result={result} dimmed={dimmed} width={width} />)}
+      {visible.map((result, index) => <OptionRow key={`${result.server.name}:${result.server.version}`} result={result} selected={start + index === selected} dimmed={dimmed} width={width} />)}
       {results.length > 0 ? <Text color={CHROME}>  selected {selected + 1} of {results.length}</Text> : null}
     </Box>
   );
@@ -780,7 +828,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
   return (
     <Text wrap="truncate">
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? ">" : ":"}</Text>
-      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}> {server.registrySource.padEnd(8)}</Text>
+      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}> {server.registrySource.padEnd(8)}  </Text>
       <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title, titleWidth).padEnd(titleWidth + 2)}</Text>
       <Text color={CHROME}> </Text>
       <Text color={dimmed ? CHROME : MUTED}>{truncate(server.name, nameWidth)}</Text>
@@ -1027,8 +1075,8 @@ function Footer({ view, inputMode }: { view: View; inputMode: InputMode }) {
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["Enter", "open"], [":", "commands"], ["/", "search"], ["c", "client"], ["I", "install"], ["x", "remove"], ["q", "quit"]]
-      : [["Esc", "close"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["x", "remove"], ["q", "quit"]];
+      ? [["/", "search"], ["Enter", "open"], ["click", "select"], [":", "commands"], ["j/k", "move"], ["q", "quit"]]
+      : [["Esc", "close"], ["click", "tabs"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["q", "quit"]];
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0}>
       <Text wrap="truncate">
@@ -1102,6 +1150,12 @@ function Spacer() {
 
 function nextView(view: View): View {
   return VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length] ?? "discover";
+}
+
+function listWindowStart(selected: number, visibleCount: number, total: number): number {
+  const maxStart = Math.max(0, total - visibleCount);
+  const preferred = selected < visibleCount ? 0 : selected - visibleCount + 1;
+  return Math.max(0, Math.min(preferred, maxStart));
 }
 
 function nextClient(client: ClientSelection): ClientSelection {
