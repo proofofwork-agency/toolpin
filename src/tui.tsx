@@ -1296,7 +1296,7 @@ function ActivityStrip({ state, width }: { state: TuiState; width: number }) {
       : state.testing
         ? "testing selected MCP server..."
         : undefined;
-  const primary = log?.lines[0] ?? activeMessage ?? state.lastAction ?? "ready";
+  const primary = activeMessage ?? log?.lines[0] ?? state.lastAction ?? "ready";
   const secondary = log?.lines.slice(1, 3) ?? [];
 
   return (
