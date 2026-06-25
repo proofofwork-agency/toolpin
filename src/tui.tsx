@@ -1289,7 +1289,14 @@ function ActivityStrip({ state, width }: { state: TuiState; width: number }) {
   const log = state.commandLog;
   const color = state.error || log?.ok === false ? ERR : active ? WARN : log ? OK : MUTED;
   const label = active ? "working" : log ? log.title : "status";
-  const primary = log?.lines[0] ?? state.lastAction ?? "ready";
+  const activeMessage = state.loading
+    ? "loading registry data..."
+    : state.installing
+      ? "installing selected server..."
+      : state.testing
+        ? "testing selected MCP server..."
+        : undefined;
+  const primary = log?.lines[0] ?? activeMessage ?? state.lastAction ?? "ready";
   const secondary = log?.lines.slice(1, 3) ?? [];
 
   return (
