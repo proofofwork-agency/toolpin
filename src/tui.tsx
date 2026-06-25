@@ -1309,35 +1309,23 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
 }
 
 function HelpView({ width }: { width: number }) {
-  const rows: Array<[string, string, string]> = [
-    [":", "commands", "Open CLI-equivalent command palette."],
-    ["tab", "menu", "Cycle Browse, selected-server panels, and Help."],
-    ["/", "search", "Edit the Search field; Enter applies, Esc cancels."],
-    ["up/down or j/k", "select", "Move through server options."],
-    ["enter", "open", "Open the selected server overview."],
-    ["g", "registry", "Cycle all, official, and Docker sources."],
-    ["m / +", "more", "Show 50 more matching servers, up to 500."],
-    ["i", "refresh", "Refresh the local listing cache from enabled sources."],
-    ["R", "reset", "Reset search, source, result count, client, and scope defaults."],
-    ["G", "scope", "Toggle project/global install target."],
-    ["c", "client", "Cycle clients, including all."],
-    ["t", "test", "Connect and run tools/list."],
-    ["I", "install", "Install selected server into active scope."],
-    ["x", "remove", "Remove selected server from config and lockfile."],
-    ["w", "lock", "Write selected server to mcp-lock.json."],
-    ["s", "save", "Save config snippets under .toolpin/."],
-    ["q / ctrl-c", "quit", "Close the TUI."],
+  const lines: Array<[string, string]> = [
+    ["what", "trusted install, lockfile, and governance for MCP servers; not a host"],
+    ["sources", `enabled: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}; cache .toolpin/registry-cache.json`],
+    ["results", "50 shown first; m/+ adds more up to 500; i refreshes; g filters source"],
+    ["score", "0-100 advisory trust from source, hashes, transport, secrets, and scans"],
+    ["test", "t runs initialize + tools/list; tokens, APIs, or local services may be needed"],
+    ["install", "I writes project-folder or global/current-user config; all writes all clients"],
+    ["lock", "mcp-lock.json pins target/config/trust; ci catches drift; digest/signature pin it"],
+    ["keys", "/ search, j/k move, c/G client+scope, t/I test+install, : commands"],
+    ["files", "w lock, s save snippets, x remove config+lock, R reset, q quit"],
   ];
+  const lineWidth = Math.max(24, width - 8);
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
-      <ModalTitle title="help" file="shortcuts" />
-      <Text color={MUTED} wrap="wrap">Sources: {REGISTRY_SOURCES.map((source) => `${source.id}${source.enabled ? "" : " (known)"}`).join(", ")}. Enabled source adapters are fetched into .toolpin/registry-cache.json.</Text>
-      <Spacer />
-      {rows.map(([keyName, label, description]) => (
-        <Text key={keyName} wrap="truncate">
-          <Text bold color={BLUE}>{keyName.padEnd(13)}</Text>
-          <Text color="white">{label.padEnd(10)}</Text>
-          <Text color={MUTED}>{truncate(description, width - 26)}</Text>
+      {lines.map(([label, description]) => (
+        <Text key={label} color={MUTED} wrap="truncate">
+          {truncate(`${label.padEnd(8)} ${description}`, lineWidth).padEnd(lineWidth)}
         </Text>
       ))}
     </Box>
