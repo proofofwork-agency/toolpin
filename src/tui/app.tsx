@@ -3,13 +3,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { exportClientConfig } from "../config.js";
-import { doctorLockfile, readInstalledServerConfig } from "../doctor.js";
+import { doctorLockfile } from "../doctor.js";
 import { installServerConfig, removeServerConfig } from "../install.js";
+import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "../registry.js";
 import { searchServers } from "../search.js";
-import { testInstalledClientConfig, testServer, type ServerTestResult } from "../tester.js";
+import { testServer, type ServerTestResult } from "../tester.js";
 import { commandLineFor, commandRequiresServer } from "./command.js";
 import {
   DEFAULT_RESULT_LIMIT,
@@ -459,16 +460,18 @@ export function MpmTui() {
 
   async function updateInstalled(row: InstalledServerState | undefined): Promise<void> {
     if (!row) return;
-    if (!row.canUpdate || !row.updateServer) {
+    if (!row.canUpdate || !row.updateServer || row.lifecycleAction === "none") {
       setState((prev) => ({
         ...prev,
         commandLog: {
-          title: "install",
-          command: `toolpin install ${row.serverName} --client ${row.client} --scope ${row.scope} --update-lock`,
+          title: "update",
+          command: row.locked
+            ? `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`
+            : `toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}`,
           ok: false,
           lines: [
             `No installable registry match is loaded for ${row.serverName}.`,
-            "Load live registry data or search the registry first, then install the selected registry server.",
+            "Load live registry data or search the registry first, then retry the lifecycle action.",
           ],
         },
       }));
@@ -476,47 +479,55 @@ export function MpmTui() {
     }
 
     const updateServer = row.updateServer;
-    const targetName = updateServer.name;
-    const adoptingAlias = !row.locked && row.serverName !== targetName;
+    const command = row.lifecycleAction === "update"
+      ? `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`
+      : `toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}`;
     setState((prev) => ({
       ...prev,
       installing: true,
       error: undefined,
       commandLog: {
-        title: "install",
-        command: `toolpin install ${targetName} --client ${row.client} --scope ${row.scope} --update-lock`,
+        title: row.lifecycleAction,
+        command,
         ok: true,
         lines: [
-          row.locked ? `updating ${row.serverName}` : `installing and locking registry match for ${row.serverName}`,
-          adoptingAlias ? `will replace installed alias ${row.serverName} with ${targetName}` : `registry entry ${targetName}`,
+          row.lifecycleAction === "update" ? `updating locked ${row.serverName}` : `adopting unlocked ${row.serverName}`,
+          row.serverName !== updateServer.name ? `will replace installed alias ${row.serverName} with ${updateServer.name}` : `registry entry ${updateServer.name}`,
           `version ${row.lockedVersion ?? "unlocked"} -> ${updateServer.version}`,
         ],
       },
-      lastAction: row.locked ? `updating ${row.serverName}` : `installing registry match for ${row.serverName}`,
+      lastAction: row.lifecycleAction === "update" ? `updating ${row.serverName}` : `adopting ${row.serverName}`,
     }));
 
     try {
-      let removedAlias: string | undefined;
-      if (adoptingAlias) {
-        const removed = await removeServerConfig(row.serverName, row.client, row.scope);
-        removedAlias = `${removed.action}: ${removed.file}`;
-      }
-      const plan = buildInstallPlan(updateServer, row.client);
-      const result = await installServerConfig(updateServer, row.client, row.scope);
-      const lockfile = await writeLockfile(plan, "mcp-lock.json", lockKey(targetName, row.client));
+      const result = row.lifecycleAction === "update"
+        ? await updateInstalledServer({
+            serverName: row.serverName,
+            client: row.client,
+            scope: row.scope,
+            servers: state.servers,
+          })
+        : await adoptInstalledServer({
+            installedName: row.serverName,
+            client: row.client,
+            scope: row.scope,
+            servers: state.servers,
+          });
+      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
         installing: false,
-        lastAction: row.locked ? `updated ${targetName} in ${result.file}` : `installed and locked ${targetName}`,
+        lastAction: result.action === "update" ? `updated ${result.targetName}` : `adopted ${result.targetName}`,
         commandLog: {
-          title: "install",
-          command: `toolpin install ${targetName} --client ${row.client} --scope ${row.scope} --update-lock`,
+          title: result.action,
+          command,
           ok: true,
           lines: [
-            adoptingAlias ? `removed old alias ${row.serverName}: ${removedAlias}` : `updated ${targetName} to ${updateServer.version}`,
-            `config: ${result.action} ${result.file}`,
-            "lockfile updated",
+            ...result.planned,
+            result.removedAlias ? `removed old alias: ${result.removedAlias.action} ${result.removedAlias.file}` : "no alias removal needed",
+            result.config ? `config: ${result.config.action} ${result.config.file}` : "config write skipped",
+            result.lockfileWritten ? "lockfile updated" : "lockfile unchanged",
           ],
         },
       }));
@@ -528,8 +539,8 @@ export function MpmTui() {
         installing: false,
         error: message,
         commandLog: {
-          title: "install",
-          command: `toolpin install ${row.serverName} --client ${row.client} --scope ${row.scope} --update-lock`,
+          title: row.lifecycleAction,
+          command,
           ok: false,
           lines: [message],
         },
@@ -538,25 +549,50 @@ export function MpmTui() {
   }
 
   async function updateAllInstalled(): Promise<void> {
-    const rows = installed.rows.filter((row) => row.locked && row.canUpdate);
-    if (!rows.length) {
-      const adoptable = installed.rows.filter((row) => !row.locked && row.canUpdate).length;
+    const command = `toolpin update --all --scope ${installed.scope}`;
+    setState((prev) => ({
+      ...prev,
+      installing: true,
+      error: undefined,
+      commandLog: {
+        title: "update",
+        command,
+        ok: true,
+        lines: ["checking locked installed servers for safe updates..."],
+      },
+    }));
+    try {
+      const result = await updateAllInstalledServers({
+        scope: installed.scope,
+        client: "all",
+        servers: state.servers,
+      });
+      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       setState((prev) => ({
         ...prev,
+        lockfile,
+        installing: false,
         commandLog: {
-          title: "install",
-          command: "toolpin outdated",
+          title: "update",
+          command,
           ok: true,
           lines: [
-            "No locked installed servers have installable version updates.",
-            adoptable ? `${adoptable} unlocked registry match(es) can be installed and locked with u per row.` : "No unlocked registry matches are available.",
+            `updated ${result.updated.length} locked server(s)`,
+            `skipped ${result.skippedAdoptable.length} unlocked adoptable server(s)`,
+            ...result.updated.slice(0, 4).map((entry) => `${entry.serverName} -> ${entry.targetName}@${entry.toVersion}`),
           ],
         },
+        lastAction: `updated ${result.updated.length} installed server(s)`,
       }));
-      return;
-    }
-    for (const row of rows) {
-      await updateInstalled(row);
+      await refreshInstalledRows(state.servers, lockfile);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setState((prev) => ({
+        ...prev,
+        installing: false,
+        error: message,
+        commandLog: { title: "update", command, ok: false, lines: [message] },
+      }));
     }
   }
 
@@ -589,7 +625,7 @@ export function MpmTui() {
         ...prev,
         commandLog: {
           title: "test",
-          command: "toolpin test",
+          command: "toolpin test-installed",
           ok: false,
           lines: ["Select an installed server first."],
         },
@@ -597,36 +633,25 @@ export function MpmTui() {
       return;
     }
 
+    const command = `toolpin test-installed ${row.serverName} --client ${row.client} --scope ${row.scope}`;
     setState((prev) => ({
       ...prev,
       testing: true,
       error: undefined,
       commandLog: {
         title: "test",
-        command: `toolpin test ${row.serverName}`,
+        command,
         ok: true,
         lines: [
           `testing installed ${row.serverName}`,
-          row.installableServer ? "using loaded registry metadata" : `using installed config from ${row.file}`,
+          `using installed config from ${row.file}`,
           "running MCP initialize handshake and tools/list...",
         ],
       },
     }));
 
     try {
-      let result: ServerTestResult;
-      if (row.installableServer) {
-        result = await testServer(row.installableServer, 15000);
-      } else {
-        const installedConfig = await readInstalledServerConfig(row.file, row.serverName, row.client);
-        if (installedConfig.kind !== "ok") {
-          const message = installedConfig.kind === "missing"
-            ? `Installed config entry is missing from ${row.file}.`
-            : installedConfig.message;
-          throw new Error(message);
-        }
-        result = await testInstalledClientConfig(row.serverName, installedConfig.config, 15000);
-      }
+      const result = await testInstalledServer({ serverName: row.serverName, client: row.client, scope: row.scope, timeoutMs: 15000 });
       const tests = { ...installedTests, [installedId(row.serverName, row.client, row.scope)]: result };
       setInstalledTests(tests);
       setState((prev) => ({
@@ -634,7 +659,7 @@ export function MpmTui() {
         testing: false,
         commandLog: {
           title: "test",
-          command: `toolpin test ${row.serverName}`,
+          command,
           ok: result.ok,
           lines: [result.message, `target: ${result.target}`, `duration: ${result.durationMs}ms`],
         },
@@ -646,7 +671,7 @@ export function MpmTui() {
       setState((prev) => ({
         ...prev,
         testing: false,
-        commandLog: { title: "test", command: `toolpin test ${row.serverName}`, ok: false, lines: [message] },
+        commandLog: { title: "test", command, ok: false, lines: [message] },
       }));
     }
   }

@@ -40,7 +40,7 @@ export function InstalledServersView({
       ))}
       {selectedRow ? (
         <Text color={CHROME} wrap="truncate">
-          {"  "}selected {selected + 1} of {rows.length}  u update/adopt  U all  x delete  t test  d drift check  g scope
+          {"  "}selected {selected + 1} of {rows.length}  u update/adopt  U all  x delete  t test-installed  d doctor  g scope
         </Text>
       ) : null}
     </Box>
@@ -65,8 +65,10 @@ export function InstalledServerDetails({ row, width }: { row?: InstalledServerSt
       <Metric label="version" value={versionText(row)} color={row.updateAvailable ? WARN : row.locked ? OK : MUTED} />
       <Metric label="source" value={row.source ?? "unknown"} />
       <Metric label="runtime" value={row.runningStatus} color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED} />
-      <Metric label="match" value={row.registryMatch ? `${row.registryMatch} registry` : "none"} color={row.registryMatch ? OK : MUTED} />
+      <Metric label="match" value={matchText(row)} color={row.registryMatch ? OK : MUTED} />
       <Metric label="actions" value={actionText(row)} color={row.canUpdate ? WARN : MUTED} />
+      <Metric label="test target" value={row.testSource === "config" ? `installed config: ${shortPath(row.file)}` : row.testSource} color={row.canTest ? OK : MUTED} />
+      {row.updateServer ? <Metric label="target" value={`${row.updateServer.name}@${row.updateServer.version}`} color={row.lifecycleAction === "none" ? MUTED : WARN} /> : null}
       {row.issue ? <Text color={WARN} wrap="truncate">drift       {truncate(row.issue, width - 18)}</Text> : null}
       {row.testResult ? (
         <>
@@ -89,6 +91,9 @@ function InstalledRow({ row, selected, width }: { row: InstalledServerState; sel
     ? `${row.lockedVersion ?? "unknown"} -> ${row.latestVersion}`
     : row.lockedVersion ?? row.currentVersion ?? "unknown";
   const lock = row.lockDrift ? "drift" : row.locked ? "locked" : "unlocked";
+  const registry = `registry:${row.registryStatus}`;
+  const action = `action:${row.lifecycleAction}`;
+  const test = `test:${row.testSource}`;
 
   return (
     <Text wrap="truncate">
@@ -98,7 +103,9 @@ function InstalledRow({ row, selected, width }: { row: InstalledServerState; sel
       <Text bold={selected} color="white"> {truncate(row.serverName, nameWidth).padEnd(nameWidth + 1)}</Text>
       <Text color={lock === "drift" ? ERR : lock === "locked" ? OK : WARN}>{lock.padEnd(9)}</Text>
       <Text color={row.updateAvailable ? WARN : MUTED}> {truncate(version, 18).padEnd(19)}</Text>
-      <Text color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED}>{row.runningStatus.padEnd(12)}</Text>
+      <Text color={row.registryStatus === "none" ? MUTED : OK}>{registry.padEnd(15)}</Text>
+      <Text color={row.lifecycleAction === "none" ? MUTED : WARN}>{action.padEnd(14)}</Text>
+      <Text color={row.testSource === "none" ? MUTED : OK}>{test.padEnd(12)}</Text>
       <Text color={CHROME}> {truncate(shortPath(row.file), fileWidth)}</Text>
     </Text>
   );
@@ -121,10 +128,15 @@ function versionText(row: InstalledServerState): string {
 
 function actionText(row: InstalledServerState): string {
   const actions = [];
-  if (row.canUpdate) actions.push(row.locked ? "update" : "install+lock");
+  if (row.lifecycleAction !== "none") actions.push(row.lifecycleAction);
   if (row.canDelete) actions.push("delete");
-  if (row.canTest) actions.push("test");
+  if (row.canTest) actions.push("test-installed");
   return actions.join(", ") || "none";
+}
+
+function matchText(row: InstalledServerState): string {
+  if (row.registryCandidates?.length) return `ambiguous alias: ${row.registryCandidates.join(", ")}`;
+  return row.registryMatch ? `${row.registryMatch} registry` : "none";
 }
 
 function scopeText(scope: InstalledServerState["scope"]): string {

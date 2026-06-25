@@ -59,9 +59,18 @@ node dist/cli.js install io.github.github/github-mcp-server \
 
 This writes project-scope client config and updates `mcp-lock.json`.
 
-`--verify` can run extra metadata and optional live MCP checks. When live
-`tools/list` succeeds, ToolPin stores a normalized tool-description hash in the
-lockfile. It does not download and verify OCI image bytes or MCPB bundle bytes.
+`--verify` runs metadata checks plus a live remote MCP `tools/list` probe that is
+on by default for remote targets (skip it with `--skip-live-verification`). When
+that probe succeeds, ToolPin stores a normalized tool-description hash in the
+lockfile. Package targets get registry pin checks instead (OCI digest or MCPB
+`fileSha256`); ToolPin never downloads and verifies OCI image or MCPB bundle bytes.
+
+Because `mcp-lock.json` now pins this server/client, a later `toolpin install`
+without `--update-lock` refuses if the version, selected target, generated client
+config, capability manifest, tool-description hash, or trust score (on decrease)
+has changed. Review the drift, then update the lock with
+`toolpin lock io.github.github/github-mcp-server --client claude` or repeat the
+install with `--update-lock`.
 
 ## Check the result
 

@@ -4,9 +4,9 @@ Use `toolpin ci` when `mcp-lock.json` is committed to a repository and pull
 requests should fail if registry metadata, generated client config, policy, or
 optional signatures no longer match the reviewed lockfile.
 
-`toolpin ci` is read-only. It re-resolves each locked server/client entry,
-rebuilds the install plan, verifies lock integrity, and exits non-zero on
-drift. It does not update `mcp-lock.json`.
+`toolpin ci` is read-only. It re-resolves locked entries, rebuilds install
+plans, checks lock integrity, enforces policy unless bypassed, and exits
+non-zero on drift. It does not update `mcp-lock.json`.
 
 ## Basic GitHub Action
 
@@ -160,12 +160,15 @@ verification without live `tools/list` probing.
 
 CI exits non-zero when:
 
-- `mcp-lock.json` is missing, empty, malformed, or has invalid entry integrity.
-- A locked server/client no longer resolves to the reviewed install plan.
-- `--expect-digest` does not match the current whole-lock digest.
-- Signature verification fails.
+- `mcp-lock.json` is missing, empty, malformed, or has an unsupported version.
+- Per-entry lock integrity is missing or invalid.
+- A locked server/client no longer resolves to the reviewed install plan
+  (version, target, trust, generated config, or capability manifest drifted).
+- The whole-lock digest (`--expect-digest`) does not match.
+- Detached signature verification fails, or `signature` and `public-key` are not
+  supplied as a pair.
 - The selected policy rejects a locked entry.
-- `--verify` finds critical verification issues.
+- `--verify` finds critical verification findings.
 
 Use `toolpin install --update-lock` or `toolpin lock <server> --client <client>`
 only after reviewing the drift locally. CI should not update the lockfile.

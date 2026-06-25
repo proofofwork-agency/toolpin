@@ -41,7 +41,7 @@ docs/
 │   ├── doctor-reconcile .................... doctor: lock ↔ client config
 │   ├── remove-server ....................... remove / uninstall cleanup
 │   ├── export-config-only .................. Generate config without installing
-│   └── use-the-tui ......................... Full-screen TUI workflow + hotkeys
+│   └── use-the-tui ......................... Full-screen TUI: browse, Installed-tab lifecycle (drift/doctor/update/remove/test), and hotkeys
 
 ├── reference/   (information-oriented; factual)
 │   ├── index

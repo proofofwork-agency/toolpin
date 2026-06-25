@@ -38,7 +38,15 @@ jobs:
           live: "true"
 ```
 
-Replace `OWNER/REPO` after the public ToolPin action is tagged.
+Replace `OWNER/REPO` after the public ToolPin action is tagged. The action
+builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
+
+```bash
+toolpin ci --file mcp-lock.json --source all --live --policy .toolpin/policy.json
+```
+
+When `.toolpin/policy.json` is absent, the current CLI treats policy enforcement
+as a no-op.
 
 ## Direct CLI
 

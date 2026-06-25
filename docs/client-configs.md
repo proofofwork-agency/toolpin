@@ -9,14 +9,63 @@ verified here from primary documentation.
 
 ## Current supported clients
 
-| Client | Current ToolPin status | Notes |
-|--------|--------------------|-------|
-| Claude / Cursor / generic | Implemented as `mcpServers` JSON | Generic project `.mcp.json` behavior. |
-| VS Code | Implemented as `servers` JSON | Project `.vscode/mcp.json`, global user MCP JSON. |
-| Codex | Implemented as TOML | Project `.codex/config.toml`, global `~/.codex/config.toml`, `[mcp_servers.<name>]`. |
-| OpenCode | Implemented as `mcp` JSON | Project `opencode.json`, global `~/.config/opencode/opencode.json`. |
+All 12 clients below are implemented in `src/config.ts` (`exportClientConfig`,
+`clientConfigRootKey`, `placeholderFor`) and wired into `src/install.ts`
+(`resolveConfigTarget`). `PROJECT_CLIENTS` and `GLOBAL_CLIENTS` in `src/config.ts`
+define which clients `--client all` fans out to per scope. A client whose project or
+global path is not verified fails closed (`resolveConfigTarget` throws) instead of
+writing a guess; `--client all` skips the unsupported scope for those clients.
 
-## Next-wave candidates
+`PROJECT_CLIENTS = [claude, cursor, vscode, codex, opencode, gemini, roo]`.
+`GLOBAL_CLIENTS = [cursor, vscode, codex, opencode, windsurf, cline, continue, gemini]`.
+Consequences: `claude` and `roo` are project-only, `windsurf`/`cline`/`continue` are
+global-only, `zed` is export-only (both scopes fail closed), and `generic` is
+explicit-only (works in both scopes when passed directly but is in neither
+`--client all` list; its global scope writes a ToolPin sidecar).
+
+| Client | Root key | Project path | Global path | Scope behavior |
+|--------|----------|--------------|-------------|----------------|
+| claude | `mcpServers` | `.mcp.json` | fail closed | Project only. Global owned by the Claude CLI; use `claude mcp add-json --scope user`. |
+| cursor | `mcpServers` | `.cursor/mcp.json` | `~/.cursor/mcp.json` | Project + global. |
+| vscode | `servers` | `.vscode/mcp.json` | `~/.config/Code/User/mcp.json` | Project + global. |
+| codex | `mcp_servers` | `.codex/config.toml` | `~/.codex/config.toml` | Project + global. TOML `[mcp_servers.<name>]` tables; project must be trusted by Codex. |
+| opencode | `mcp` | `opencode.json` | `~/.config/opencode/opencode.json` | Project + global. Adds `$schema: https://opencode.ai/config.json`. |
+| windsurf | `mcpServers` | fail closed | `~/.codeium/windsurf/mcp_config.json` | Global only. Project path not documented. |
+| cline | `mcpServers` | fail closed | `~/.cline/mcp.json` | Global only. Project path not documented. |
+| continue | `mcpServers` (YAML list) | fail closed | `~/.continue/config.yaml` | Global only. YAML; top-level `name`/`version`/`schema` required; `mcpServers` is a list keyed by `name`. |
+| gemini | `mcpServers` | `.gemini/settings.json` | `~/.gemini/settings.json` | Project + global. |
+| zed | `context_servers` | fail closed | fail closed | Export only. Settings path unverified; both scopes throw. |
+| roo | `mcpServers` | `.roo/mcp.json` | fail closed | Project only. Global `mcp_settings.json` path unverified. |
+| generic | `mcpServers` | `.mcp.json` | `~/.config/toolpin/<client>-mcp.json` | Project + global sidecar (explicit `--client generic` only). |
+
+## Transport and placeholder shapes
+
+`selectLaunchTarget` prefers a `streamable-http` remote, then the first remote,
+then the best package (OCI > MCPB > first). All clients support local stdio via a
+package command and remote HTTP/SSE via a remote url; the inner object and secret
+placeholder differ per client (`src/config.ts` `to*` helpers and `placeholderFor`).
+
+| Client | Local (stdio) inner shape | Remote inner shape | Secret placeholder |
+|--------|---------------------------|--------------------|--------------------|
+| claude / cursor / generic / vscode | `{ command, args, env }` | `{ type, url, headers }` | `<NAME>` |
+| codex | `{ command, args, env }` | `{ url, http_headers }` | `<NAME>` |
+| opencode | `{ type:"local", command:[cmd,...args], enabled:true, environment }` | `{ type:"remote", url, enabled:true, headers }` | `<NAME>` |
+| windsurf | `{ command, args, env }` | `{ serverUrl, headers }` | `${env:NAME}` |
+| cline | `{ command, args, env, disabled:false, autoApprove:[] }` | `{ type:"streamableHttp"\|<type>, url, headers, disabled:false, autoApprove:[] }` | `<NAME>` |
+| continue | `{ name, command, args, env }` | `{ name, type, url, requestOptions:{headers} }` | `${{ secrets.NAME }}` |
+| gemini | `{ command, args, env }` | streamable-http `{ httpUrl, headers }`; otherwise `{ url, headers }` | `${NAME}` |
+| zed | `{ command, args, env }` | `{ url, headers }` | `<NAME>` |
+| roo | `{ command, args, env, disabled:false }` | `{ type, url, headers, disabled:false }` | `<NAME>` |
+
+`vscode` wraps the inner object under `servers`; `codex` under `mcp_servers`;
+`opencode` under `mcp` (plus `$schema`); `zed` under `context_servers`; the others
+under `mcpServers` (continue's `mcpServers` is a YAML list). Empty/undefined fields
+are pruned before write.
+
+## Per-client research notes
+
+The matrix above is the current source of truth; the notes below capture the
+primary-source evidence and open questions behind each client's implementation.
 
 ### Windsurf / Cascade
 
@@ -185,9 +234,9 @@ ToolPin mapping:
   the file but do not expose a platform path, so global write should be gated until
   path discovery is implemented or verified.
 - Default generated entries should include `disabled: false`.
-- Secret placeholders in args should use `${env:VAR_NAME}` where Roo expects runtime
-  substitution; env object values may remain direct placeholders until the secret
-  broker exists.
+- Secret placeholders currently emit `<VAR_NAME>` (ToolPin's generic default) for both
+  `args` and `env` values; Roo's docs document `${env:VAR_NAME}` runtime substitution
+  for args, which ToolPin does not yet specialize.
 
 Open implementation questions:
 - Verify the platform-specific global `mcp_settings.json` path before adding global
@@ -195,8 +244,8 @@ Open implementation questions:
 
 ## Implementation order
 
-1. Add global path discovery for clients whose docs expose UI-opened files but not
-   stable platform paths.
+1. Verify the remaining unverified paths so their fail-closed writes can land: Roo
+   Code global `mcp_settings.json` and Zed project/global settings file.
 2. Add one test per client for local, remote, env placeholder, merge, remove, and doctor.
 
 ## Do not implement yet

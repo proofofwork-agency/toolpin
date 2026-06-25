@@ -28,6 +28,9 @@ test("loadInstalledServerStates joins inventory, lockfile, and registry version 
     assert.equal(row.latestVersion, "1.2.0");
     assert.equal(row.updateAvailable, true);
     assert.equal(row.canUpdate, true);
+    assert.equal(row.registryStatus, "exact");
+    assert.equal(row.lifecycleAction, "update");
+    assert.equal(row.testSource, "config");
     assert.equal(row.installableServer.version, "1.0.0");
     assert.equal(row.updateServer.version, "1.2.0");
     assert.equal(row.runningStatus, "stale");
@@ -74,8 +77,37 @@ test("loadInstalledServerStates can match unlocked installed aliases to registry
     assert.equal(row.canUpdate, true);
     assert.equal(row.canTest, true);
     assert.equal(row.registryMatch, "alias");
+    assert.equal(row.registryStatus, "alias");
+    assert.equal(row.lifecycleAction, "adopt");
+    assert.equal(row.testSource, "config");
     assert.equal(row.latestVersion, "2.0.0");
     assert.equal(row.updateServer.name, "io.modelcontextprotocol/github");
+  });
+});
+
+test("loadInstalledServerStates labels rows with no registry match", async () => {
+  await withTempHomeAndCwd(async () => {
+    await writeFile(".mcp.json", JSON.stringify({
+      mcpServers: {
+        private: {
+          command: "node",
+          args: ["server.js"],
+        },
+      },
+    }));
+
+    const rows = await loadInstalledServerStates({
+      servers: [],
+      scope: "project",
+    });
+
+    const row = rows.find((entry) => entry.serverName === "private" && entry.client === "claude");
+    assert.ok(row);
+    assert.equal(row.registryStatus, "none");
+    assert.equal(row.lifecycleAction, "none");
+    assert.equal(row.testSource, "config");
+    assert.equal(row.canUpdate, false);
+    assert.equal(row.canTest, true);
   });
 });
 

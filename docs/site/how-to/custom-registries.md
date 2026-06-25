@@ -124,6 +124,19 @@ For public repositories, raw GitHub works immediately after merge. For private
 repositories, make sure your environment can fetch the raw URL with the
 appropriate GitHub authentication before relying on CI.
 
+## TUI Installed View
+
+Open the `Installed` tab to inspect servers already written to supported config
+files across folder/project and global/user scopes. Rows show registry match
+status (`registry:exact`, `registry:alias`, or `registry:none`), lifecycle action
+(`action:update`, `action:adopt`, or `action:none`), and test source
+(`test:config` when ToolPin can test the installed client config).
+
+The Installed hotkeys map to the same CLI actions: `t` runs
+`toolpin test-installed`, `u` runs either `toolpin update` or `toolpin adopt`,
+`U` runs `toolpin update --all`, `d` runs `toolpin doctor`, and `x` runs
+`toolpin remove`.
+
 ## Discovery-Only HTTP JSON
 
 Use `http-json` for broad directories, scraped lists, or indexes that are not

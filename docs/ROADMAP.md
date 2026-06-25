@@ -14,7 +14,7 @@ own the catalog; the win is being the `brew` / `uv` of MCP.
 ### ToolPin is
 - A trust + install + governance layer over the official registry.
 - Wire-compatible with the official `/v0/servers` API; extends via `_meta` namespaces.
-- Multi-client neutral: current targets are Claude, Cursor, VS Code, Codex, and OpenCode; next-wave targets must be added only after schema/path/env research is recorded.
+- Multi-client neutral: config export and install for 12 clients (Claude, Cursor, VS Code, Codex, OpenCode, Windsurf, Cline, Continue, Gemini CLI, Zed, Roo, plus a Generic sidecar). `--client all` fans out to the verified project/global clients for the selected scope; clients whose path is unverified (e.g. Zed install, Roo global) fail closed until verified. New clients must be added only after schema/path/env research is recorded in `docs/client-configs.md`.
 
 ### ToolPin is not
 - A competing public catalog (that fight is lost to GitHub MCP Registry + Smithery).
@@ -46,7 +46,7 @@ Shipped in v0.1:
 - Normalized package/remote metadata; multi-source scaffold (pulse/smithery/glama disabled).
 - Search ranking over name, title, description, type, transport, repo (`src/search.ts`).
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
-- Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
+- Config export for all 12 clients (`src/config.ts`): Claude/Cursor `mcpServers`, VS Code `servers`, Codex TOML `[mcp_servers.*]` tables (`src/codexToml.ts`), OpenCode, Windsurf/Cascade, Cline, Continue YAML, Gemini CLI, Zed `context_servers`, Roo, and Generic.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
 - Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation exist; sigstore/transparency, runtime secret brokering, and enterprise policy controls are still open.
 - Ink TUI (`src/tui.tsx`).

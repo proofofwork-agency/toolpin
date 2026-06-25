@@ -4,6 +4,7 @@ import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, typ
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
+import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer, type InstalledMutationResult, type InstalledUpdateAllResult } from "./installed.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
@@ -88,6 +89,12 @@ async function main(): Promise<void> {
     case "install":
       await install(rest);
       return;
+    case "adopt":
+      await adoptInstalled(rest);
+      return;
+    case "update":
+      await updateInstalled(rest);
+      return;
     case "policy":
       await policy(rest);
       return;
@@ -108,6 +115,9 @@ async function main(): Promise<void> {
       return;
     case "test":
       await test(rest);
+      return;
+    case "test-installed":
+      await testInstalled(rest);
       return;
     case "lock":
       await lock(rest);
@@ -545,6 +555,123 @@ async function install(rest: string[]): Promise<void> {
   printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`);
 }
 
+async function testInstalled(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    console.log(`Usage: toolpin test-installed <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--timeout 15000] [--json]`);
+    return;
+  }
+
+  const values = positional(rest);
+  const name = values[0];
+  if (!name) throw new Error(`Usage: toolpin test-installed <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--timeout 15000] [--json]`);
+
+  const client = clientFlag(rest, "generic");
+  if (client === "all") throw new Error("test-installed requires one --client value, not all.");
+  const scope = scopeFlag(rest, "project") as InstallScope;
+  if (scope !== "project" && scope !== "global") throw new Error("--scope must be project or global");
+  const timeoutMs = numberFlag(rest, "--timeout", 15000);
+
+  const result = await testInstalledServer({ serverName: name, client, scope, timeoutMs });
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printHeader(result.ok ? "Installed test OK" : "Installed test failed");
+    printField("server", result.serverName);
+    printField("client", client);
+    printField("scope", scope);
+    printField("target", result.target);
+    printField("duration", `${result.durationMs}ms`);
+    printField("message", result.message);
+    if (result.tools.length) {
+      printSubhead("Tools");
+      for (const tool of result.tools) {
+        printBullet(`${tool.name}${tool.description ? `: ${truncate(tool.description, 120)}` : ""}`);
+      }
+    }
+  }
+  if (!result.ok) process.exitCode = 1;
+}
+
+async function adoptInstalled(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    console.log(`Usage: toolpin adopt <installed-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]`);
+    return;
+  }
+
+  const values = positional(rest);
+  const name = values[0];
+  if (!name) throw new Error(`Usage: toolpin adopt <installed-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]`);
+
+  const client = clientFlag(rest, "generic");
+  if (client === "all") throw new Error("adopt requires one --client value, not all.");
+  const scope = scopeFlag(rest, "project") as InstallScope;
+  if (scope !== "project" && scope !== "global") throw new Error("--scope must be project or global");
+  const servers = await loadServers(rest, { source: sourceFlag(rest, "all") });
+  const result = await adoptInstalledServer({
+    installedName: name,
+    client,
+    scope,
+    servers,
+    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    verify: hasFlag(rest, "--verify"),
+    timeoutMs: numberFlag(rest, "--timeout", 15000),
+    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    enforcePolicy: !hasFlag(rest, "--no-policy"),
+    dryRun: hasFlag(rest, "--dry-run"),
+  });
+
+  printInstalledMutationResult(result, hasFlag(rest, "--json"));
+}
+
+async function updateInstalled(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    console.log(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+       toolpin update --all [--scope all|project|global] [--client <client|all>] [--source all] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
+    return;
+  }
+
+  const servers = await loadServers(rest, { source: sourceFlag(rest, "all") });
+  if (hasFlag(rest, "--all")) {
+    const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "generic") : "all";
+    const result = await updateAllInstalledServers({
+      scope: scopeFlag(rest, "all"),
+      client,
+      servers,
+      lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+      verify: hasFlag(rest, "--verify"),
+      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+      enforcePolicy: !hasFlag(rest, "--no-policy"),
+      dryRun: hasFlag(rest, "--dry-run"),
+    });
+    printInstalledUpdateAllResult(result, hasFlag(rest, "--json"));
+    return;
+  }
+
+  const values = positional(rest);
+  const name = values[0];
+  if (!name) throw new Error(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
+
+  const client = clientFlag(rest, "generic");
+  if (client === "all") throw new Error("update <server-name> requires one --client value, not all.");
+  const scope = scopeFlag(rest, "project") as InstallScope;
+  if (scope !== "project" && scope !== "global") throw new Error("--scope must be project or global");
+  const result = await updateInstalledServer({
+    serverName: name,
+    client,
+    scope,
+    servers,
+    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    verify: hasFlag(rest, "--verify"),
+    timeoutMs: numberFlag(rest, "--timeout", 15000),
+    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    enforcePolicy: !hasFlag(rest, "--no-policy"),
+    dryRun: hasFlag(rest, "--dry-run"),
+  });
+
+  printInstalledMutationResult(result, hasFlag(rest, "--json"));
+}
+
 async function remove(rest: string[], command: "remove" | "uninstall" = "remove"): Promise<void> {
   if (isHelp(rest)) {
     console.log(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
@@ -819,11 +946,15 @@ Discovery
   toolpin verify <server> [--live] [--json] [--timeout 15000] [--skip-live-verification]
   toolpin versions <server> [--live] [--limit 10] [--json]
   toolpin test <server> [--live] [--timeout 15000]
+  toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
 
 Install and config
   toolpin list [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
   toolpin plan <server> --client|-c <client> [--live]
   toolpin install <server> --client|-c <client|all> [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin adopt <installed> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
+  toolpin update <server> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
+  toolpin update --all [--scope|-s all|project|global] [--client|-c <client|all>] [--dry-run] [--json]
   toolpin remove <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
   toolpin uninstall <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
   toolpin export-config <server> --client|-c <client|all> [--live]
@@ -873,6 +1004,50 @@ function printBullet(value: string): void {
 
 function scopeDescription(scope: "all" | InstallScope): string {
   return scope === "all" ? "all supported project/global configs" : `${scope} config`;
+}
+
+function printInstalledMutationResult(result: InstalledMutationResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  printHeader(`${result.dryRun ? "Dry run" : "Installed"} ${result.action}`);
+  printField("server", result.serverName);
+  printField("target", `${result.targetName}@${result.toVersion}`);
+  printField("client", result.client);
+  printField("scope", result.scope);
+  if (result.fromVersion) printField("version", `${result.fromVersion} -> ${result.toVersion}`);
+  printField("lockfile", result.lockfileWritten ? `${result.lockfilePath} updated` : `${result.lockfilePath} not written`);
+  printSubhead("Plan");
+  for (const line of result.planned) printBullet(line);
+  if (result.removedAlias) printField("alias", `${result.removedAlias.action}: ${result.removedAlias.file}`);
+  if (result.config) printField("config", `${result.config.action}: ${result.config.file}`);
+}
+
+function printInstalledUpdateAllResult(result: InstalledUpdateAllResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  printHeader(`${result.dryRun ? "Dry run" : "Installed"} update all`);
+  printField("scope", scopeDescription(result.scope));
+  printField("client", result.client === "all" ? "all supported clients" : result.client);
+  printField("updated", String(result.updated.length));
+  printField("adoptable", `${result.skippedAdoptable.length} skipped`);
+  if (result.updated.length) {
+    printSubhead("Updated");
+    for (const entry of result.updated) {
+      printBullet(`${entry.serverName} -> ${entry.targetName}@${entry.toVersion} (${entry.client}/${entry.scope})`);
+    }
+  }
+  if (result.skippedAdoptable.length) {
+    printSubhead("Skipped adoptable");
+    for (const entry of result.skippedAdoptable) {
+      printBullet(`${entry.serverName} -> ${entry.targetName} (${entry.client}/${entry.scope}); run toolpin adopt ${entry.serverName} --client ${entry.client} --scope ${entry.scope}`);
+    }
+  }
 }
 
 async function runTui(rest: string[]): Promise<void> {

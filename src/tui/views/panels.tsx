@@ -325,13 +325,13 @@ export function HelpView({ width }: { width: number }) {
     ["what", "trusted install, lockfile, and governance for MCP servers; not a host"],
     ["sources", `enabled: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}; cache .toolpin/registry-cache.json`],
     ["results", "50 shown first; m/+ adds more up to 500; i refreshes; g filters source"],
-    ["installed", "Installed tab shows folder/project and global/user configs, lock drift, updates, delete, and test"],
+    ["installed", "Installed tab shows registry match, test source, update/adopt actions, delete, and doctor"],
     ["score", "0-100 advisory trust from source, hashes, transport, secrets, and scans"],
     ["test", "t runs initialize + tools/list; tokens, APIs, or local services may be needed"],
     ["install", "I writes project-folder or global/current-user config; all writes all clients"],
     ["lock", "mcp-lock.json pins target/config/trust; ci catches drift; digest/signature pin it"],
     ["versions", "Overview/Install show locked vs latest; toolpin versions lists older releases"],
-    ["keys", "/ search, j/k move, c/G client+scope, t/I test+install, u update installed, : commands"],
+    ["keys", "/ search, j/k move, c/G client+scope, t/I test+install, u update/adopt installed, : commands"],
     ["files", "w lock, s save snippets, x remove config+lock, R reset, q quit"],
   ];
   const lineWidth = Math.max(24, width - 8);
@@ -430,7 +430,7 @@ export function Footer({ view, inputMode }: { view: View; inputMode: InputMode }
     : view === "discover"
       ? [["/", "search"], ["m", "more"], ["i", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["u", "update/adopt"], ["U", "all"], ["x", "delete"], ["t", "test"], ["d", "drift"], ["q", "quit"]]
+        ? [["j/k", "move"], ["u", "update/adopt"], ["U", "update all"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "details"
         ? [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["I", "install"], ["q", "quit"]]
         : [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["I", "install"], ["q", "quit"]];

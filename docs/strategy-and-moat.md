@@ -150,7 +150,7 @@ Ranked by leverage, not effort:
 1. **Publish to npm** with a working `npm install -g toolpin`. Package metadata, `release:check`, `prepare`, and `prepublishOnly` are now in place; the registry package is not published yet.
 2. **Publish/tag the GitHub Action** and replace `OWNER/REPO` examples with the real action path.
 3. **Rename the GitHub repo** to `TPN` and keep public copy on `ToolPin`, `toolpin`, and `tpn`.
-4. **Write the P0 missing docs**: `trust-explained`, `lockfile-schema`, `policy-schema`, `signing-guide` (see `docs/docusaurus-design.md`). `threat-model`, `comparison`, and `catch-drift-in-ci` now exist.
+4. **Finish the P0 docs**: `threat-model`, `comparison`, `catch-drift-in-ci`, `trust-explained`, `lockfile-schema`, and `policy-schema` now exist (see `docs/docusaurus-design.md`); `signing-guide` is the remaining P0 gap.
 5. **Continue TUI refactor phase 2**: move async operations and input handling out of `src/tui.tsx`, then split view components.
 6. **Reconcile `stableJson` divergence** between `plan.ts` and `doctor.ts` deliberately, not accidentally.
 7. **Add release automation** for npm provenance, changelog, tags, and action release notes.

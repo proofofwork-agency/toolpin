@@ -163,8 +163,6 @@ The PR description should include:
 - risk notes such as network access, filesystem access, write operations, or
   hosted-service dependency.
 
-The container file (`registry/v0/servers`) wraps entries in a `servers` array plus a `metadata` block. If `metadata.count` or `metadata.total` is present, it must equal `servers.length`, or `npm run registry:check` fails. Package targets require `registryType`, `identifier`, and `transport.type`; remote targets require an `https://` URL.
-
 Reviewers should reject entries that are hosted-only, source-missing,
 non-installable, stale, duplicate, or not useful enough to recommend.
 

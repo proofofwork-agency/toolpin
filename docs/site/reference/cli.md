@@ -11,31 +11,41 @@ toolpin version | --version | -v        Print the ToolPin version.
 toolpin help | --help | -h              Print top-level usage.
 ```
 
-`list` and `uninstall` accept the aliases `ls` and `remove` (the reverse is also
-true: `remove` and `uninstall` are interchangeable).
+`list` has the alias `ls`. `remove` and `uninstall` are interchangeable aliases
+for the same cleanup action.
 
 ## Discovery
 
 ```text
-toolpin ingest [--source official|docker|all] [--limit 100] [--pages 10]
-toolpin search <query> [--source official|docker|all] [--limit 10] [--live]
-toolpin info <server-name> [--source official|docker|all] [--json] [--live]
-toolpin audit <server-name> [--source official|docker|all] [--live]
-toolpin versions <server-name> [--source official|docker|all] [--live] [--limit 10] [--json]
+toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
+toolpin registry list [--json]
+toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
+toolpin info <server-name> [--source official|docker|all|custom-id] [--json] [--live]
+toolpin audit <server-name> [--source official|docker|all|custom-id] [--live]
+toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
-toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
-toolpin plan <server-name> --client <client|all> [--source official|docker|all] [--live]
-toolpin install <server-name> --client <client|all> [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify [--skip-live-verification] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
-toolpin export-config <server-name> --client <client|all> [--source official|docker|all] [--live]
+toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin test <server-name> [--source official|docker|all|custom-id] [--live] [--timeout 15000]
+toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
+toolpin plan <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
+toolpin install <server-name> --client <client|all> [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin adopt <installed-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update <server-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update --all [--scope all|project|global] [--client <client|all>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
+toolpin export-config <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
 ```
 
 `verify` checks registry metadata and optional live MCP tool metadata. It does
 not perform byte-level OCI image or MCPB bundle verification.
+
+`test-installed` reads the installed client config entry and performs the MCP
+handshake against that target directly. `adopt` is the explicit unlocked-alias
+path; `update` only updates locked entries. `update --all` skips unlocked
+adoptable rows and reports them separately.
 
 ## Inventory and cleanup
 
@@ -52,12 +62,12 @@ read-only.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--source official|docker|all] [--file mcp-lock.json] [--live]
+toolpin lock <server-name> --client <client|all> [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify [--skip-live-verification] [--timeout 15000]]
-toolpin outdated [--file mcp-lock.json] [--source official|docker|all] [--live] [--json]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
@@ -68,9 +78,32 @@ does not update `mcp-lock.json`.
 
 ```text
 toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
-toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source official|docker|all] [--live]
+toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source official|docker|all|custom-id] [--live]
 toolpin tui
 ```
 
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
+
+## Common options and values
+
+```text
+--client, -c <client|all>   Target client config. <client> is one of:
+                            claude, cursor, vscode, codex, opencode, windsurf,
+                            cline, continue, gemini, zed, roo, generic.
+                            Use `all` to fan out across every supported client
+                            for the chosen scope.
+--scope, -s <scope>         project|global for install/remove/policy check;
+                            all|project|global for list/doctor/secrets audit.
+--global, -g                Shortcut for --scope global.
+--project, -p               Shortcut for --scope project.
+--source <id>               Registry source: official, docker, all, or a custom
+                            registry id configured in .toolpin/registries.json.
+--live                      Fetch from the registry instead of the local cache.
+--json                      Machine-readable output.
+--version, -v               Print the ToolPin version.
+--help, -h                  Print usage.
+```
+
+`tpn` is the short binary alias for `toolpin`; every command and flag above
+works identically with `tpn`.
