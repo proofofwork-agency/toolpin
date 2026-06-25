@@ -97,7 +97,7 @@ servers fail verification unless the user explicitly skips live verification.
 | Task | File | Detail |
 |------|------|--------|
 | Fix Codex (TOML) | `src/config.ts`, `src/install.ts`, `src/tui.tsx`, `src/codexToml.ts` | Codex uses `~/.codex/config.toml` and trusted project `.codex/config.toml` with `[mcp_servers.<id>]`. Format-aware writer/merger, export output, install paths, and TUI labels are shipped in current code. |
-| Research next-wave clients | `docs/client-configs.md` or equivalent | Before adding clients, record each target's config path, schema key, local/remote transport shape, and env interpolation syntax. Candidate targets: Windsurf, Cline, Continue, Gemini CLI, Zed, and Roo Code. |
+| Research next-wave clients | `docs/client-configs.md` | Completed for Windsurf, Cline, Continue, Gemini CLI, Zed, and Roo Code. The document records each target's config path, schema key, local/remote transport shape, env interpolation syntax, and any implementation caveats before code support is added. |
 | Add verified clients | `src/config.ts`, `src/install.ts`, `src/cli.ts`, `src/tui.tsx` | Extend `ClientName`, `PROJECT_CLIENTS`, config wrapping, install paths, CLI usage strings/help, `clientFlag`, TUI client list, and project/global target labels only for clients with completed research. |
 | Per-client env syntax | `src/config.ts` | Replace generic placeholder emission (`config.ts:90-96`) with per-client interpolation syntax. |
 | Multi-client fan-out | `src/cli.ts`, `src/install.ts`, `src/tui.tsx` | Keep `mpm install <server> --client all` as the primary verb; `--client all` writes every detected verified client without clobbering unrelated keys. |
