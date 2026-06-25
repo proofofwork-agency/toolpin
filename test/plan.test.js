@@ -131,6 +131,21 @@ test("buildInstallPlan can persist a verified tool-description hash", () => {
   assert.equal(plan.integrity, computePlanIntegrity(plan));
 });
 
+test("buildInstallPlan refuses discovery-only registry entries", () => {
+  const server = {
+    ...packageServer(),
+    registrySource: "glama",
+    registryMode: "discovery",
+    installable: false,
+    installableReason: "registry source is discovery-only",
+  };
+
+  assert.throws(
+    () => buildInstallPlan(server, "claude"),
+    /Cannot install io\.github\/example@1\.0\.0: registry source is discovery-only/,
+  );
+});
+
 test("verifyAgainstLockfile ignores missing current tool-description hash", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
@@ -166,6 +181,24 @@ test("verifyAgainstLockfile rejects rechecked tool-description hash drift", asyn
     const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "new-hash") }), lockfilePath);
 
     assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool-description hash changed"));
+  });
+});
+
+test("verifyAgainstLockfile rejects tampered locked tool-description hashes", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }), lockfilePath);
+
+    const raw = JSON.parse(await readFile(lockfilePath, "utf8"));
+    raw.servers["io.github/example:claude"].capabilityManifest.toolDescriptionHash.value = "tampered-hash";
+    await writeFile(lockfilePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "old-hash") }), lockfilePath);
+
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("locked entry integrity does not match its contents"));
     assert.ok(verification.messages.includes("tool-description hash changed"));
   });
 });
@@ -244,6 +277,31 @@ test("readLockfile rejects malformed existing lockfiles", async () => {
     await writeFile(lockfilePath, '{"lockfileVersion":2,"generatedAt":"now","servers":[]}\n', "utf8");
 
     await assert.rejects(() => readLockfile(lockfilePath), /Invalid lockfile schema/);
+  });
+});
+
+test("readLockfile rejects malformed trust payloads", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer(), "claude"), lockfilePath);
+    const raw = JSON.parse(await readFile(lockfilePath, "utf8"));
+    raw.servers["io.github/example:claude"].trust = {
+      score: 90,
+      badges: ["source repo"],
+      issues: [{ severity: "critical", code: "unsafe" }],
+    };
+    await writeFile(lockfilePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    await assert.rejects(() => readLockfile(lockfilePath), /invalid trust\.issues\[0\]\.message/);
+  });
+});
+
+test("readLockfile rejects legacy v1 lockfiles in v0.1", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeFile(lockfilePath, '{"lockfileVersion":1,"generatedAt":"2026-01-01T00:00:00.000Z","servers":{}}\n', "utf8");
+
+    await assert.rejects(() => readLockfile(lockfilePath), /Unsupported lockfileVersion 1 in v0\.1/);
   });
 });
 

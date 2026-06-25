@@ -5,20 +5,39 @@ import { codexTomlFromClientConfig } from "./codexToml.js";
 import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
+import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { enforcePolicy } from "./policy.js";
-import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
+import { CacheSchemaError, fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { auditSecrets } from "./secrets.js";
 import { signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
+import { TOOLPIN_VERSION } from "./version.js";
+import { compareLockedToLatest, knownVersions } from "./versions.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId } from "./types.js";
 
 const args = process.argv.slice(2);
 type ClientSelection = ClientName | "all";
 const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
+const VALUE_FLAGS = new Set([
+  "-c",
+  "-s",
+  "--client",
+  "--expect-digest",
+  "--file",
+  "--key",
+  "--limit",
+  "--pages",
+  "--policy",
+  "--public-key",
+  "--scope",
+  "--signature",
+  "--source",
+  "--timeout",
+]);
 
 main().catch((error) => {
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -30,6 +49,11 @@ async function main(): Promise<void> {
   const rest = args.slice(1);
 
   switch (command) {
+    case "version":
+    case "--version":
+    case "-v":
+      console.log(`toolpin ${TOOLPIN_VERSION}`);
+      return;
     case "ingest":
       await ingest(rest);
       return;
@@ -45,6 +69,19 @@ async function main(): Promise<void> {
     case "verify":
       await verify(rest);
       return;
+    case "versions":
+      await versions(rest);
+      return;
+    case "registry":
+      await registry(rest);
+      return;
+    case "outdated":
+      await outdated(rest);
+      return;
+    case "list":
+    case "ls":
+      await listInstalled(rest);
+      return;
     case "plan":
       await plan(rest);
       return;
@@ -58,7 +95,10 @@ async function main(): Promise<void> {
       await secrets(rest);
       return;
     case "remove":
-      await remove(rest);
+      await remove(rest, "remove");
+      return;
+    case "uninstall":
+      await remove(rest, "uninstall");
       return;
     case "ci":
       await ci(rest);
@@ -170,6 +210,101 @@ async function verify(rest: string[]): Promise<void> {
 
   if (!report.ok) {
     process.exitCode = 1;
+  }
+}
+
+async function versions(rest: string[]): Promise<void> {
+  const name = positional(rest)[0];
+  if (!name) throw new Error("Usage: toolpin versions <server-name> [--source official|docker|all] [--live] [--limit 10] [--json]");
+
+  const servers = await loadServers(rest, { search: name });
+  const exactName = latestOnly(servers).find((server) => server.name === name)?.name
+    ?? searchServers(latestOnly(servers), name, 1)[0]?.server.name
+    ?? name;
+  const entries = knownVersions(servers, exactName).slice(0, numberFlag(rest, "--limit", 10));
+
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ name: exactName, versions: entries }, null, 2));
+    return;
+  }
+
+  printHeader(`Known versions: ${exactName}`);
+  if (!entries.length) {
+    printField("status", "no versions found in current cache/source");
+    return;
+  }
+  for (const entry of entries) {
+    printBullet(`${entry.version}${entry.isLatest ? "  latest" : ""}  ${entry.source}`);
+  }
+}
+
+async function registry(rest: string[]): Promise<void> {
+  const subcommand = rest[0] ?? "list";
+  if (subcommand !== "list") {
+    throw new Error("Usage: toolpin registry list [--json]");
+  }
+
+  const sources = await listRegistrySources();
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ sources }, null, 2));
+    return;
+  }
+
+  printHeader("Registry sources");
+  for (const source of sources) {
+    printSubhead(source.id);
+    printField("label", source.label);
+    printField("type", source.type ?? "unknown");
+    printField("mode", source.mode);
+    printField("trust", source.trust);
+    printField("enabled", source.enabled ? "yes" : "no");
+    printField("auth", source.authRequired ? "required" : "none");
+    if (source.url) printField("url", source.url);
+    printField("about", source.description);
+  }
+}
+
+async function outdated(rest: string[]): Promise<void> {
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const lockfile = await readLockfile(path);
+  const rows = [];
+  for (const [key, locked] of Object.entries(lockfile.servers)) {
+    const servers = await loadServers(rest, {
+      search: locked.name,
+      source: locked.resolved?.source ?? sourceFlag(rest, "all"),
+    });
+    const comparison = compareLockedToLatest(locked.name, locked.version, servers);
+    rows.push({
+      key,
+      name: locked.name,
+      client: locked.client,
+      source: locked.resolved?.source ?? "unknown",
+      locked: locked.version,
+      latest: comparison.latestVersion ?? "unknown",
+      status: comparison.status,
+      previous: comparison.previousVersions.map((entry) => entry.version),
+    });
+  }
+
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ file: path, checked: rows.length, updates: rows.filter((row) => row.status === "update-available").length, servers: rows }, null, 2));
+    return;
+  }
+
+  printHeader("Outdated check");
+  printField("file", path);
+  printField("checked", `${rows.length} locked server/client entrie(s)`);
+  if (!rows.length) {
+    printField("status", "lockfile has no server entries");
+    return;
+  }
+  for (const row of rows) {
+    const marker = row.status === "update-available" ? "update available" : row.status;
+    printSubhead(`${row.name} (${row.client})`);
+    printField("locked", row.locked);
+    printField("latest", row.latest);
+    printField("status", marker);
+    if (row.previous.length) printField("previous", row.previous.slice(0, 5).join(", "));
   }
 }
 
@@ -321,7 +456,8 @@ async function loadServers(rest: string[], liveOptions: { search?: string; sourc
       if (!cacheHasSource(entries, source)) {
         entries = await fetchRegistry({ maxPages: 3, search: liveOptions.search, source });
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof CacheSchemaError) throw error;
       entries = await fetchRegistry({ maxPages: 3, search: liveOptions.search, source });
     }
   }
@@ -336,7 +472,7 @@ async function install(rest: string[]): Promise<void> {
   if (!name) throw new Error(`Usage: toolpin install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--live]`);
 
   const client = clientFlag(rest, "generic");
-  const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
+  const scope = scopeFlag(rest, "project") as InstallScope;
   const updateLock = hasFlag(rest, "--update-lock");
   const verifyBeforeInstall = hasFlag(rest, "--verify");
   const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
@@ -409,13 +545,18 @@ async function install(rest: string[]): Promise<void> {
   printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`);
 }
 
-async function remove(rest: string[]): Promise<void> {
+async function remove(rest: string[], command: "remove" | "uninstall" = "remove"): Promise<void> {
+  if (isHelp(rest)) {
+    console.log(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
+    return;
+  }
+
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: toolpin remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
+  if (!name) throw new Error(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
 
-  const client = hasFlag(rest, "--client") ? clientFlag(rest, "generic") : "all";
-  const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
+  const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "generic") : "all";
+  const scope = scopeFlag(rest, "project") as InstallScope;
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
@@ -434,6 +575,48 @@ async function remove(rest: string[]): Promise<void> {
     printField("config", configResult.action);
     printField("lock", lockResult.removed ? "removed" : "missing");
     for (const note of configResult.notes) printBullet(note);
+  }
+}
+
+async function listInstalled(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    console.log(`Usage: toolpin list [--scope all|project|global] [--client ${CLIENT_USAGE}] [--json]`);
+    return;
+  }
+
+  const scope = scopeFlag(rest, "all");
+  const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "generic") : "all";
+  const report = await listInstalledServers({ scope, client });
+
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  printHeader("Installed MCP servers");
+  printField("scope", scopeDescription(scope));
+  printField("client", client === "all" ? "all supported clients" : client);
+  printField("checked", `${report.checked} config file(s)`);
+
+  if (!report.entries.length) {
+    printField("status", "no installed MCP server entries found");
+  } else {
+    let previousGroup = "";
+    for (const entry of report.entries) {
+      const group = `${entry.scope} ${entry.client}`;
+      if (group !== previousGroup) {
+        printSubhead(group);
+        printField("file", entry.file);
+        previousGroup = group;
+      }
+      printBullet(entry.serverName);
+    }
+  }
+
+  for (const issue of report.issues) {
+    printSubhead(`${issue.scope} ${issue.client}: ${issue.kind}`);
+    if (issue.file) printField("file", issue.file);
+    printField("message", issue.message);
   }
 }
 
@@ -507,7 +690,7 @@ async function policy(rest: string[]): Promise<void> {
   if (!name) throw new Error(`Usage: toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
 
   const client = clientFlag(values, "generic");
-  const scope = (hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "project")) as InstallScope;
+  const scope = scopeFlag(values, "project") as InstallScope;
   const policyPath = stringFlag(values, "--policy", ".toolpin/policy.json");
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
@@ -536,7 +719,7 @@ async function secrets(rest: string[]): Promise<void> {
   }
 
   const path = stringFlag(values, "--file", "mcp-lock.json");
-  const scope = hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "all");
+  const scope = scopeFlag(values, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
   }
@@ -566,7 +749,7 @@ async function secrets(rest: string[]): Promise<void> {
 
 async function doctor(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
-  const scope = hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "all");
+  const scope = scopeFlag(rest, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
   }
@@ -616,45 +799,55 @@ async function test(rest: string[]): Promise<void> {
 }
 
 function help(): void {
-  console.log(`ToolPin
+  console.log(`ToolPin ${TOOLPIN_VERSION}
   Trusted install, lockfile, and governance for MCP servers.
 
 Quick start
   toolpin tui
+  toolpin --version
+  tpn -v
   toolpin ingest
   toolpin search github
   toolpin install <server> --client claude --update-lock
 
 Discovery
-  toolpin ingest [--source official|docker|all] [--limit 100] [--pages 10]
-  toolpin search <query> [--source official|docker|all] [--limit 10] [--live]
+  toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
+  toolpin registry list [--json]
+  toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
   toolpin info <server> [--json] [--live]
   toolpin audit <server> [--live]
   toolpin verify <server> [--live] [--json] [--timeout 15000] [--skip-live-verification]
+  toolpin versions <server> [--live] [--limit 10] [--json]
   toolpin test <server> [--live] [--timeout 15000]
 
 Install and config
-  toolpin plan <server> --client <client> [--live]
-  toolpin install <server> --client <client|all> [--scope project|global] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
-  toolpin remove <server> [--client <client|all>] [--scope project|global]
-  toolpin export-config <server> --client <client|all> [--live]
+  toolpin list [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
+  toolpin plan <server> --client|-c <client> [--live]
+  toolpin install <server> --client|-c <client|all> [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin remove <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
+  toolpin uninstall <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
+  toolpin export-config <server> --client|-c <client|all> [--live]
 
 Lock and governance
   toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--live] [--verify]
-  toolpin doctor [--file mcp-lock.json] [--scope all|project|global] [--json]
-  toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
-  toolpin policy check <server> --client <client|all> [--policy .toolpin/policy.json]
-  toolpin lock <server> --client <client|all> [--file mcp-lock.json]
+  toolpin outdated [--file mcp-lock.json] [--live] [--json]
+  toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
+  toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
+  toolpin policy check <server> --client|-c <client|all> [--policy .toolpin/policy.json]
+  toolpin lock <server> --client|-c <client|all> [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
   toolpin lock sign --key private.pem [--signature mcp-lock.sig]
   toolpin lock verify-signature --key public.pem [--signature mcp-lock.sig]
 
 Common options
-  --source official|docker|all       choose registry source
+  --source official|docker|all|id    choose registry source
   --live                            fetch instead of cache
   --json                            machine-readable output
-  --scope project|global            project folder vs current-user config
-  --client <client|all>             target client config
+  --version, -v                     print ToolPin version
+  --scope, -s project|global        project folder vs current-user config
+  --global, -g                      npm-style shortcut for --scope global
+  --project, -p                     shortcut for --scope project
+  --client, -c <client|all>         target client config
 
 Clients
   ${CLIENT_USAGE.replaceAll("|", ", ")}
@@ -684,7 +877,7 @@ function scopeDescription(scope: "all" | InstallScope): string {
 
 async function runTui(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
-    console.log("Usage: toolpin tui\n\nOpens the ToolPin full-screen terminal UI.");
+    console.log(`Usage: toolpin tui\n\nOpens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.`);
     return;
   }
   const { runTui: renderTui } = await import("./tui.js");
@@ -699,9 +892,21 @@ function hasAnyFlag(values: string[], flags: string[]): boolean {
   return flags.some((flag) => hasFlag(values, flag));
 }
 
+function isHelp(values: string[]): boolean {
+  return hasAnyFlag(values, ["--help", "-h"]);
+}
+
 function stringFlag(values: string[], flag: string, fallback: string): string {
   const index = values.indexOf(flag);
   return index >= 0 ? (values[index + 1] ?? fallback) : fallback;
+}
+
+function stringAnyFlag(values: string[], flags: string[], fallback: string): string {
+  for (const flag of flags) {
+    const index = values.indexOf(flag);
+    if (index >= 0) return values[index + 1] ?? fallback;
+  }
+  return fallback;
 }
 
 function numberFlag(values: string[], flag: string, fallback: number): number {
@@ -711,19 +916,27 @@ function numberFlag(values: string[], flag: string, fallback: number): number {
 }
 
 function clientFlag(values: string[], fallback: ClientName): ClientSelection {
-  const value = stringFlag(values, "--client", fallback);
+  const value = stringAnyFlag(values, ["--client", "-c"], fallback);
   if (value === "all" || isClientName(value)) {
     return value as ClientSelection;
   }
-  throw new Error(`--client must be ${CLIENT_USAGE.replaceAll("|", ", ")}`);
+  throw new Error(`--client/-c must be ${CLIENT_USAGE.replaceAll("|", ", ")}`);
 }
 
 function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): RegistrySourceId | "all" {
   const value = stringFlag(values, "--source", fallback);
-  if (["official", "docker", "pulse", "smithery", "glama", "all"].includes(value)) {
-    return value as RegistrySourceId | "all";
-  }
-  throw new Error("--source must be official, docker, pulse, smithery, glama, or all");
+  if (/^[a-zA-Z0-9._/-]+$/.test(value)) return value as RegistrySourceId | "all";
+  throw new Error("--source must be all or a registry source id");
+}
+
+function scopeFlag(values: string[], fallback: InventoryScope): InventoryScope {
+  const value = hasAnyFlag(values, ["--global", "-g"])
+    ? "global"
+    : hasAnyFlag(values, ["--project", "-p"])
+      ? "project"
+      : stringAnyFlag(values, ["--scope", "-s"], fallback);
+  if (["all", "project", "global"].includes(value)) return value as InventoryScope;
+  throw new Error("--scope/-s must be all, project, or global");
 }
 
 function cacheHasSource(entries: RegistryEntry[], source: RegistrySourceId | "all"): boolean {
@@ -735,8 +948,8 @@ function positional(values: string[]): string[] {
   const result: string[] = [];
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
-    if (value.startsWith("--")) {
-      if (!["--live", "--json", "--global", "--project", "--update-lock", "--verify", "--skip-live-verification", "--skip-live-verify", "--no-policy"].includes(value)) index += 1;
+    if (value.startsWith("-")) {
+      if (VALUE_FLAGS.has(value)) index += 1;
       continue;
     }
     result.push(value);

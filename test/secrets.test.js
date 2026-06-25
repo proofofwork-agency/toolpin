@@ -45,10 +45,10 @@ test("auditSecrets checks global config by default without false project missing
   await withTempCwd(async (tempDir) => {
     await withTempHome(tempDir, async () => {
       const server = packageServer();
-      await installServerConfig(server, "claude", "global");
-      await writeLockfile(buildInstallPlan(server, "claude"));
+      await installServerConfig(server, "cursor", "global");
+      await writeLockfile(buildInstallPlan(server, "cursor"));
 
-      const globalConfigPath = path.join(tempDir, ".config", "toolpin", "claude-mcp.json");
+      const globalConfigPath = path.join(tempDir, ".cursor", "mcp.json");
       const config = JSON.parse(await readFile(globalConfigPath, "utf8"));
       config.mcpServers[server.name].env.EXAMPLE_TOKEN = SECRET;
       await writeFile(globalConfigPath, JSON.stringify(config, null, 2), "utf8");

@@ -136,6 +136,8 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
         return { file: path.join(cwd, ".codex", "config.toml"), notes: ["Project Codex config.toml written. Project must be trusted by Codex before this layer loads."] };
       case "opencode":
         return { file: path.join(cwd, "opencode.json"), notes: ["Project opencode config written. Restart opencode to load it."] };
+      case "cursor":
+        return { file: path.join(cwd, ".cursor", "mcp.json"), notes: ["Project Cursor MCP config written. Restart Cursor or reload MCP servers to load it."] };
       case "gemini":
         return { file: path.join(cwd, ".gemini", "settings.json"), notes: ["Project Gemini CLI settings.json written."] };
       case "roo":
@@ -148,8 +150,6 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
         throw new Error("Project Continue config path is not documented; use --scope global.");
       case "zed":
         throw new Error("Zed settings path is not verified yet; export the config snippet and add it through Zed settings.");
-      case "claude":
-      case "cursor":
       case "generic":
       default:
         return { file: path.join(cwd, ".mcp.json"), notes: ["Project MCP config written. Import it into clients that support project MCP config."] };
@@ -159,6 +159,8 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
   switch (client) {
     case "opencode":
       return { file: path.join(home, ".config", "opencode", "opencode.json"), notes: ["Global opencode config written. Restart opencode to load it."] };
+    case "cursor":
+      return { file: path.join(home, ".cursor", "mcp.json"), notes: ["Global Cursor MCP config written. Restart Cursor or reload MCP servers to load it."] };
     case "vscode":
       return { file: path.join(home, ".config", "Code", "User", "mcp.json"), notes: ["Global VS Code user MCP config path written."] };
     case "codex":
@@ -176,7 +178,7 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
     case "roo":
       throw new Error("Global Roo Code mcp_settings.json path is not verified yet; use --scope project.");
     case "claude":
-    case "cursor":
+      throw new Error("Claude global MCP config is managed by the Claude CLI and is not written directly by ToolPin; use `toolpin export-config ... --client claude` with `claude mcp add-json --scope user`, or use --scope project.");
     case "generic":
     default:
       return { file: path.join(home, ".config", "toolpin", `${client}-mcp.json`), notes: ["Generic global MCP config written; client-specific import may still be required."] };

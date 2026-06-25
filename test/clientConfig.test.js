@@ -29,6 +29,20 @@ test("new object-map clients export documented local config shapes", () => {
   assert.equal(roo.mcpServers["io.github/example"].disabled, false);
 });
 
+test("OCI packages pass env names to docker while keeping client env placeholders", () => {
+  const server = ociServer("io.github/container");
+
+  const config = exportClientConfig(server, "claude").config;
+  const entry = config.mcpServers["io.github/container"];
+
+  assert.equal(entry.command, "docker");
+  assert.deepEqual(entry.args, ["run", "--rm", "-i", "-e", "API_TOKEN", "-e", "LOG_LEVEL", "ghcr.io/example/container:1.0.0"]);
+  assert.deepEqual(entry.env, {
+    API_TOKEN: "<API_TOKEN>",
+    LOG_LEVEL: "info",
+  });
+});
+
 test("new object-map clients export documented remote config shapes", () => {
   const server = remoteServer("io.github/remote");
 
@@ -56,21 +70,26 @@ test("Gemini and Roo project installs use verified project paths", async () => {
   await withTempCwd(async () => {
     const server = packageServer("io.github/example");
 
+    const cursor = await installServerConfig(server, "cursor", "project");
     const gemini = await installServerConfig(server, "gemini", "project");
     const roo = await installServerConfig(server, "roo", "project");
 
+    assert.equal(cursor.file.endsWith(path.join(".cursor", "mcp.json")), true);
     assert.equal(gemini.file.endsWith(path.join(".gemini", "settings.json")), true);
     assert.equal(roo.file.endsWith(path.join(".roo", "mcp.json")), true);
+    assert.ok(JSON.parse(await readFile(cursor.file, "utf8")).mcpServers["io.github/example"]);
     assert.ok(JSON.parse(await readFile(gemini.file, "utf8")).mcpServers["io.github/example"]);
     assert.ok(JSON.parse(await readFile(roo.file, "utf8")).mcpServers["io.github/example"]);
   });
 });
 
 test("global-only and path-caveat clients are gated by verified paths", () => {
+  assert.match(resolveConfigTarget("cursor", "global").file, /\.cursor\/mcp\.json$/);
   assert.match(resolveConfigTarget("windsurf", "global").file, /\.codeium\/windsurf\/mcp_config\.json$/);
   assert.match(resolveConfigTarget("cline", "global").file, /\.cline\/mcp\.json$/);
   assert.match(resolveConfigTarget("gemini", "global").file, /\.gemini\/settings\.json$/);
 
+  assert.throws(() => resolveConfigTarget("claude", "global"), /Claude global MCP config is managed by the Claude CLI/);
   assert.throws(() => resolveConfigTarget("windsurf", "project"), /Project Windsurf\/Cascade MCP config path is not documented/);
   assert.throws(() => resolveConfigTarget("cline", "project"), /Project Cline MCP config path is not documented/);
   assert.throws(() => resolveConfigTarget("zed", "project"), /Zed settings path is not verified/);
@@ -152,6 +171,40 @@ function packageServer(name) {
           version: "1.0.0",
           transport: { type: "stdio" },
           environmentVariables: [{ name: "EXAMPLE_TOKEN", isRequired: true, isSecret: true }],
+        },
+      ],
+    },
+  };
+}
+
+function ociServer(name) {
+  return {
+    registrySource: "official",
+    name,
+    title: "Container Server",
+    description: "Synthetic OCI server",
+    version: "1.0.0",
+    isLatest: true,
+    repositoryUrl: "https://github.com/example/container",
+    packageTypes: ["oci"],
+    remoteTypes: [],
+    transports: ["stdio"],
+    requiresSecrets: true,
+    raw: {
+      name,
+      title: "Container Server",
+      description: "Synthetic OCI server",
+      version: "1.0.0",
+      packages: [
+        {
+          registryType: "oci",
+          identifier: "ghcr.io/example/container:1.0.0",
+          version: "1.0.0",
+          transport: { type: "stdio" },
+          environmentVariables: [
+            { name: "API_TOKEN", isRequired: true, isSecret: true },
+            { name: "LOG_LEVEL", default: "info" },
+          ],
         },
       ],
     },

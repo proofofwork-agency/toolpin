@@ -36,6 +36,19 @@ test("verifyLockfileSignature rejects lockfile tampering after signing", async (
   });
 });
 
+test("verifyLockfileSignature rejects tool-description hash tampering after signing", async () => {
+  await withSignedLock(async ({ publicKeyPath }) => {
+    const raw = JSON.parse(await readFile("mcp-lock.json", "utf8"));
+    raw.servers["io.github/example:claude"].capabilityManifest.toolDescriptionHash.value = "tampered-hash";
+    await writeFile("mcp-lock.json", `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    const report = await verifyLockfileSignature("mcp-lock.json", publicKeyPath, "mcp-lock.sig");
+
+    assert.equal(report.ok, false);
+    assert.match(report.message, /Lockfile digest mismatch/);
+  }, { capabilityHash: "original-hash" });
+});
+
 test("verifyLockfileSignature rejects the wrong public key", async () => {
   await withSignedLock(async () => {
     const { publicKey } = generateKeyPairSync("ed25519");
@@ -92,10 +105,11 @@ test("CLI lock sign and verify-signature use detached signature files", async ()
   });
 });
 
-async function withSignedLock(fn) {
+async function withSignedLock(fn, options = {}) {
   await withTempCwd(async () => {
     const { privateKeyPath, publicKeyPath } = await writeKeys();
-    await writeLockfile(buildInstallPlan(packageServer(), "claude"));
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", options.capabilityHash ? { capabilityManifest: capabilityManifest(server, options.capabilityHash) } : undefined));
     await signLockfile("mcp-lock.json", privateKeyPath, "mcp-lock.sig");
     await fn({ privateKeyPath, publicKeyPath });
   });
@@ -148,6 +162,26 @@ function packageServer() {
           transport: { type: "stdio" },
         },
       ],
+    },
+  };
+}
+
+function capabilityManifest(server, value) {
+  return {
+    version: 1,
+    serverName: server.name,
+    serverVersion: server.version,
+    registrySource: server.registrySource,
+    packageTypes: ["npm"],
+    transports: ["stdio"],
+    remoteHosts: [],
+    secrets: [],
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    toolDescriptionHash: {
+      algorithm: "sha256",
+      value,
+      toolCount: 1,
+      generatedAt: "2026-01-01T00:00:00.000Z",
     },
   };
 }

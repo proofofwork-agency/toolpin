@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { canonicalJson } from "./canonicalJson.js";
 import { readCodexServerConfig } from "./codexToml.js";
 import { clientConfigRootKey } from "./config.js";
 import { readContinueServerConfig } from "./continueYaml.js";
@@ -188,24 +189,7 @@ function serverConfigFromWrapped(config: unknown, serverName: string, client: Cl
 }
 
 function stableJson(value: unknown): string {
-  return JSON.stringify(sortJson(pruneEmptyObjects(value)));
-}
-
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, sortJson(child)]));
-}
-
-function pruneEmptyObjects(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(pruneEmptyObjects);
-  if (!isRecord(value)) return value;
-
-  const entries = Object.entries(value)
-    .map(([key, child]) => [key, pruneEmptyObjects(child)] as const)
-    .filter(([, child]) => !isRecord(child) || Object.keys(child).length > 0);
-
-  return Object.fromEntries(entries);
+  return canonicalJson(value, { pruneEmptyObjects: true });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

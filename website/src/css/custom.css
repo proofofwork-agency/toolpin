@@ -1,0 +1,76 @@
+:root {
+  --ifm-color-primary: #8a5a00;
+  --ifm-color-primary-dark: #784f00;
+  --ifm-color-primary-darker: #6b4600;
+  --ifm-color-primary-darkest: #563800;
+  --ifm-color-primary-light: #a16a00;
+  --ifm-color-primary-lighter: #b47b0a;
+  --ifm-color-primary-lightest: #c98d16;
+  --ifm-code-font-size: 95%;
+  --toolpin-ink: #15171a;
+  --toolpin-paper: #f8f6f1;
+  --toolpin-line: #d7cfbf;
+}
+
+.navbar__title,
+.hero__title,
+h1,
+h2,
+h3 {
+  letter-spacing: 0;
+}
+
+.homeHero {
+  min-height: 68vh;
+  display: flex;
+  align-items: center;
+  background:
+    linear-gradient(90deg, rgba(21, 23, 26, 0.94), rgba(21, 23, 26, 0.72)),
+    repeating-linear-gradient(135deg, rgba(201, 141, 22, 0.22) 0 2px, transparent 2px 18px),
+    var(--toolpin-ink);
+  color: #fff;
+}
+
+.homeHero .hero__title {
+  font-size: clamp(3rem, 7vw, 6rem);
+}
+
+.eyebrow {
+  color: #f2c872;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.heroActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.heroClaim {
+  color: #f4dfaa;
+  font-weight: 700;
+  margin-top: 1rem;
+}
+
+.homeBand {
+  background: var(--toolpin-paper);
+  padding: 3rem 0;
+}
+
+.featureGrid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.featureGrid article {
+  border-top: 3px solid var(--ifm-color-primary);
+  padding-top: 1rem;
+}
+
+@media (max-width: 800px) {
+  .featureGrid {
+    grid-template-columns: 1fr;
+  }
+}

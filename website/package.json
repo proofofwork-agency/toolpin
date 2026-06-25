@@ -1,0 +1,9 @@
+{
+  "name": "toolpin-website",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix .. run docs:build",
+    "clear": "npm --prefix .. run docs:clear",
+    "start": "npm --prefix .. run docs:start"
+  }
+}

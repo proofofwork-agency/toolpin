@@ -1,0 +1,134 @@
+name: ToolPin CI
+description: Verify an MCP lockfile with toolpin ci.
+
+inputs:
+  working-directory:
+    description: Directory that contains mcp-lock.json.
+    required: false
+    default: .
+  file:
+    description: Lockfile path, relative to working-directory.
+    required: false
+    default: mcp-lock.json
+  source:
+    description: Registry source passed to --source.
+    required: false
+    default: all
+  live:
+    description: Fetch live registry data instead of relying on local cache.
+    required: false
+    default: "true"
+  verify:
+    description: Run verification before comparing locked plans.
+    required: false
+    default: "false"
+  expect-digest:
+    description: Expected whole-lock digest from a trusted out-of-band source.
+    required: false
+    default: ""
+  signature:
+    description: Detached signature path.
+    required: false
+    default: ""
+  public-key:
+    description: Public key path used with signature.
+    required: false
+    default: ""
+  toolpin-version:
+    description: Optional npm version specifier for the toolpin package after public npm publish. Leave empty to install from this action source.
+    required: false
+    default: ""
+  policy:
+    description: Policy file path.
+    required: false
+    default: .toolpin/policy.json
+  no-policy:
+    description: Pass --no-policy and skip policy enforcement.
+    required: false
+    default: "false"
+  timeout:
+    description: Live verification timeout in milliseconds.
+    required: false
+    default: "15000"
+  skip-live-verification:
+    description: Pass --skip-live-verification when verify is enabled.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install ToolPin
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [[ -n "${TOOLPIN_VERSION}" ]]; then
+          npm install -g "toolpin@${TOOLPIN_VERSION}"
+        else
+          npm ci --prefix "$GITHUB_ACTION_PATH"
+          npm run --prefix "$GITHUB_ACTION_PATH" build
+          npm install -g "$GITHUB_ACTION_PATH"
+        fi
+      env:
+        TOOLPIN_VERSION: ${{ inputs.toolpin-version }}
+
+    - name: Run toolpin ci
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+
+        cmd=(toolpin ci --file "$TOOLPIN_FILE" --source "$TOOLPIN_SOURCE")
+
+        if [[ "$TOOLPIN_LIVE" == "true" ]]; then
+          cmd+=(--live)
+        fi
+
+        if [[ "$TOOLPIN_VERIFY" == "true" ]]; then
+          cmd+=(--verify --timeout "$TOOLPIN_TIMEOUT")
+        fi
+
+        if [[ "$TOOLPIN_SKIP_LIVE_VERIFICATION" == "true" ]]; then
+          cmd+=(--skip-live-verification)
+        fi
+
+        if [[ -n "$TOOLPIN_EXPECT_DIGEST" ]]; then
+          cmd+=(--expect-digest "$TOOLPIN_EXPECT_DIGEST")
+        fi
+
+        if [[ -n "$TOOLPIN_SIGNATURE" || -n "$TOOLPIN_PUBLIC_KEY" ]]; then
+          if [[ -z "$TOOLPIN_SIGNATURE" || -z "$TOOLPIN_PUBLIC_KEY" ]]; then
+            echo "ToolPin CI requires both signature and public-key when either is set." >&2
+            exit 2
+          fi
+          cmd+=(--signature "$TOOLPIN_SIGNATURE" --public-key "$TOOLPIN_PUBLIC_KEY")
+        fi
+
+        if [[ "$TOOLPIN_NO_POLICY" == "true" ]]; then
+          cmd+=(--no-policy)
+        elif [[ -n "$TOOLPIN_POLICY" ]]; then
+          cmd+=(--policy "$TOOLPIN_POLICY")
+        fi
+
+        printf 'Running:'
+        printf ' %q' "${cmd[@]}"
+        printf '\n'
+        "${cmd[@]}"
+      env:
+        TOOLPIN_FILE: ${{ inputs.file }}
+        TOOLPIN_SOURCE: ${{ inputs.source }}
+        TOOLPIN_LIVE: ${{ inputs.live }}
+        TOOLPIN_VERIFY: ${{ inputs.verify }}
+        TOOLPIN_EXPECT_DIGEST: ${{ inputs.expect-digest }}
+        TOOLPIN_SIGNATURE: ${{ inputs.signature }}
+        TOOLPIN_PUBLIC_KEY: ${{ inputs.public-key }}
+        TOOLPIN_POLICY: ${{ inputs.policy }}
+        TOOLPIN_NO_POLICY: ${{ inputs.no-policy }}
+        TOOLPIN_TIMEOUT: ${{ inputs.timeout }}
+        TOOLPIN_SKIP_LIVE_VERIFICATION: ${{ inputs.skip-live-verification }}

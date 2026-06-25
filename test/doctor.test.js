@@ -25,8 +25,8 @@ test("doctorLockfile checks global config by default without false project missi
   await withTempCwd(async (tempDir) => {
     await withTempHome(tempDir, async () => {
       const server = packageServer("io.github/global");
-      await installServerConfig(server, "claude", "global");
-      await writeLockfile(buildInstallPlan(server, "claude"));
+      await installServerConfig(server, "cursor", "global");
+      await writeLockfile(buildInstallPlan(server, "cursor"));
 
       const report = await doctorLockfile("mcp-lock.json");
 

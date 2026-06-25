@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
+import { canonicalJson } from "./canonicalJson.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import { scoreServer } from "./trust.js";
-import type { CapabilityManifest, NormalizedServer } from "./types.js";
+import type { CapabilityManifest, NormalizedServer, TrustIssue, TrustReport } from "./types.js";
 
 export const LOCKFILE_VERSION = 2;
 
@@ -37,7 +38,7 @@ export interface InstallPlan {
 }
 
 export interface Lockfile {
-  lockfileVersion: 1 | 2;
+  lockfileVersion: 2;
   generatedAt: string;
   updatedAt?: string;
   servers: Record<string, InstallPlan>;
@@ -51,6 +52,9 @@ export interface LockVerification {
 }
 
 export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest } = {}): InstallPlan {
+  if (server.installable === false) {
+    throw new Error(`Cannot install ${server.name}@${server.version}: ${server.installableReason ?? "registry entry is discovery-only"}.`);
+  }
   const selected = selectLaunchTarget(server);
   if (!selected) {
     throw new Error(`No install target is available for ${server.name}@${server.version}`);
@@ -212,7 +216,10 @@ function emptyLockfile(): Lockfile {
 
 function parseLockfile(value: unknown): Lockfile | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.lockfileVersion !== 1 && value.lockfileVersion !== 2) return undefined;
+  if (value.lockfileVersion === 1) {
+    throw new Error("Unsupported lockfileVersion 1 in v0.1; regenerate the lockfile with the current ToolPin release.");
+  }
+  if (value.lockfileVersion !== LOCKFILE_VERSION) return undefined;
   if (typeof value.generatedAt !== "string") return undefined;
   if (!isRecord(value.servers)) return undefined;
 
@@ -235,7 +242,7 @@ function parseInstallPlan(value: unknown, key: string): InstallPlan {
   if (typeof value.version !== "string") throw new Error(`Invalid lockfile entry ${key}: missing version`);
   if (!isClientName(value.client)) throw new Error(`Invalid lockfile entry ${key}: invalid client`);
   if (!isRecord(value.selectedTarget)) throw new Error(`Invalid lockfile entry ${key}: invalid selectedTarget`);
-  if (!isRecord(value.trust) || typeof value.trust.score !== "number") throw new Error(`Invalid lockfile entry ${key}: invalid trust`);
+  const trust = parseTrust(value.trust, key);
   if (!Array.isArray(value.notes)) throw new Error(`Invalid lockfile entry ${key}: invalid notes`);
   if (value.capabilityManifest !== undefined && !isCapabilityManifest(value.capabilityManifest)) throw new Error(`Invalid lockfile entry ${key}: invalid capabilityManifest`);
   if (value.integrity !== undefined && typeof value.integrity !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid integrity`);
@@ -244,7 +251,7 @@ function parseInstallPlan(value: unknown, key: string): InstallPlan {
     version: value.version,
     client: value.client,
     selectedTarget: value.selectedTarget,
-    trust: value.trust as unknown as InstallPlan["trust"],
+    trust,
     config: value.config,
     notes: value.notes.filter((note): note is string => typeof note === "string"),
     capabilityManifest: value.capabilityManifest,
@@ -257,6 +264,32 @@ function parseInstallPlan(value: unknown, key: string): InstallPlan {
   };
 }
 
+function parseTrust(value: unknown, key: string): TrustReport {
+  if (!isRecord(value)) throw new Error(`Invalid lockfile entry ${key}: invalid trust`);
+  if (typeof value.score !== "number" || !Number.isFinite(value.score)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.score`);
+  if (!Array.isArray(value.badges) || !value.badges.every((badge) => typeof badge === "string")) throw new Error(`Invalid lockfile entry ${key}: invalid trust.badges`);
+  if (!Array.isArray(value.issues)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues`);
+
+  return {
+    score: value.score,
+    badges: value.badges,
+    issues: value.issues.map((issue, index) => parseTrustIssue(issue, key, index)),
+  };
+}
+
+function parseTrustIssue(value: unknown, key: string, index: number): TrustIssue {
+  if (!isRecord(value)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues[${index}]`);
+  const severity = value.severity;
+  if (severity !== "info" && severity !== "warning" && severity !== "critical") throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues[${index}].severity`);
+  if (typeof value.code !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues[${index}].code`);
+  if (typeof value.message !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues[${index}].message`);
+  return {
+    severity,
+    code: value.code,
+    message: value.message,
+  };
+}
+
 function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   const messages: string[] = [];
   if (!locked.integrity) messages.push("lock integrity is missing");
@@ -265,13 +298,12 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   if (stableJson(locked.selectedTarget) !== stableJson(current.selectedTarget)) messages.push("selected install target changed");
   if (locked.trust.score > current.trust.score) messages.push(`trust score decreased ${locked.trust.score} -> ${current.trust.score}`);
   if (stableJson(locked.config) !== stableJson(current.config)) messages.push("client config changed");
-  if (stableJson(normalizeCapabilityManifest(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifest(current.capabilityManifest))) messages.push("capability manifest changed");
+  if (stableJson(normalizeCapabilityManifestBase(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifestBase(current.capabilityManifest))) messages.push("capability manifest changed");
   if (hasToolDescriptionHash(locked.capabilityManifest) && hasToolDescriptionHash(current.capabilityManifest)) {
     if (stableJson(normalizeToolDescriptionHash(locked.capabilityManifest.toolDescriptionHash)) !== stableJson(normalizeToolDescriptionHash(current.capabilityManifest.toolDescriptionHash))) {
       messages.push("tool-description hash changed");
     }
   }
-  if (locked.integrity && current.integrity && locked.integrity !== current.integrity) messages.push("lock integrity changed");
   return messages;
 }
 
@@ -335,6 +367,15 @@ function lockfileDigestPayload(lockfile: Lockfile): unknown {
 }
 
 function normalizeCapabilityManifest(manifest?: CapabilityManifest): unknown {
+  const base = normalizeCapabilityManifestBase(manifest);
+  if (!base || !manifest?.toolDescriptionHash) return base;
+  return {
+    ...base,
+    toolDescriptionHash: normalizeToolDescriptionHash(manifest.toolDescriptionHash),
+  };
+}
+
+function normalizeCapabilityManifestBase(manifest?: CapabilityManifest): Record<string, unknown> | undefined {
   if (!manifest) return undefined;
   return {
     version: manifest.version,
@@ -361,13 +402,7 @@ function normalizeToolDescriptionHash(hash: NonNullable<CapabilityManifest["tool
 }
 
 function stableJson(value: unknown): string {
-  return JSON.stringify(sortJson(value));
-}
-
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, sortJson(child)]));
+  return canonicalJson(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

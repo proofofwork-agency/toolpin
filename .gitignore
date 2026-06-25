@@ -1,8 +1,34 @@
 node_modules/
 dist/
+website/.docusaurus/
+website/build/
 .toolpin/
 .claude/
 .contextrelay/
 .engram/
 .watcher/
-mcp-lock.json
+
+# Local environment and package-manager secrets.
+.env
+.env.*
+!.env.example
+.npmrc
+*.token
+*.secret
+secrets.*
+
+# Private signing material. Commit public keys, lockfiles, and signatures only
+# after review; never commit private keys.
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+private*
+
+# OS/editor noise.
+.DS_Store

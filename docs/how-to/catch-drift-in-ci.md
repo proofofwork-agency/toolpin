@@ -1,0 +1,171 @@
+# Catch Drift in CI
+
+Use `toolpin ci` when `mcp-lock.json` is committed to a repository and pull
+requests should fail if registry metadata, generated client config, policy, or
+optional signatures no longer match the reviewed lockfile.
+
+`toolpin ci` is read-only. It re-resolves each locked server/client entry,
+rebuilds the install plan, verifies lock integrity, and exits non-zero on
+drift. It does not update `mcp-lock.json`.
+
+## Basic GitHub Action
+
+After the repository is public and tagged, call the composite action from your
+workflow. The action installs ToolPin from the action source by default, so it
+does not require npm publish:
+
+```yaml
+name: ToolPin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: OWNER/REPO@v0.1.0
+        with:
+          file: mcp-lock.json
+          live: "true"
+```
+
+Replace `OWNER/REPO` with the published ToolPin GitHub Action repository. The
+action builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
+
+```bash
+toolpin ci --file mcp-lock.json --source all --live --policy .toolpin/policy.json
+```
+
+When `.toolpin/policy.json` is absent, the current CLI treats policy enforcement
+as a no-op.
+
+## Direct CLI Workflow
+
+Use this form before npm publish if you are running from this repository:
+
+```yaml
+name: ToolPin
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - run: node dist/cli.js ci --file mcp-lock.json --live
+```
+
+After npm publish, replace the build steps with `npm install -g toolpin` and
+`toolpin ci --file mcp-lock.json --live`.
+
+## Digest Pin
+
+`--expect-digest` compares the whole-lock digest against a value provided by
+CI. Store the expected digest outside the pull request being checked, for
+example as a GitHub Actions variable or secret.
+
+Generate the digest after reviewing a lockfile change:
+
+```bash
+toolpin lock digest --file mcp-lock.json
+```
+
+Use it in CI:
+
+```yaml
+- uses: OWNER/REPO@v0.1.0
+  with:
+    file: mcp-lock.json
+    live: "true"
+    expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
+```
+
+Do not commit the expected digest next to `mcp-lock.json`; a PR that changes
+both files would defeat the check.
+
+## Detached Signature
+
+ToolPin can verify a detached Ed25519 signature before registry resolution:
+
+```bash
+toolpin lock sign --key private.pem --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock verify-signature --key public.pem --file mcp-lock.json --signature mcp-lock.sig
+```
+
+Then in CI:
+
+```yaml
+- uses: OWNER/REPO@v0.1.0
+  with:
+    file: mcp-lock.json
+    live: "true"
+    signature: mcp-lock.sig
+    public-key: public.pem
+```
+
+Commit `mcp-lock.sig` and the public key only after review. Never commit the
+private key. A signature is meaningful only when the private key and public
+trust root are controlled outside the PR path.
+
+## Policy and Live Verification
+
+To enforce a non-default policy path:
+
+```yaml
+- uses: OWNER/REPO@v0.1.0
+  with:
+    policy: security/toolpin-policy.json
+```
+
+To make CI skip policy enforcement explicitly:
+
+```yaml
+- uses: OWNER/REPO@v0.1.0
+  with:
+    no-policy: "true"
+```
+
+To re-run verification before comparing locked plans:
+
+```yaml
+- uses: OWNER/REPO@v0.1.0
+  with:
+    live: "true"
+    verify: "true"
+    timeout: "15000"
+```
+
+`verify: "true"` can require network access and server credentials for live MCP
+probes. Use `skip-live-verification: "true"` when you want package/metadata
+verification without live `tools/list` probing.
+
+## What Fails the Build
+
+CI exits non-zero when:
+
+- `mcp-lock.json` is missing, empty, malformed, or has invalid entry integrity.
+- A locked server/client no longer resolves to the reviewed install plan.
+- `--expect-digest` does not match the current whole-lock digest.
+- Signature verification fails.
+- The selected policy rejects a locked entry.
+- `--verify` finds critical verification issues.
+
+Use `toolpin install --update-lock` or `toolpin lock <server> --client <client>`
+only after reviewing the drift locally. CI should not update the lockfile.

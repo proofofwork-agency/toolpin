@@ -30,7 +30,7 @@ export const ALL_CLIENTS: ClientName[] = [
 ];
 
 export const PROJECT_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "gemini", "roo"];
-export const GLOBAL_CLIENTS: ClientName[] = ["claude", "cursor", "vscode", "codex", "opencode", "windsurf", "cline", "continue", "gemini"];
+export const GLOBAL_CLIENTS: ClientName[] = ["cursor", "vscode", "codex", "opencode", "windsurf", "cline", "continue", "gemini"];
 
 export type LaunchTarget = { kind: "remote"; remote: RegistryRemote } | { kind: "package"; pkg: RegistryPackage };
 
@@ -103,7 +103,7 @@ function packageToLocalConfig(pkg: RegistryPackage, notes: string[], client: Cli
     }
     case "oci": {
       notes.push("Requires Docker-compatible runtime. Review mounts and network policy before running.");
-      return { command: "docker", args: ["run", "--rm", "-i", pkg.identifier], env };
+      return { command: "docker", args: ["run", "--rm", "-i", ...dockerEnvArgs(pkg), pkg.identifier], env };
     }
     case "mcpb": {
       notes.push("MCPB bundle requires a compatible MCPB installer/runtime.");
@@ -113,6 +113,11 @@ function packageToLocalConfig(pkg: RegistryPackage, notes: string[], client: Cli
       notes.push(`Unknown registry type ${pkg.registryType}; generated a placeholder command.`);
       return { command: pkg.identifier, args: [], env };
   }
+}
+
+function dockerEnvArgs(pkg: RegistryPackage): string[] {
+  const names = [...new Set((pkg.environmentVariables ?? []).map((variable) => variable.name).filter(Boolean))];
+  return names.flatMap((name) => ["-e", name]);
 }
 
 function environmentToPlaceholders(pkg: RegistryPackage, client: ClientName): Record<string, string> {

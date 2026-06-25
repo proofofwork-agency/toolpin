@@ -77,11 +77,14 @@ export interface RegistryListResponse {
 
 export interface NormalizedServer {
   registrySource: RegistrySourceId;
+  registryMode: RegistrySourceMode;
   name: string;
   title: string;
   description: string;
   version: string;
   isLatest: boolean;
+  installable: boolean;
+  installableReason?: string;
   repositoryUrl?: string;
   packageTypes: string[];
   remoteTypes: string[];
@@ -91,15 +94,20 @@ export interface NormalizedServer {
   registryMeta?: Record<string, unknown>;
 }
 
-export type RegistrySourceId = "official" | "docker" | "pulse" | "smithery" | "glama";
+export type RegistrySourceId = string;
+export type RegistrySourceMode = "installable" | "discovery";
+export type RegistrySourceType = "official" | "docker" | "official-compatible" | "http-json" | "known";
 
 export interface RegistrySourceInfo {
   id: RegistrySourceId;
   label: string;
-  trust: "canonical" | "curated" | "directory";
+  type?: RegistrySourceType;
+  mode: RegistrySourceMode;
+  trust: "canonical" | "curated" | "directory" | "private";
   enabled: boolean;
   authRequired: boolean;
   description: string;
+  url?: string;
 }
 
 export interface TrustIssue {
