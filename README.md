@@ -16,6 +16,7 @@ node dist/cli.js install io.github.github/github-mcp-server --client claude --sc
 node dist/cli.js install io.github.github/github-mcp-server --client all --scope project --live
 node dist/cli.js remove io.github.github/github-mcp-server --client claude --scope project
 node dist/cli.js ci --live
+node dist/cli.js doctor --scope project
 node dist/cli.js test io.github.github/github-mcp-server --live
 node dist/cli.js lock io.github.github/github-mcp-server --client claude --live
 node dist/cli.js export-config io.github.github/github-mcp-server --client claude --live
@@ -34,6 +35,7 @@ mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|all [--sourc
 mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
 mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]
 mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
+mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
 mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
 mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]
 mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]
@@ -56,6 +58,8 @@ mpm tui
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
 - `mpm remove` cleanup for supported client config files and matching lockfile entries, including Codex TOML table removal.
 - `mpm remove` defaults to all supported project clients when `--client` is omitted; pass `--client <name>` for targeted cleanup.
+- `mpm doctor` read-only reconciliation from `mcp-lock.json` to current project/global client config entries, including Codex TOML.
+- Codex doctor support reads the documented `[mcp_servers.<name>]` TOML tables MPM writes; hand-authored inline/dotted TOML forms may be reported as missing or drift.
 - Real install writes for project/global client config files, including `--client all` for all supported project clients, plus lockfile generation and install progress details.
 - MCP server test action that connects with the SDK and lists available tools when credentials/runtime are available.
 - Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status.

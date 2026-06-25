@@ -23,6 +23,40 @@ export function removeCodexServerToml(existing: string, serverName: string): str
   return result.toml ? `${result.toml}\n` : "";
 }
 
+export function readCodexServerConfig(existing: string, serverName: string): Record<string, unknown> | undefined {
+  const config: Record<string, unknown> = {};
+  let currentPath: string[] = [];
+  let found = false;
+
+  for (const rawLine of existing.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("[") && line.endsWith("]")) {
+      currentPath = parseTomlPath(line.slice(1, -1).trim());
+      if (currentPath[0] === "mcp_servers" && currentPath[1] === serverName) found = true;
+      continue;
+    }
+    if (currentPath[0] !== "mcp_servers" || currentPath[1] !== serverName) continue;
+
+    const equalIndex = line.indexOf("=");
+    if (equalIndex < 0) continue;
+    const key = parseTomlKey(line.slice(0, equalIndex).trim());
+    const value = parseTomlValue(line.slice(equalIndex + 1).trim());
+    if (!key || value === undefined) continue;
+
+    const nested = currentPath.slice(2);
+    let target = config;
+    for (const segment of nested) {
+      const existingValue = target[segment];
+      if (!isPlainObject(existingValue)) target[segment] = {};
+      target = target[segment] as Record<string, unknown>;
+    }
+    target[key] = value;
+  }
+
+  return found ? config : undefined;
+}
+
 function codexServers(config: unknown): Record<string, Record<string, unknown>> {
   const root = asRecord(config);
   const servers = asRecord(root.mcp_servers);
@@ -101,6 +135,74 @@ function tomlValue(value: TomlValue): string {
 
 function tomlKey(key: string): string {
   return isBareKey(key) ? key : JSON.stringify(key);
+}
+
+function parseTomlPath(value: string): string[] {
+  const keys: string[] = [];
+  let current = "";
+  let quoted = false;
+  let escaped = false;
+
+  for (const char of value) {
+    if (quoted) {
+      current += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        quoted = false;
+      }
+      continue;
+    }
+
+    if (char === ".") {
+      keys.push(parseTomlKey(current.trim()) ?? current.trim());
+      current = "";
+    } else {
+      current += char;
+      if (char === '"') quoted = true;
+    }
+  }
+
+  if (current.trim()) keys.push(parseTomlKey(current.trim()) ?? current.trim());
+  return keys;
+}
+
+function parseTomlKey(value: string): string | undefined {
+  if (!value) return undefined;
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return typeof parsed === "string" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return value;
+}
+
+function parseTomlValue(value: string): TomlValue | undefined {
+  if (value.startsWith('"')) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return typeof parsed === "string" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (value.startsWith("[") && value.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string") ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
 }
 
 function isBareKey(key: string): boolean {

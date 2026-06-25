@@ -67,7 +67,7 @@ closed rows stay listed so the roadmap preserves the security history.
 | **No remove / unlock** — servers only accumulate; cleanup means hand-editing JSON | `src/cli.ts`, `src/plan.ts`, `src/install.ts`, `src/tui.tsx` | Add `mpm remove <server> [--client <c>]` that deletes from lock and client config | v0.2 | Closed in current code |
 | **`generatedAt` is global and overwritten** — original creation time and per-server provenance are lost | `src/plan.ts` | Preserve `generatedAt`, add top-level `updatedAt`, add per-entry resolution timestamp | v0.2 | Closed in current code |
 | **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts` | Per-entry integrity is shipped; optional signed/digested lockfile header still depends on sigstore | v0.3 | Partially closed |
-| **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts` | Add `mpm doctor` to reconcile lock ↔ client config and report drift | v0.3 | Open |
+| **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts`, `src/doctor.ts` | Add `mpm doctor` to reconcile lock ↔ client config and report drift | v0.3 | Closed in current code |
 
 Exit rule: a defect stays "open" until it has both a failing test (reproducing the bad
 behavior) and a passing test after the fix. v0.2 ships when every v0.2-row defect is closed.

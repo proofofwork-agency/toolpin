@@ -2,6 +2,7 @@
 import { verifyFrozenInstall } from "./ci.js";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
+import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
@@ -50,6 +51,9 @@ async function main(): Promise<void> {
       return;
     case "ci":
       await ci(rest);
+      return;
+    case "doctor":
+      await doctor(rest);
       return;
     case "test":
       await test(rest);
@@ -361,6 +365,28 @@ async function ci(rest: string[]): Promise<void> {
   console.log(`Frozen install OK: ${report.checked} locked server/client entrie(s) verified.`);
 }
 
+async function doctor(rest: string[]): Promise<void> {
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
+  if (scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be project or global");
+  }
+
+  const report = await doctorLockfile(path, scope);
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify(report, null, 2));
+  } else if (report.ok) {
+    console.log(`Doctor OK: ${report.checked} locked server/client entrie(s) match ${scope} config.`);
+  } else {
+    console.log(`Doctor found ${report.issues.length} issue(s) across ${report.checked} locked server/client entrie(s).`);
+    for (const issue of report.issues) {
+      console.log(`- ${issue.kind} ${issue.key}: ${issue.message} (${issue.file})`);
+    }
+  }
+
+  if (!report.ok) process.exitCode = 1;
+}
+
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
@@ -396,6 +422,7 @@ Commands:
   mpm install <server-name> --client claude|cursor|vscode|codex|opencode|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify]
   mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|all] [--scope project|global] [--file mcp-lock.json]
   mpm ci [--file mcp-lock.json] [--source official|docker|all] [--live] [--verify]
+  mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--file mcp-lock.json] [--live]
   mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|all [--source official|docker|all] [--live]

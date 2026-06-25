@@ -4,6 +4,7 @@ import path from "node:path";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import { exportClientConfig, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
+import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type InstallPlan } from "./plan.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "./registry.js";
@@ -16,7 +17,7 @@ type InputMode = "normal" | "search" | "command";
 type DataMode = "cache" | "live";
 type SourceMode = RegistrySourceId | "all";
 type ClientSelection = ClientName | "all";
-type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" | "remove" | "test" | "lock" | "export-config" | "tui" | "help";
+type TuiCommandId = "ingest" | "search" | "info" | "audit" | "plan" | "install" | "remove" | "ci" | "doctor" | "test" | "lock" | "export-config" | "tui" | "help";
 
 const VIEWS: View[] = ["discover", "details", "plan", "config", "help"];
 const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
@@ -29,7 +30,9 @@ const TUI_COMMANDS: Array<{ id: TuiCommandId; label: string; description: string
   { id: "plan", label: "Install plan", description: "Preview target, trust, secrets, and config writes.", requiresServer: true },
   { id: "install", label: "Install server", description: "Write selected server into the active client config.", requiresServer: true },
   { id: "remove", label: "Remove server", description: "Delete selected server from active client config and lockfile.", requiresServer: true },
+  { id: "doctor", label: "Check config drift", description: "Compare mcp-lock.json against active-scope client configs." },
   { id: "test", label: "Test server", description: "Connect and run MCP tools/list.", requiresServer: true },
+  { id: "ci", label: "Frozen lock check", description: "Re-resolve lockfile entries and reject metadata drift." },
   { id: "lock", label: "Write lockfile", description: "Write selected server to mcp-lock.json.", requiresServer: true },
   { id: "export-config", label: "Export config", description: "Save client config snippets under .mpm/.", requiresServer: true },
   { id: "tui", label: "Open TUI", description: "Current interactive session." },
@@ -389,8 +392,46 @@ function MpmTui() {
       case "remove":
         await removeSelected();
         break;
+      case "doctor": {
+        try {
+          const report = await doctorLockfile("mcp-lock.json", state.installScope);
+          setState((prev) => ({
+            ...prev,
+            commandLog: {
+              title: "doctor",
+              command: commandLine,
+              ok: report.ok,
+              lines: report.ok
+                ? [`${report.checked} locked server/client entrie(s) match ${state.installScope} config.`]
+                : report.issues.slice(0, 5).map((issue) => `${issue.kind} ${issue.key}: ${issue.message}`),
+            },
+          }));
+        } catch (error) {
+          setState((prev) => ({
+            ...prev,
+            commandLog: {
+              title: "doctor",
+              command: commandLine,
+              ok: false,
+              lines: [error instanceof Error ? error.message : String(error)],
+            },
+          }));
+        }
+        break;
+      }
       case "test":
         await testSelected();
+        break;
+      case "ci":
+        setState((prev) => ({
+          ...prev,
+          commandLog: {
+            title: "ci",
+            command: commandLine,
+            ok: true,
+            lines: ["Run this command in a shell for live registry drift checks."],
+          },
+        }));
         break;
       case "lock":
         await writeSelectedLock();
@@ -1093,6 +1134,10 @@ function commandLineFor(commandId: TuiCommandId, state: TuiState, server?: Norma
       return `mpm install ${serverName} --client ${state.client} --scope ${state.installScope} ${source}${live}`;
     case "remove":
       return `mpm remove ${serverName} --client ${state.client} --scope ${state.installScope} --file mcp-lock.json`;
+    case "doctor":
+      return `mpm doctor --scope ${state.installScope} --file mcp-lock.json`;
+    case "ci":
+      return `mpm ci --file mcp-lock.json ${source}${live}`;
     case "test":
       return `mpm test ${serverName} ${source}${live} --timeout 15000`;
     case "lock":

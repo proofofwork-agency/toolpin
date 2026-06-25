@@ -94,7 +94,7 @@ export async function removeServerConfig(
   return { client, scope, file: target.file, serverName, action: "removed", notes: target.notes };
 }
 
-function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: string; notes: string[] } {
+export function resolveConfigTarget(client: ClientName, scope: InstallScope): { file: string; notes: string[] } {
   const cwd = process.cwd();
   const home = os.homedir();
 
