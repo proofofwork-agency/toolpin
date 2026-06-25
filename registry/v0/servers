@@ -1,0 +1,20 @@
+{
+  "servers": [],
+  "metadata": {
+    "count": 0,
+    "total": 0,
+    "name": "ToolPin Curated MCP Registry",
+    "description": "A PR-reviewed, GitHub-hosted registry for MCP servers ToolPin can normalize, review, lock, and recommend.",
+    "generatedAt": "2026-06-25T00:00:00.000Z",
+    "source": {
+      "type": "github",
+      "repository": "https://github.com/proofofworks/TPN",
+      "path": "registry/v0/servers"
+    },
+    "policy": {
+      "installableOnly": true,
+      "reviewRequired": true,
+      "prBasedUpdates": true
+    }
+  }
+}

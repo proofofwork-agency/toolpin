@@ -1,6 +1,6 @@
 # ToolPin
 
-[![CI](https://github.com/proofofworks/MPN/actions/workflows/ci.yml/badge.svg)](https://github.com/proofofworks/MPN/actions/workflows/ci.yml)
+[![CI](https://github.com/proofofworks/TPN/actions/workflows/ci.yml/badge.svg)](https://github.com/proofofworks/TPN/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![npm publish pending](https://img.shields.io/badge/npm-publish%20pending-orange)](https://www.npmjs.com/package/toolpin)
 
@@ -232,6 +232,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 ## What Exists Now
 
 - Official MCP Registry and Docker MCP Catalog ingestion, with combined or source-specific views.
+- GitHub-hosted ToolPin Curated Registry scaffold under `registry/v0/servers`, ready for PR-reviewed recommended servers without a custom backend.
 - Repo-owned custom registries via `.toolpin/registries.json`; `official-compatible` registries can be installable, while broad `http-json` directory sources default to discovery-only.
 - Known registry notes for PulseMCP, Smithery, and Glama; adapters stay discovery-only until stable access, credentials, and normalization are configured.
 - Local cache at `.toolpin/registry-cache.json`.

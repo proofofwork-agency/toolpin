@@ -11,13 +11,13 @@
     "cli",
     "github-action"
   ],
-  "homepage": "https://github.com/proofofworks/MPN#readme",
+  "homepage": "https://github.com/proofofworks/TPN#readme",
   "bugs": {
-    "url": "https://github.com/proofofworks/MPN/issues"
+    "url": "https://github.com/proofofworks/TPN/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/proofofworks/MPN.git"
+    "url": "git+https://github.com/proofofworks/TPN.git"
   },
   "type": "module",
   "packageManager": "npm@10.9.2",
@@ -28,8 +28,10 @@
     "SECURITY.md",
     "CONTRIBUTING.md",
     "action.yml",
+    "registry",
     "docs/how-to/catch-drift-in-ci.md",
-    "docs/how-to/custom-registries.md"
+    "docs/how-to/custom-registries.md",
+    "docs/how-to/toolpin-curated-registry.md"
   ],
   "bin": {
     "toolpin": "./dist/cli.js",
@@ -40,8 +42,9 @@
     "docs:build": "docusaurus build website",
     "docs:clear": "docusaurus clear website",
     "docs:start": "docusaurus start website",
+    "registry:check": "node scripts/check-curated-registry.mjs",
     "test": "npm run build && node --test",
-    "release:check": "npm test && node scripts/check-publish-target.mjs && npm pack --dry-run",
+    "release:check": "npm test && npm run registry:check && node scripts/check-publish-target.mjs && npm pack --dry-run",
     "prepare": "npm run build",
     "prepublishOnly": "npm test",
     "start": "node dist/cli.js",

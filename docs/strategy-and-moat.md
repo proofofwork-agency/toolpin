@@ -107,7 +107,7 @@ Net: threats (1) and (2) are existential because they're client-owned;
 
 ### The Ugly (credibility- and adoption-killing gaps)
 
-- **Naming is incoherent.** Product "ToolPin", binary alias `tpn`, repo "MPN" — three identifiers for one thing. "MPN" is opaque and unsalvageable as a public name.
+- **Public naming still needs the repo rename.** Product "ToolPin", binary aliases `toolpin`/`tpn`, and repo short name `TPN` are coherent enough for public use, but the GitHub repository still needs to be renamed before examples are final.
 - **Public distribution is still unfinished.** Package metadata now supports the public path `npm install -g toolpin`, but `npm view toolpin` returned 404 on 2026-06-25. Until the first publish, the npm install command describes the intended release path, not a currently usable package.
 - **GitHub Action publication is still unfinished.** `action.yml` exists and installs ToolPin from the action source by default, with npm installation available after publish via `toolpin-version`; consumers still need a public repository name and tag before `uses: OWNER/REPO@v0.1.0` is real.
 - **Over-claiming surface.** Badges like `sigstore-declared`, `digest-pinned`, `tool-description-pinned`, "verified" attestations read stronger than the substring/regex/presence checks actually provide. A security reviewer will catch this and lose trust.
@@ -149,7 +149,7 @@ Ranked by leverage, not effort:
 
 1. **Publish to npm** with a working `npm install -g toolpin`. Package metadata, `release:check`, `prepare`, and `prepublishOnly` are now in place; the registry package is not published yet.
 2. **Publish/tag the GitHub Action** and replace `OWNER/REPO` examples with the real action path.
-3. **Rename repo** MPN → `toolpin`. Kill the incoherent naming.
+3. **Rename the GitHub repo** to `TPN` and keep public copy on `ToolPin`, `toolpin`, and `tpn`.
 4. **Write the P0 missing docs**: `trust-explained`, `lockfile-schema`, `policy-schema`, `signing-guide` (see `docs/docusaurus-design.md`). `threat-model`, `comparison`, and `catch-drift-in-ci` now exist.
 5. **Continue TUI refactor phase 2**: move async operations and input handling out of `src/tui.tsx`, then split view components.
 6. **Reconcile `stableJson` divergence** between `plan.ts` and `doctor.ts` deliberately, not accidentally.

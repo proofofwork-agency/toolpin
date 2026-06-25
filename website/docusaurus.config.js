@@ -10,7 +10,7 @@ const config = {
     },
   },
   organizationName: "proofofworks",
-  projectName: "MPN",
+  projectName: "TPN",
   trailingSlash: false,
   i18n: {
     defaultLocale: "en",
@@ -38,7 +38,7 @@ const config = {
       items: [
         { type: "docSidebar", sidebarId: "docs", position: "left", label: "Docs" },
         { to: "/docs/tutorials/install-first-server", label: "Quickstart", position: "right" },
-        { href: "https://github.com/proofofworks/MPN", label: "GitHub", position: "right" },
+        { href: "https://github.com/proofofworks/TPN", label: "GitHub", position: "right" },
       ],
     },
     footer: {
@@ -55,8 +55,8 @@ const config = {
         {
           title: "Project",
           items: [
-            { label: "GitHub", href: "https://github.com/proofofworks/MPN" },
-            { label: "Security", href: "https://github.com/proofofworks/MPN/security" },
+            { label: "GitHub", href: "https://github.com/proofofworks/TPN" },
+            { label: "Security", href: "https://github.com/proofofworks/TPN/security" },
           ],
         },
       ],

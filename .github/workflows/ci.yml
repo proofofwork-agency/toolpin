@@ -29,3 +29,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Check curated registry
+        run: npm run registry:check
+
+      - name: Build docs
+        run: npm run docs:build

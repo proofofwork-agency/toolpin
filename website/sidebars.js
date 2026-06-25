@@ -9,7 +9,11 @@ const sidebars = {
     {
       type: "category",
       label: "How-to",
-      items: ["how-to/catch-drift-in-ci"],
+      items: [
+        "how-to/catch-drift-in-ci",
+        "how-to/toolpin-curated-registry",
+        "how-to/custom-registries",
+      ],
     },
     {
       type: "category",
