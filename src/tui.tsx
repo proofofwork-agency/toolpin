@@ -14,7 +14,7 @@ import { searchServers } from "./search.js";
 import { testServer, type ServerTestResult } from "./tester.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceId, SearchResult } from "./types.js";
 
-type View = "discover" | "details" | "plan" | "config" | "help";
+export type View = "discover" | "details" | "plan" | "config" | "help";
 type InputMode = "normal" | "search" | "command";
 type DataMode = "cache" | "live";
 type SourceMode = RegistrySourceId | "all";
@@ -51,6 +51,8 @@ const MODAL_BORDER = "#3f3f46";
 const OK = "#4ade80";
 const WARN = "#fbbf24";
 const ERR = "#f87171";
+const MENU_ROW = 6;
+const LIST_ROW_START = 8;
 
 interface TuiState {
   entries: RegistryEntry[];
@@ -622,23 +624,22 @@ function MpmTui() {
   });
 
   function handleMouseClick(x: number, y: number): boolean {
-    if (y === 6) {
-      const tab = x < 14 ? "discover" : x < 27 ? "details" : x < 39 ? "plan" : x < 50 ? "config" : x < 62 ? "help" : undefined;
-      if (tab) {
-        setState((prev) => ({ ...prev, view: tab }));
-        return true;
-      }
+    const hit = hitTestTui(x, y, buildTuiHitZones({
+      width,
+      listHeight,
+      selectedIndex,
+      resultCount: results.length,
+      hasSelection: Boolean(selectedServer),
+      selectedLabel: selectedServer?.title || selectedServer?.name,
+      listActive: state.inputMode === "normal" && state.view === "discover",
+    }));
+    if (hit?.kind === "view") {
+      setState((prev) => ({ ...prev, view: hit.view }));
+      return true;
     }
-
-    if (state.inputMode === "normal" && state.view === "discover") {
-      const row = y - 8;
-      const visibleCount = Math.max(2, listHeight - 2);
-      const start = listWindowStart(selectedIndex, visibleCount, results.length);
-      const clickedIndex = start + row;
-      if (row >= 0 && row < visibleCount && clickedIndex < results.length) {
-        setState((prev) => ({ ...prev, selected: clickedIndex, pendingRemove: undefined }));
-        return true;
-      }
+    if (hit?.kind === "server") {
+      setState((prev) => ({ ...prev, selected: hit.index, pendingRemove: undefined }));
+      return true;
     }
 
     return false;
@@ -730,23 +731,126 @@ function parseMouse(input: string): { x: number; y: number; pressed: boolean } |
   };
 }
 
+export type TuiHitAction = { kind: "view"; view: View } | { kind: "server"; index: number };
+export interface TuiMenuSegment {
+  view: View;
+  label: string;
+  from: number;
+  to: number;
+  enabled: boolean;
+}
+
+export interface TuiMenuLayout {
+  selectedLabel: string;
+  selectedFrom: number;
+  selectedTo: number;
+  segments: TuiMenuSegment[];
+}
+
+export interface TuiHitZones {
+  menuY: number;
+  menu: TuiMenuSegment[];
+  list?: {
+    fromY: number;
+    toY: number;
+    start: number;
+    total: number;
+  };
+}
+
+export function buildTuiHitZones({
+  width,
+  listHeight,
+  selectedIndex,
+  resultCount,
+  hasSelection,
+  selectedLabel,
+  listActive,
+}: {
+  width: number;
+  listHeight: number;
+  selectedIndex: number;
+  resultCount: number;
+  hasSelection: boolean;
+  selectedLabel?: string;
+  listActive: boolean;
+}): TuiHitZones {
+  const visibleCount = Math.max(2, listHeight - 2);
+  const listStart = listWindowStart(selectedIndex, visibleCount, resultCount);
+  const menuLayout = computeMenuLayout({ width, hasSelection, selectedLabel });
+  return {
+    menuY: MENU_ROW,
+    menu: menuLayout.segments,
+    list: listActive ? {
+      fromY: LIST_ROW_START,
+      toY: LIST_ROW_START + visibleCount - 1,
+      start: listStart,
+      total: resultCount,
+    } : undefined,
+  };
+}
+
+export function computeMenuLayout({ width, hasSelection, selectedLabel }: { width: number; hasSelection: boolean; selectedLabel?: string }): TuiMenuLayout {
+  const contentStart = 3;
+  const helpLabel = "Help";
+  const helpTo = Math.max(contentStart + helpLabel.length - 1, width - 2);
+  const helpFrom = Math.max(contentStart, helpTo - helpLabel.length + 1);
+  const labelWidth = Math.max(8, Math.min(34, width - 61));
+  const chosenLabel = truncate(selectedLabel || "select a server", labelWidth);
+  const segments: TuiMenuSegment[] = [];
+  let cursor = contentStart;
+
+  const push = (view: View, label: string, enabled: boolean) => {
+    segments.push({ view, label, from: cursor, to: cursor + label.length - 1, enabled });
+    cursor += label.length;
+  };
+
+  push("discover", "Browse", true);
+  cursor += "  |  ".length;
+  cursor += "Selected: ".length;
+  const selectedFrom = cursor;
+  const selectedTo = cursor + chosenLabel.length - 1;
+  cursor += chosenLabel.length;
+  cursor += "  |  ".length;
+  push("details", "Overview", hasSelection);
+  cursor += "  ".length;
+  push("plan", "Install", hasSelection);
+  cursor += "  ".length;
+  push("config", "Config", hasSelection);
+
+  segments.push({ view: "help", label: helpLabel, from: helpFrom, to: helpTo, enabled: true });
+  return { selectedLabel: chosenLabel, selectedFrom, selectedTo, segments };
+}
+
+export function hitTestTui(x: number, y: number, zones: TuiHitZones): TuiHitAction | undefined {
+  if (y === zones.menuY) {
+    const zone = zones.menu.find((entry) => x >= entry.from && x <= entry.to);
+    return zone?.enabled ? { kind: "view", view: zone.view } : undefined;
+  }
+
+  if (zones.list && y >= zones.list.fromY && y <= zones.list.toY) {
+    const index = zones.list.start + (y - zones.list.fromY);
+    return index < zones.list.total ? { kind: "server", index } : undefined;
+  }
+
+  return undefined;
+}
+
 function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
   const statusColor = state.installing || state.testing || state.loading ? WARN : state.error ? ERR : OK;
-  const right = `${state.view === "discover" ? "browse" : state.view} | ${status} | ${state.client} | ${state.sourceMode} | ${resultCount}`;
+  const right = `${status} | ${state.client} | ${state.sourceMode} | ${resultCount}`;
   const leftWidth = Math.max(18, width - right.length - 7);
   return (
     <Box paddingX={2} marginTop={1} marginBottom={1} justifyContent="space-between">
       <Box width={leftWidth}>
         <Text wrap="truncate">
+          <Text bold color="white">ToolPin</Text>
+          <Text color={CHROME}>  </Text>
           <Text color={CHROME}>{shortPath(process.cwd())}</Text>
-          <Text color={CHROME}>  /  </Text>
-          <Text color={selectedServer ? MUTED : CHROME}>{selectedServer?.name ?? "select an MCP server"}</Text>
         </Text>
       </Box>
       <Text>
-        <Text color={MUTED}>{state.view === "discover" ? "browse" : state.view}</Text>
-        <Text color={CHROME}> | </Text>
         <Text color={statusColor}>{status}</Text>
         <Text color={CHROME}> | </Text>
         <Text color="white">{state.client}</Text>
@@ -762,46 +866,47 @@ function ChromeHeader({ state, resultCount, selectedServer, width }: { state: Tu
 function PromptBar({ state, width }: { state: TuiState; width: number }) {
   const active = state.inputMode === "search";
   const commandActive = state.inputMode === "command";
-  const hint = active ? "Enter applies, Esc cancels" : "press / to search, : for commands";
   return (
-    <Box marginX={2} marginBottom={1} backgroundColor={SURFACE_2} paddingX={1} paddingY={1}>
+    <Box marginX={2} marginBottom={1} backgroundColor={SURFACE_2} paddingX={1}>
       <Box justifyContent="space-between" width={Math.max(1, width - 6)}>
         <Text wrap="truncate">
-          <Text bold color={BLUE}>{">"}</Text>
-          <Text> </Text>
           {commandActive ? (
             <>
-              <Text color={MUTED}>toolpin </Text>
+              <Text color={MUTED}>Command </Text>
+              <Text color={CHROME}>toolpin </Text>
               <Text color="white">{state.commandQuery || "command"}</Text>
             </>
           ) : (
             <>
+              <Text color={MUTED}>Search </Text>
               <Text color="white">{state.query || "Search MCP servers"}</Text>
-              <Text color={MUTED}>  {hint}</Text>
             </>
           )}
         </Text>
-        <Text color={active || commandActive ? BLUE : MUTED}>{commandActive ? "command" : "toolpin"}</Text>
+        <Text color={active || commandActive ? BLUE : MUTED}>{commandActive ? "Enter runs, Esc closes" : active ? "Enter applies, Esc cancels" : "/ edit search  : commands"}</Text>
       </Box>
     </Box>
   );
 }
 
 function ModeLine({ active, selectedServer, width }: { active: View; selectedServer?: NormalizedServer; width: number }) {
+  const hasSelection = Boolean(selectedServer);
+  const layout = computeMenuLayout({ width, hasSelection, selectedLabel: selectedServer?.title || selectedServer?.name });
   return (
     <Box paddingX={2} marginBottom={1} justifyContent="space-between">
       <Text wrap="truncate">
-        <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>1 Browse</Text>
+        <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>{layout.segments[0]?.label}</Text>
+        <Text color={CHROME}>  |  </Text>
+        <Text color={hasSelection ? MUTED : CHROME}>Selected: </Text>
+        <Text color={hasSelection ? "white" : CHROME}>{layout.selectedLabel}</Text>
+        <Text color={CHROME}>  |  </Text>
+        <Text bold={active === "details"} color={!hasSelection ? CHROME : active === "details" ? BLUE : MUTED}>{layout.segments[1]?.label}</Text>
         <Text color={CHROME}>  </Text>
-        <Text bold={active === "details"} color={active === "details" ? BLUE : MUTED}>2 Overview</Text>
+        <Text bold={active === "plan"} color={!hasSelection ? CHROME : active === "plan" ? BLUE : MUTED}>{layout.segments[2]?.label}</Text>
         <Text color={CHROME}>  </Text>
-        <Text bold={active === "plan"} color={active === "plan" ? BLUE : MUTED}>3 Install</Text>
-        <Text color={CHROME}>  </Text>
-        <Text bold={active === "config"} color={active === "config" ? BLUE : MUTED}>4 Config</Text>
-        <Text color={CHROME}>  </Text>
-        <Text bold={active === "help"} color={active === "help" ? BLUE : MUTED}>5 Help</Text>
+        <Text bold={active === "config"} color={!hasSelection ? CHROME : active === "config" ? BLUE : MUTED}>{layout.segments[3]?.label}</Text>
       </Text>
-      <Text color={MUTED} wrap="truncate">{truncate(selectedServer?.title ?? "search and choose from the list", Math.max(12, width - 58))}</Text>
+      <Text bold={active === "help"} color={active === "help" ? BLUE : MUTED}>{layout.segments[4]?.label}</Text>
     </Box>
   );
 }
@@ -994,10 +1099,10 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
 function HelpView({ width }: { width: number }) {
   const rows: Array<[string, string, string]> = [
     [":", "commands", "Open CLI-equivalent command palette."],
-    ["tab / 1-5", "views", "Switch Browse and selected-server panels."],
-    ["/", "search", "Type a registry query; enter applies, esc cancels."],
+    ["tab", "menu", "Cycle Browse, selected-server panels, and Help."],
+    ["/", "search", "Edit the Search field; Enter applies, Esc cancels."],
     ["up/down or j/k", "select", "Move through server options."],
-    ["enter", "open", "Open selected-server overview."],
+    ["enter", "open", "Open the selected server overview."],
     ["g", "registry", "Cycle all, official, and Docker sources."],
     ["G", "scope", "Toggle project/global install target."],
     ["c", "client", "Cycle clients, including all."],
@@ -1076,7 +1181,7 @@ function Footer({ view, inputMode }: { view: View; inputMode: InputMode }) {
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
       ? [["/", "search"], ["Enter", "open"], ["click", "select"], [":", "commands"], ["j/k", "move"], ["q", "quit"]]
-      : [["Esc", "close"], ["click", "tabs"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["q", "quit"]];
+      : [["Esc", "browse"], ["click", "menu"], ["c", "client"], ["G", "scope"], ["t", "test"], ["I", "install"], ["q", "quit"]];
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0}>
       <Text wrap="truncate">
@@ -1152,7 +1257,7 @@ function nextView(view: View): View {
   return VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length] ?? "discover";
 }
 
-function listWindowStart(selected: number, visibleCount: number, total: number): number {
+export function listWindowStart(selected: number, visibleCount: number, total: number): number {
   const maxStart = Math.max(0, total - visibleCount);
   const preferred = selected < visibleCount ? 0 : selected - visibleCount + 1;
   return Math.max(0, Math.min(preferred, maxStart));
