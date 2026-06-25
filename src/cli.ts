@@ -21,7 +21,7 @@ type ClientSelection = ClientName | "all";
 const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
 
@@ -105,15 +105,17 @@ async function search(rest: string[]): Promise<void> {
   const servers = await loadServers(rest, { search: query });
   const results = searchServers(latestOnly(servers), query, limit);
 
+  printHeader(`Search results for "${query}"`);
   for (const result of results) {
     const server = result.server;
     const packages = server.packageTypes.length ? server.packageTypes.join(",") : "none";
     const remotes = server.remoteTypes.length ? server.remoteTypes.join(",") : "none";
-    console.log(`${server.name}@${server.version}  score=${result.trust.score} source=${server.registrySource}`);
-    console.log(`  ${server.title}`);
-    if (server.description) console.log(`  ${truncate(server.description, 140)}`);
-    console.log(`  packages=${packages} remotes=${remotes}`);
-    if (result.trust.badges.length) console.log(`  badges=${result.trust.badges.join(", ")}`);
+    printSubhead(`${server.name}@${server.version}`);
+    printField("title", server.title);
+    if (server.description) printField("about", truncate(server.description, 140));
+    printField("source", `${server.registrySource}  trust ${result.trust.score}`);
+    printField("targets", `packages ${packages}; remotes ${remotes}`);
+    if (result.trust.badges.length) printField("badges", result.trust.badges.join(", "));
   }
 }
 
@@ -128,17 +130,17 @@ async function info(rest: string[]): Promise<void> {
     return;
   }
 
-  console.log(`${server.name}@${server.version}`);
-  console.log(server.title);
-  if (server.description) console.log(server.description);
-  if (server.repositoryUrl) console.log(`Repository: ${server.repositoryUrl}`);
-  console.log(`Packages: ${server.packageTypes.join(", ") || "none"}`);
-  console.log(`Remotes: ${server.remoteTypes.join(", ") || "none"}`);
-  console.log(`Registry: ${server.registrySource}`);
-  console.log(`Trust score: ${trust.score}`);
-  if (trust.badges.length) console.log(`Badges: ${trust.badges.join(", ")}`);
+  printHeader(`${server.name}@${server.version}`);
+  printField("title", server.title);
+  if (server.description) printField("about", server.description);
+  if (server.repositoryUrl) printField("repo", server.repositoryUrl);
+  printField("packages", server.packageTypes.join(", ") || "none");
+  printField("remotes", server.remoteTypes.join(", ") || "none");
+  printField("registry", server.registrySource);
+  printField("trust", String(trust.score));
+  if (trust.badges.length) printField("badges", trust.badges.join(", "));
   for (const issue of trust.issues) {
-    console.log(`${issue.severity.toUpperCase()}: ${issue.message}`);
+    printBullet(`${issue.severity.toUpperCase()}: ${issue.message}`);
   }
 }
 
@@ -214,8 +216,10 @@ async function lock(rest: string[]): Promise<void> {
   } else {
     lockfile = await writeLockfile(buildInstallPlan(server, client), path);
   }
-  console.log(`Locked ${server.name}@${server.version} in ${path}`);
-  console.log(`Lockfile now contains ${Object.keys(lockfile?.servers ?? {}).length} server/client entrie(s).`);
+  printHeader("Lockfile updated");
+  printField("server", `${server.name}@${server.version}`);
+  printField("file", path);
+  printField("entries", `${Object.keys(lockfile?.servers ?? {}).length} server/client entrie(s)`);
 }
 
 async function lockDigest(rest: string[]): Promise<void> {
@@ -237,7 +241,10 @@ async function lockSign(rest: string[]): Promise<void> {
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify({ file: path, signature: signaturePath, envelope }, null, 2));
   } else {
-    console.log(`Signed ${path} (${envelope.lockfileDigest}) -> ${signaturePath}`);
+    printHeader(`Signed ${path}`);
+    printField("file", path);
+    printField("digest", envelope.lockfileDigest);
+    printField("signature", signaturePath);
   }
 }
 
@@ -250,7 +257,10 @@ async function lockVerifySignature(rest: string[]): Promise<void> {
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify({ file: path, signature: signaturePath, report }, null, 2));
   } else {
-    console.log(`${report.ok ? "OK" : "FAILED"} ${report.message}`);
+    printHeader(`${report.ok ? "OK" : "FAILED"} ${report.message.replace(/\.$/, "")}`);
+    printField("file", path);
+    printField("signature", signaturePath);
+    printField("result", report.message);
   }
   if (!report.ok) process.exitCode = 1;
 }
@@ -384,13 +394,19 @@ async function install(rest: string[]): Promise<void> {
     }
   }
   console.error(`Installing ${server.name}@${server.version} into ${client} ${scope} config...`);
+  printHeader("Install");
+  printField("server", `${server.name}@${server.version}`);
+  printField("scope", scope === "project" ? "project folder" : "global current user");
+  printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
     const result = await installServerConfig(server, targetClient, scope);
     await writeLockfile(plans[index], "mcp-lock.json");
-    console.log(`${result.action} ${result.client} ${result.scope} config: ${result.file}`);
-    for (const note of result.notes) console.log(`- ${note}`);
+    printSubhead(`${result.client} ${result.scope}`);
+    printField("config", `${result.action}: ${result.file}`);
+    printField("lock", "mcp-lock.json updated");
+    for (const note of result.notes) printBullet(note);
   }
-  console.log(`Installed ${server.name} for ${clients.join(", ")}`);
+  printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`);
 }
 
 async function remove(rest: string[]): Promise<void> {
@@ -407,12 +423,17 @@ async function remove(rest: string[]): Promise<void> {
 
   await readLockfile(path);
   const clients = client === "all" ? clientsForScope(scope) : [client];
+  printHeader("Remove");
+  printField("server", name);
+  printField("scope", scope);
   for (const targetClient of clients) {
     const configResult = await removeServerConfig(name, targetClient, scope);
     const lockResult = await removeLockfileEntry(name, targetClient, path);
     const status = configResult.action === "removed" || lockResult.removed ? "removed" : "missing";
-    console.log(`${status} ${targetClient} ${scope}: config=${configResult.action} lock=${lockResult.removed ? "removed" : "missing"}`);
-    for (const note of configResult.notes) console.log(`- ${note}`);
+    printSubhead(`${targetClient}: ${status}`);
+    printField("config", configResult.action);
+    printField("lock", lockResult.removed ? "removed" : "missing");
+    for (const note of configResult.notes) printBullet(note);
   }
 }
 
@@ -470,7 +491,9 @@ async function ci(rest: string[]): Promise<void> {
     ].join("\n"));
   }
 
-  console.log(`Frozen install OK: ${report.checked} locked server/client entrie(s) verified.`);
+  printHeader("Frozen install OK");
+  printField("file", path);
+  printField("checked", `${report.checked} locked server/client entrie(s)`);
 }
 
 async function policy(rest: string[]): Promise<void> {
@@ -497,8 +520,8 @@ async function policy(rest: string[]): Promise<void> {
     console.log(JSON.stringify({ ok: reports.every((report) => report.ok), reports }, null, 2));
   } else {
     for (const report of reports) {
-      console.log(`${report.ok ? "OK" : "DENIED"} ${report.key}`);
-      for (const issue of report.issues) console.log(`- ${issue.code}: ${issue.message}`);
+      printSubhead(`${report.ok ? "OK" : "DENIED"} ${report.key}`);
+      for (const issue of report.issues) printBullet(`${issue.code}: ${issue.message}`);
     }
   }
 
@@ -522,14 +545,19 @@ async function secrets(rest: string[]): Promise<void> {
   if (hasFlag(values, "--json")) {
     console.log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
-    console.log(`Secrets audit OK: ${report.checked} locked server/client entrie(s) checked for ${scopeDescription(scope)}.`);
+    printHeader("Secrets audit OK");
+    printField("checked", `${report.checked} locked server/client entrie(s)`);
+    printField("scope", scopeDescription(scope));
   } else {
-    console.log(`Secrets audit found ${report.findings.length} finding(s) across ${report.checked} locked server/client entrie(s).`);
+    printHeader("Secrets audit findings");
+    printField("findings", String(report.findings.length));
+    printField("checked", `${report.checked} locked server/client entrie(s)`);
     for (const finding of report.findings) {
       const secret = finding.secretName ? ` ${finding.secretSource}:${finding.secretName}` : "";
-      const redacted = finding.redactedValue ? ` value=${finding.redactedValue}` : "";
       const scopeLabel = finding.scope ? ` [${finding.scope}]` : "";
-      console.log(`- ${finding.kind} ${finding.key}${scopeLabel}${secret}: ${finding.message} (${finding.file || "no file"})${redacted}`);
+      printBullet(`${finding.kind} ${finding.key}${scopeLabel}${secret}: ${finding.message}`);
+      printField("file", finding.file || "no file");
+      if (finding.redactedValue) printField("value", finding.redactedValue);
     }
   }
 
@@ -547,12 +575,17 @@ async function doctor(rest: string[]): Promise<void> {
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify(report, null, 2));
   } else if (report.ok) {
-    console.log(`Doctor OK: ${report.checked} locked server/client entrie(s) match ${scopeDescription(scope)}.`);
+    printHeader("Doctor OK");
+    printField("checked", `${report.checked} locked server/client entrie(s)`);
+    printField("scope", scopeDescription(scope));
   } else {
-    console.log(`Doctor found ${report.issues.length} issue(s) across ${report.checked} locked server/client entrie(s).`);
+    printHeader("Doctor issues");
+    printField("issues", String(report.issues.length));
+    printField("checked", `${report.checked} locked server/client entrie(s)`);
     for (const issue of report.issues) {
       const scopeLabel = issue.scope ? ` [${issue.scope}]` : "";
-      console.log(`- ${issue.kind} ${issue.key}${scopeLabel}: ${issue.message} (${issue.file})`);
+      printBullet(`${issue.kind} ${issue.key}${scopeLabel}: ${issue.message}`);
+      printField("file", issue.file);
     }
   }
 
@@ -569,42 +602,80 @@ async function test(rest: string[]): Promise<void> {
   console.error(`Testing ${server.name}@${server.version} (${server.registrySource}) with ${timeout}ms timeout...`);
   const result = await testServer(server, timeout);
 
-  console.log(`${result.ok ? "OK" : "FAILED"} ${result.serverName}`);
-  console.log(`Target: ${result.target}`);
-  console.log(`Duration: ${result.durationMs}ms`);
-  console.log(result.message);
+  printHeader(result.ok ? "Test OK" : "Test failed");
+  printField("server", result.serverName);
+  printField("target", result.target);
+  printField("duration", `${result.durationMs}ms`);
+  printField("message", result.message);
   if (result.tools.length) {
-    console.log("Tools:");
+    printSubhead("Tools");
     for (const tool of result.tools) {
-      console.log(`- ${tool.name}${tool.description ? `: ${truncate(tool.description, 120)}` : ""}`);
+      printBullet(`${tool.name}${tool.description ? `: ${truncate(tool.description, 120)}` : ""}`);
     }
   }
 }
 
 function help(): void {
-  console.log(`toolpin - trusted install, lockfile, and governance for MCP servers
+  console.log(`ToolPin
+  Trusted install, lockfile, and governance for MCP servers.
 
-Commands:
+Quick start
+  toolpin tui
+  toolpin ingest
+  toolpin search github
+  toolpin install <server> --client claude --update-lock
+
+Discovery
   toolpin ingest [--source official|docker|all] [--limit 100] [--pages 10]
   toolpin search <query> [--source official|docker|all] [--limit 10] [--live]
-  toolpin info <server-name> [--source official|docker|all] [--json] [--live]
-  toolpin audit <server-name> [--source official|docker|all] [--live]
-  toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]
-  toolpin plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
-  toolpin install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
-  toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source official|docker|all] [--live]
-  toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
-  toolpin remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
+  toolpin info <server> [--json] [--live]
+  toolpin audit <server> [--live]
+  toolpin verify <server> [--live] [--json] [--timeout 15000] [--skip-live-verification]
+  toolpin test <server> [--live] [--timeout 15000]
+
+Install and config
+  toolpin plan <server> --client <client> [--live]
+  toolpin install <server> --client <client|all> [--scope project|global] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin remove <server> [--client <client|all>] [--scope project|global]
+  toolpin export-config <server> --client <client|all> [--live]
+
+Lock and governance
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--live] [--verify]
   toolpin doctor [--file mcp-lock.json] [--scope all|project|global] [--json]
-  toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
-  toolpin lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
+  toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
+  toolpin policy check <server> --client <client|all> [--policy .toolpin/policy.json]
+  toolpin lock <server> --client <client|all> [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
-  toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-  toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-  toolpin export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
-  toolpin tui
+  toolpin lock sign --key private.pem [--signature mcp-lock.sig]
+  toolpin lock verify-signature --key public.pem [--signature mcp-lock.sig]
+
+Common options
+  --source official|docker|all       choose registry source
+  --live                            fetch instead of cache
+  --json                            machine-readable output
+  --scope project|global            project folder vs current-user config
+  --client <client|all>             target client config
+
+Clients
+  ${CLIENT_USAGE.replaceAll("|", ", ")}
 `);
+}
+
+function printHeader(title: string): void {
+  console.log(title);
+  console.log("-".repeat(Math.min(72, Math.max(8, title.length))));
+}
+
+function printSubhead(title: string): void {
+  console.log(`\n  ${title}`);
+}
+
+function printField(label: string, value: string): void {
+  console.log(`  ${label.padEnd(10)} ${value}`);
+}
+
+function printBullet(value: string): void {
+  console.log(`  - ${value}`);
 }
 
 function scopeDescription(scope: "all" | InstallScope): string {
@@ -678,22 +749,23 @@ function truncate(value: string, maxLength: number): string {
 }
 
 function printVerificationReport(report: VerificationReport): void {
-  console.log(`${report.ok ? "OK" : "FAILED"} ${report.serverName}@${report.serverVersion}`);
-  if (report.badges.length) console.log(`Badges: ${report.badges.join(", ")}`);
-  console.log(`Capability manifest: ${report.capabilityManifest.packageTypes.join(", ") || "no packages"} / ${report.capabilityManifest.transports.join(", ") || "no transports"}`);
-  if (report.capabilityManifest.remoteHosts.length) console.log(`Remote hosts: ${report.capabilityManifest.remoteHosts.join(", ")}`);
+  printHeader(`${report.ok ? "Verification OK" : "Verification failed"}: ${report.serverName}@${report.serverVersion}`);
+  if (report.badges.length) printField("badges", report.badges.join(", "));
+  printField("packages", report.capabilityManifest.packageTypes.join(", ") || "none");
+  printField("transport", report.capabilityManifest.transports.join(", ") || "none");
+  if (report.capabilityManifest.remoteHosts.length) printField("hosts", report.capabilityManifest.remoteHosts.join(", "));
   if (report.capabilityManifest.secrets.length) {
-    console.log(`Secrets: ${report.capabilityManifest.secrets.map((secret) => `${secret.source}:${secret.name}`).join(", ")}`);
+    printField("secrets", report.capabilityManifest.secrets.map((secret) => `${secret.source}:${secret.name}`).join(", "));
   }
   if (report.capabilityManifest.toolDescriptionHash) {
     const hash = report.capabilityManifest.toolDescriptionHash;
-    console.log(`Tool descriptions: ${hash.algorithm}-${hash.value} (${hash.toolCount} tool(s))`);
+    printField("tools hash", `${hash.algorithm}-${hash.value} (${hash.toolCount} tool(s))`);
   }
   if (report.capabilityManifest.toolDescriptionScan) {
     const scan = report.capabilityManifest.toolDescriptionScan;
-    console.log(`Tool-description scan: ${scan.findings.length} advisory finding(s) across ${scan.scannedDescriptions} description(s)`);
+    printField("scan", `${scan.findings.length} advisory finding(s) across ${scan.scannedDescriptions} description(s)`);
   }
   for (const issue of report.issues) {
-    console.log(`${issue.severity.toUpperCase()}: ${issue.code}: ${issue.message}`);
+    printBullet(`${issue.severity.toUpperCase()}: ${issue.code}: ${issue.message}`);
   }
 }
