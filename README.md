@@ -35,6 +35,7 @@ mpm verify <server-name> [--source official|docker|all] [--live] [--json] [--tim
 mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
 mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
 mpm policy check <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
+mpm secrets audit [--file mcp-lock.json] [--scope project|global] [--json]
 mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope project|global] [--file mcp-lock.json]
 mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
 mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
@@ -65,6 +66,7 @@ mpm tui
 - Detached lockfile signing via user-supplied Ed25519 keys: `mpm lock sign --key private.pem` signs the canonical whole-lock digest into `mcp-lock.sig`, `mpm lock verify-signature --key public.pem` verifies it, and `mpm ci --signature mcp-lock.sig --public-key public.pem` fails closed before registry resolution. MPM does not generate or store keys; verification is meaningful only when the private key and public trust root are managed outside the repo/lockfile trust path.
 - Frozen lockfile checks via `mpm ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
 - Local policy gate via optional `.mpm/policy.json`: `mpm install`, `mpm ci`, TUI installs, and `mpm policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
+- Read-only secret hygiene via `mpm secrets audit`: reports likely plaintext env/header secrets in installed client config files using registry `isSecret` metadata and known token prefixes. Findings are advisory and redacted; MPM does not resolve or print secret values.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
 - `mpm remove` cleanup for supported client config files and matching lockfile entries, including Codex TOML table removal.
 - `mpm remove` defaults to all supported project clients when `--client` is omitted; pass `--client <name>` for targeted cleanup.
@@ -128,6 +130,17 @@ different policy file or `--no-policy` for an explicit local bypass.
 
 This is a local JSON enforcement gate, not the future Cedar/OPA enterprise policy
 engine.
+
+## Secret Hygiene
+
+MPM generates placeholders and references, not plaintext secrets. `mpm secrets audit`
+checks installed client config entries against `mcp-lock.json` and flags secret-expected
+fields that contain plaintext-looking values instead of placeholders such as `<TOKEN>`,
+`${env:TOKEN}`, `${TOKEN}`, `${{ secrets.TOKEN }}`, `op://...`, `vault://...`, or
+`doppler://...`.
+
+The audit is read-only and advisory. It never prints raw secret values. Real secret
+brokering remains a design-gated runtime feature; see `docs/secret-brokering.md`.
 
 ## Product Direction
 

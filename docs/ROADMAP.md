@@ -48,7 +48,7 @@ Shipped in v0.1:
 - **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
 - Config export for claude/cursor/vscode/codex/opencode (`src/config.ts`); Codex now emits TOML-compatible `[mcp_servers.*]` config via `src/codexToml.ts`.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `mpm ci`, verified remote capability pins, advisory tool-description scans, local JSON policy gates, and client-config reconciliation exist; sigstore/transparency and enterprise policy controls are still open.
+- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `mpm ci`, verified remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation exist; sigstore/transparency, runtime secret brokering, and enterprise policy controls are still open.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -142,7 +142,8 @@ surface, then verification/CI modules.
 - **Task-first semantic search**: embed registry metadata; `mpm find "read Postgres and summarize"` returns ranked matches with confidence.
 - **Eval-gated listings**: optional per-server agent-eval pass rates published as a trust input — the signal npm structurally cannot offer.
 - **Tool-description scan**: deterministic advisory scans for agent-directed instructions, hidden/control characters, and tool-name shadowing in server-supplied and verified live tool descriptions. Shipped as warnings for human review, not as prompt-injection detection or an install blocker.
-- **Secret brokering**: resolve `op://`, `vault://`, `doppler://` references at spawn; OS keychain default; per-server scoped credential namespaces; `mpm install --secret-source=...` never writes plaintext to client config.
+- **Secret hygiene audit**: `mpm secrets audit` is shipped as a read-only advisory guardrail. It flags likely plaintext env/header secrets in installed config using registry `isSecret` metadata and known token prefixes, and never prints raw secret values.
+- **Secret brokering**: real `op://`, `vault://`, or `doppler://` resolution remains design-gated. Install-time resolution is rejected because it writes plaintext to disk; spawn-time resolution requires an MPM launcher/runtime model.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
 - **Local policy hardening**: `.mpm/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.
 - **Whole-lock digest pins**: `mpm lock digest` and `mpm ci --expect-digest` provide a timestamp-insensitive set-level lockfile pin for CI systems holding the expected digest out-of-band. This is not signing or provenance.
@@ -152,6 +153,7 @@ surface, then verification/CI modules.
 
 - **Sigstore/transparency lock provenance**: detached signatures cover local/user-managed trust roots. Public transparency logs, identity-bound signing, and provenance attestations still need a separate sigstore design.
 - **Secret brokering**: resolving `op://`, `vault://`, or `doppler://` safely requires a runtime launcher/spawn model. Resolving secrets during install and writing plaintext to client config would defeat the purpose of secret brokering.
+- **Merge-time secret reference preservation**: preserving user-edited secret references across reinstall is a separate config-merge behavior change and should not be bundled with runtime brokering.
 
 ## Release v1.0 — Enterprise governance (paid tier)
 

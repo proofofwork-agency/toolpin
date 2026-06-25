@@ -103,7 +103,7 @@ function expectedServerConfig(plan: InstallPlan): unknown {
   return serverConfigFromWrapped(plan.locked?.config ?? plan.config, plan.name, plan.client);
 }
 
-async function readInstalledServerConfig(
+export async function readInstalledServerConfig(
   file: string,
   serverName: string,
   client: ClientName,

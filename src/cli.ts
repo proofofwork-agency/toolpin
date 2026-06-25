@@ -9,6 +9,7 @@ import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry
 import { enforcePolicy } from "./policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
+import { auditSecrets } from "./secrets.js";
 import { signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
@@ -52,6 +53,9 @@ async function main(): Promise<void> {
       return;
     case "policy":
       await policy(rest);
+      return;
+    case "secrets":
+      await secrets(rest);
       return;
     case "remove":
       await remove(rest);
@@ -501,6 +505,36 @@ async function policy(rest: string[]): Promise<void> {
   if (reports.some((report) => !report.ok)) process.exitCode = 1;
 }
 
+async function secrets(rest: string[]): Promise<void> {
+  const subcommand = rest[0] ?? "help";
+  const values = rest.slice(1);
+  if (subcommand !== "audit") {
+    throw new Error("Usage: mpm secrets audit [--file mcp-lock.json] [--scope project|global] [--json]");
+  }
+
+  const path = stringFlag(values, "--file", "mcp-lock.json");
+  const scope = (hasFlag(values, "--global") ? "global" : hasFlag(values, "--project") ? "project" : stringFlag(values, "--scope", "project")) as InstallScope;
+  if (scope !== "project" && scope !== "global") {
+    throw new Error("--scope must be project or global");
+  }
+
+  const report = await auditSecrets(path, scope);
+  if (hasFlag(values, "--json")) {
+    console.log(JSON.stringify(report, null, 2));
+  } else if (report.ok) {
+    console.log(`Secrets audit OK: ${report.checked} locked server/client entrie(s) checked for ${scope} config.`);
+  } else {
+    console.log(`Secrets audit found ${report.findings.length} finding(s) across ${report.checked} locked server/client entrie(s).`);
+    for (const finding of report.findings) {
+      const secret = finding.secretName ? ` ${finding.secretSource}:${finding.secretName}` : "";
+      const redacted = finding.redactedValue ? ` value=${finding.redactedValue}` : "";
+      console.log(`- ${finding.kind} ${finding.key}${secret}: ${finding.message} (${finding.file || "no file"})${redacted}`);
+    }
+  }
+
+  if (!report.ok) process.exitCode = 1;
+}
+
 async function doctor(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const scope = (hasFlag(rest, "--global") ? "global" : hasFlag(rest, "--project") ? "project" : stringFlag(rest, "--scope", "project")) as InstallScope;
@@ -557,6 +591,7 @@ Commands:
   mpm plan <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
   mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
   mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
+  mpm secrets audit [--file mcp-lock.json] [--scope project|global] [--json]
   mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
   mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
   mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
