@@ -255,6 +255,7 @@ function MpmTui() {
     const command = commandLineFor("install", state, selectedServer);
     setState((prev) => ({
       ...prev,
+      view: "plan",
       installing: true,
       error: undefined,
       commandLog: {
@@ -263,7 +264,7 @@ function MpmTui() {
         ok: true,
         lines: [
           `starting install for ${selectedServer.name}`,
-          `target clients: ${targetClients.join(", ")}`,
+          `target: ${installClientLabel(state.client, targetClients)} / ${scopeLabel(state.installScope)}`,
           "checking policy and lock drift...",
         ],
       },
@@ -296,7 +297,7 @@ function MpmTui() {
           ok: true,
           lines: [
             `policy and lock checks passed for ${targetClients.length} client(s)`,
-            "writing client config and mcp-lock.json...",
+            `writing ${scopeLabel(state.installScope)} config and mcp-lock.json...`,
           ],
         },
       }));
@@ -318,8 +319,9 @@ function MpmTui() {
           command,
           ok: true,
           lines: [
-            `installed ${selectedServer.name}`,
-            ...unique(files).map((file) => `wrote ${file}`),
+            `installed for ${installClientLabel(state.client, targetClients)}`,
+            `scope: ${scopeLabel(state.installScope)}`,
+            `paths: ${unique(files).join(", ")}`,
             "updated mcp-lock.json",
           ],
         },
@@ -394,6 +396,7 @@ function MpmTui() {
     const command = commandLineFor("test", state, selectedServer);
     setState((prev) => ({
       ...prev,
+      view: "details",
       testing: true,
       error: undefined,
       testResult: undefined,
@@ -403,6 +406,7 @@ function MpmTui() {
         ok: true,
         lines: [
           `connecting to ${selectedServer.name}`,
+          "some MCP tests require tokens or credentials to succeed",
           "running MCP initialize handshake and tools/list...",
         ],
       },
@@ -1153,18 +1157,20 @@ function PlanView({ server, client, installScope, width }: { server?: Normalized
   const targetLabel = targetKind === "remote"
     ? `${String(target.type ?? "remote")} ${String(target.url ?? "")}`
     : `${String(target.registryType ?? "package")} ${String(target.identifier ?? "")}`;
+  const targetClients = selectedClientsForScope(client, installScope);
+  const clientLabel = installClientLabel(client, targetClients);
 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="install" file="plan" />
       <Box justifyContent="space-between">
-        <Text color={MUTED}>client <Text color="white">{client}</Text>  scope <Text color="white">{installScope}</Text></Text>
+        <Text color={MUTED}>target <Text color="white">{clientLabel}</Text>  <Text color="white">{scopeLabel(installScope)}</Text></Text>
         <Text color={MUTED}>I install  w lock</Text>
       </Box>
       <Spacer />
       <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
       <PlanMetric label="trust" value={`${plan.trust.score} ${plan.trust.badges.join(", ") || "no badges"}`} width={width} valueColor={trustColor(plan.trust.score)} />
-      <PlanMetric label="writes" value={client === "all" ? `${installScope} configs for ${clientsForScope(installScope).join(", ")} + mcp-lock.json` : `${installScope} ${client} config + mcp-lock.json`} width={width} />
+      <PlanMetric label="writes" value={client === "all" ? `${scopeLabel(installScope)} configs for ${targetClients.join(", ")} + mcp-lock.json` : `${scopeLabel(installScope)} ${client} config + mcp-lock.json`} width={width} />
       {server.requiresSecrets ? <PlanMetric label="secrets" value="required before runtime/test can succeed" width={width} valueColor={WARN} /> : null}
       {plan.trust.issues.slice(0, 4).map((issue) => (
         <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
@@ -1297,7 +1303,7 @@ function ActivityStrip({ state, width }: { state: TuiState; width: number }) {
         ? "testing selected MCP server..."
         : undefined;
   const primary = activeMessage ?? log?.lines[0] ?? state.lastAction ?? "ready";
-  const secondary = log?.lines.slice(1, 3) ?? [];
+  const secondary = active ? log?.lines.slice(0, 2) ?? [] : log?.lines.slice(1, 3) ?? [];
 
   return (
     <Box flexDirection="column" paddingX={2} marginTop={1} flexShrink={0}>
@@ -1414,6 +1420,14 @@ function selectedClients(client: ClientSelection): ClientName[] {
 
 function selectedClientsForScope(client: ClientSelection, scope: InstallScope): ClientName[] {
   return client === "all" ? clientsForScope(scope) : [client];
+}
+
+function installClientLabel(client: ClientSelection, targetClients: ClientName[]): string {
+  return client === "all" ? `all supported clients (${targetClients.join(", ")})` : `client ${targetClients[0] ?? client}`;
+}
+
+function scopeLabel(scope: InstallScope): string {
+  return scope === "project" ? "project scope (this folder)" : "global scope (current user)";
 }
 
 function unique(values: string[]): string[] {
