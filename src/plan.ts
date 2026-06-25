@@ -158,6 +158,14 @@ export async function readLockfile(path = "mcp-lock.json"): Promise<Lockfile> {
   return readExistingLockfile(path);
 }
 
+export async function readLockfileDigest(path = "mcp-lock.json"): Promise<string> {
+  return computeLockfileDigest(await readExistingLockfile(path));
+}
+
+export function computeLockfileDigest(lockfile: Lockfile): string {
+  return `sha256-${createHash("sha256").update(stableJson(lockfileDigestPayload(lockfile))).digest("base64")}`;
+}
+
 export async function verifyAgainstLockfile(plan: InstallPlan, path = "mcp-lock.json"): Promise<LockVerification> {
   const lockfile = await readExistingLockfile(path);
   const key = lockKey(plan.name, plan.client);
@@ -311,6 +319,18 @@ function integrityPayload(plan: InstallPlan): unknown {
       config: plan.locked?.config,
       capabilityManifest: normalizeCapabilityManifest(plan.locked?.capabilityManifest),
     },
+  };
+}
+
+function lockfileDigestPayload(lockfile: Lockfile): unknown {
+  return {
+    lockfileVersion: lockfile.lockfileVersion,
+    servers: Object.fromEntries(
+      Object.entries(lockfile.servers).map(([key, plan]) => [
+        key,
+        integrityPayload(plan),
+      ]),
+    ),
   };
 }
 

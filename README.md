@@ -36,10 +36,11 @@ mpm plan <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cli
 mpm install <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
 mpm policy check <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
 mpm remove <server-name> [--client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope project|global] [--file mcp-lock.json]
-mpm ci [--file mcp-lock.json] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
+mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
 mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
 mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
 mpm lock <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--file mcp-lock.json] [--live]
+mpm lock digest [--file mcp-lock.json] [--json]
 mpm export-config <server-name> --client claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all] [--live]
 mpm tui
 ```
@@ -58,6 +59,7 @@ mpm tui
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
 - Install drift checks: if an existing lock entry changes version, target, trust score, or generated client config, install refuses until the lock is reviewed and updated with `mpm lock` or `mpm install --update-lock`.
+- Whole-lock digest pinning via `mpm lock digest` and `mpm ci --expect-digest`: computes a timestamp-insensitive canonical `sha256-...` over the complete lockfile server/client set. This is useful only when CI or another verifier gets the expected digest from a trusted out-of-band source; it is not a signature, provenance, sigstore, or self-protecting lockfile.
 - Frozen lockfile checks via `mpm ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
 - Local policy gate via optional `.mpm/policy.json`: `mpm install`, `mpm ci`, TUI installs, and `mpm policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.

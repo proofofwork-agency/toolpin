@@ -5,7 +5,7 @@ import { codexTomlFromClientConfig } from "./codexToml.js";
 import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { doctorLockfile } from "./doctor.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
-import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
+import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { enforcePolicy } from "./policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
@@ -181,9 +181,14 @@ async function plan(rest: string[]): Promise<void> {
 }
 
 async function lock(rest: string[]): Promise<void> {
+  if (rest[0] === "digest") {
+    await lockDigest(rest.slice(1));
+    return;
+  }
+
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]`);
+  if (!name) throw new Error(`Usage: mpm lock <server-name> --client ${CLIENT_USAGE} [--live]\n       mpm lock digest [--file mcp-lock.json] [--json]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", "mcp-lock.json");
@@ -198,6 +203,16 @@ async function lock(rest: string[]): Promise<void> {
   }
   console.log(`Locked ${server.name}@${server.version} in ${path}`);
   console.log(`Lockfile now contains ${Object.keys(lockfile?.servers ?? {}).length} server/client entrie(s).`);
+}
+
+async function lockDigest(rest: string[]): Promise<void> {
+  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const digest = await readLockfileDigest(path);
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ file: path, digest }, null, 2));
+  } else {
+    console.log(digest);
+  }
 }
 
 async function exportConfig(rest: string[]): Promise<void> {
@@ -363,9 +378,16 @@ async function remove(rest: string[]): Promise<void> {
 
 async function ci(rest: string[]): Promise<void> {
   const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const expectedDigest = stringFlag(rest, "--expect-digest", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
   const policyPath = stringFlag(rest, "--policy", ".mpm/policy.json");
   const enforcePolicies = !hasFlag(rest, "--no-policy");
+  if (expectedDigest) {
+    const actualDigest = await readLockfileDigest(path);
+    if (actualDigest !== expectedDigest) {
+      throw new Error(`Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`);
+    }
+  }
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
     let verifiedCapabilityManifest: CapabilityManifest | undefined;
@@ -491,10 +513,11 @@ Commands:
   mpm install <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--source official|docker|all] [--live] [--update-lock] [--verify] [--policy .mpm/policy.json] [--no-policy]
   mpm policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .mpm/policy.json] [--json] [--source official|docker|all] [--live]
   mpm remove <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]
-  mpm ci [--file mcp-lock.json] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
+  mpm ci [--file mcp-lock.json] [--expect-digest sha256-...] [--policy .mpm/policy.json] [--no-policy] [--source official|docker|all] [--live] [--verify]
   mpm doctor [--file mcp-lock.json] [--scope project|global] [--json]
   mpm test <server-name> [--source official|docker|all] [--live] [--timeout 15000]
   mpm lock <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--file mcp-lock.json] [--live]
+  mpm lock digest [--file mcp-lock.json] [--json]
   mpm export-config <server-name> --client ${CLIENT_USAGE} [--source official|docker|all] [--live]
   mpm tui
 `);

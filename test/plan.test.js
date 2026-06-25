@@ -6,6 +6,7 @@ import test from "node:test";
 import { verifyFrozenInstall } from "../dist/ci.js";
 import {
   buildInstallPlan,
+  computeLockfileDigest,
   computePlanIntegrity,
   readLockfile,
   verifyAgainstLockfile,
@@ -42,6 +43,64 @@ test("writeLockfile writes v2 entries with stable integrity metadata", async () 
 
     const reread = await readLockfile(lockfilePath);
     assert.equal(reread.servers[key].integrity, locked.integrity);
+  });
+});
+
+test("computeLockfileDigest is stable across timestamp churn", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/one" }), "claude"), lockfilePath);
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/two" }), "cursor"), lockfilePath);
+
+    const lockfile = await readLockfile(lockfilePath);
+    const digest = computeLockfileDigest(lockfile);
+    const churned = {
+      ...lockfile,
+      generatedAt: "2030-01-01T00:00:00.000Z",
+      updatedAt: "2030-01-02T00:00:00.000Z",
+      servers: Object.fromEntries(
+        Object.entries(lockfile.servers).map(([key, entry]) => [
+          key,
+          {
+            ...entry,
+            resolvedAt: "2030-01-03T00:00:00.000Z",
+            lockedAt: "2030-01-04T00:00:00.000Z",
+            capabilityManifest: { ...entry.capabilityManifest, generatedAt: "2030-01-05T00:00:00.000Z" },
+            locked: {
+              ...entry.locked,
+              capabilityManifest: { ...entry.locked.capabilityManifest, generatedAt: "2030-01-06T00:00:00.000Z" },
+            },
+          },
+        ]),
+      ),
+    };
+
+    assert.equal(computeLockfileDigest(churned), digest);
+  });
+});
+
+test("computeLockfileDigest changes when the lockfile set changes", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/one" }), "claude"), lockfilePath);
+    const one = await readLockfile(lockfilePath);
+    const oneDigest = computeLockfileDigest(one);
+
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/two" }), "cursor"), lockfilePath);
+    const two = await readLockfile(lockfilePath);
+    const twoDigest = computeLockfileDigest(two);
+    assert.notEqual(twoDigest, oneDigest);
+
+    const removed = { ...two, servers: { ...two.servers } };
+    delete removed.servers["io.github/two:cursor"];
+    assert.equal(computeLockfileDigest(removed), oneDigest);
+
+    const substituted = { ...two, servers: { ...two.servers } };
+    substituted.servers["io.github/one:claude"] = {
+      ...substituted.servers["io.github/one:claude"],
+      version: "9.9.9",
+    };
+    assert.notEqual(computeLockfileDigest(substituted), twoDigest);
   });
 });
 
