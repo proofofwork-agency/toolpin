@@ -1,4 +1,5 @@
 import { attestationBadge, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { scanFindingsToTrustIssues, scanServerMetadata } from "./scan.js";
 import type { NormalizedServer, RegistryPackage, RegistryRemote, TrustEvidence, TrustGate, TrustIssue, TrustReport, TrustTier } from "./types.js";
 
@@ -148,6 +149,35 @@ export function evidenceStatus(report: Pick<TrustReport, "evidence" | "score" | 
   return "no automated evidence";
 }
 
+export function trustCapExplanation(report: Pick<TrustReport, "capReason" | "evidence" | "issues">): string | undefined {
+  if (!report.capReason) return undefined;
+  if (report.capReason === "automated evidence incomplete") {
+    const evidence = report.evidence ?? [];
+    const hasPin = hasPassedPinEvidence(evidence);
+    const hasArtifact = hasPassedArtifactEvidence(evidence);
+    const declaredAttestation = evidence.some((entry) => entry.code === "attestation_declared");
+    const missing = [
+      hasPin ? "" : "exact package pin",
+      hasArtifact ? "" : "verified artifact proof (OCI manifest match, MCPB blob hash match, or verified attestation)",
+    ].filter(Boolean);
+    const base = missing.length
+      ? `automated evidence incomplete: missing ${missing.join(" and ")}`
+      : "automated evidence incomplete: required automated evidence has not all passed";
+    return declaredAttestation ? `${base}; declared attestations are not verified` : base;
+  }
+  if (report.capReason === "no verified provenance") {
+    return "no verified provenance: source must be official or Docker and include a repository URL";
+  }
+  if (report.capReason.startsWith("veto: ")) {
+    const codes = report.capReason.slice("veto: ".length).split(", ");
+    const messages = codes.map((code) => report.issues.find((issue) => issue.code === code)?.message ?? code);
+    return `blocked by critical issue: ${messages.join("; ")}`;
+  }
+  const issue = report.issues.find((entry) => entry.code === report.capReason);
+  if (issue) return `${report.capReason}: ${issue.message}`;
+  return report.capReason;
+}
+
 function criticalGates(issues: TrustIssue[]): TrustGate[] {
   return issues.flatMap((issue): TrustGate[] => {
     if (issue.severity !== "critical") return [];
@@ -228,13 +258,13 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
     issues.push({ severity: "warning", code: "unpinned_package", message: `Package ${pkg.identifier} does not declare an exact package version.` });
   }
   if (pkg.registryType === "oci") {
-    if (pkg.identifier.includes("@sha256:")) {
+    if (hasValidOciDigestPin(pkg.identifier)) {
       score += 8;
       badges.push("digest-pinned");
       evidence.push({
         code: "digest_present",
-        status: "passed",
-        message: `OCI image ${pkg.identifier} is pinned by digest.`,
+        status: "declared",
+        message: `OCI image ${pkg.identifier} declares a syntactically valid sha256 digest pin; manifest bytes are not verified.`,
       });
       evidence.push({
         code: "package_pin",
@@ -243,31 +273,32 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
       });
     } else {
       score -= 10;
+      const reason = hasOciDigestMarker(pkg.identifier) ? "does not contain a valid sha256 digest pin" : "is not pinned by digest";
       evidence.push({
         code: "digest_present",
         status: "failed",
-        message: `OCI image ${pkg.identifier} is not pinned by digest.`,
+        message: `OCI image ${pkg.identifier} ${reason}.`,
       });
-      issues.push({ severity: "critical", code: "mutable_oci_tag", message: `OCI image ${pkg.identifier} is not pinned by digest.` });
+      issues.push({ severity: "critical", code: "mutable_oci_tag", message: `OCI image ${pkg.identifier} ${reason}.` });
     }
   }
   if (pkg.registryType === "mcpb") {
-    if (pkg.fileSha256) {
+    if (isValidSha256Hex(pkg.fileSha256)) {
       score += 8;
       badges.push("fileSha256");
       evidence.push({
         code: "file_hash_present",
-        status: "passed",
-        message: "MCPB package declares fileSha256.",
+        status: "declared",
+        message: "MCPB package declares a syntactically valid fileSha256; bundle bytes are not verified.",
       });
     } else {
       score -= 12;
       evidence.push({
         code: "file_hash_present",
         status: "failed",
-        message: "MCPB package is missing fileSha256.",
+        message: "MCPB package is missing a valid 64-character fileSha256.",
       });
-      issues.push({ severity: "critical", code: "missing_mcpb_hash", message: "MCPB packages should include fileSha256." });
+      issues.push({ severity: "critical", code: "missing_mcpb_hash", message: "MCPB packages should include a valid 64-character fileSha256." });
     }
   }
   return score;
@@ -310,7 +341,7 @@ function hasPassedPinEvidence(evidence: TrustEvidence[]): boolean {
 }
 
 function hasPassedArtifactEvidence(evidence: TrustEvidence[]): boolean {
-  return evidence.some((entry) => entry.status === "passed" && ["digest_present", "file_hash_present", "attestation_verified"].includes(entry.code));
+  return evidence.some((entry) => entry.status === "passed" && ["oci_manifest_verified", "mcpb_blob_verified", "attestation_verified"].includes(entry.code));
 }
 
 function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {

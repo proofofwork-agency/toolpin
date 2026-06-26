@@ -19,9 +19,9 @@ ToolPin ships with these source IDs:
 |---|---:|---|
 | `official` | installable | Official MCP Registry metadata. |
 | `docker` | installable | Docker MCP Catalog metadata. |
-| `pulse` | disabled | Known directory source; needs a stable adapter/API path. |
-| `smithery` | disabled | Known marketplace/hosted connector source; requires credentials. |
-| `glama` | disabled | Known broad directory/gateway source; discovery-first. |
+| `pulse` | auth-gated discovery | Known directory source; visible for source accounting and cached partitions when credentials are configured. |
+| `smithery` | discovery-only | Known marketplace/hosted connector source; visible for discovery until normalized install metadata exists. |
+| `glama` | discovery-only | Known broad directory/gateway source; useful for browse/search, not installable metadata by itself. |
 
 Use built-ins directly:
 
@@ -95,6 +95,13 @@ Installable entries still need enough machine-readable metadata for ToolPin to
 build a lockable install plan: a package or remote target, version, transport,
 source metadata, and declared secrets.
 
+Verified metadata comes from an installable source that exposes reviewable MCP
+Registry-style server records: the Official MCP Registry, Docker MCP Catalog,
+or an `official-compatible` custom/curated registry. To turn a broad directory
+result into installable metadata, curate it with package/remotes, exact
+versions, repository URLs, and artifact pins where available, such as OCI
+`@sha256:` digests or MCPB `fileSha256` values.
+
 ## GitHub-Hosted Private Lists
 
 You can host your own registry in a repository without running infrastructure.
@@ -162,6 +169,10 @@ install them until they normalize into a source explicitly marked
 This is the right mode for large public lists, marketplace exports, gateway
 connector inventories, and data that may contain hosted-only, stale, duplicate,
 or missing-source entries.
+
+That distinction is intentional. A directory such as Glama may list many useful
+servers, but ToolPin still needs a lockable package or remote target before it
+can review, install, lock, and enforce the server.
 
 ## Future Adapter Packages
 

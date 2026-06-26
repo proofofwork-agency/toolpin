@@ -1,5 +1,6 @@
 import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
@@ -113,25 +114,26 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
 
 function verifyPackagePins(pkg: { registryType: string; identifier: string; fileSha256?: string }, issues: TrustIssue[], badges: string[]): void {
   if (pkg.registryType === "oci") {
-    if (pkg.identifier.includes("@sha256:")) {
+    if (hasValidOciDigestPin(pkg.identifier)) {
       badges.push("digest-pinned");
     } else {
+      const reason = hasOciDigestMarker(pkg.identifier) ? "does not contain a valid sha256 digest pin" : "is not pinned by digest";
       issues.push({
         severity: "critical",
         code: "mutable_oci_tag",
-        message: `OCI image ${pkg.identifier} is not pinned by digest.`,
+        message: `OCI image ${pkg.identifier} ${reason}.`,
       });
     }
   }
 
   if (pkg.registryType === "mcpb") {
-    if (pkg.fileSha256) {
+    if (isValidSha256Hex(pkg.fileSha256)) {
       badges.push("fileSha256");
     } else {
       issues.push({
         severity: "critical",
         code: "missing_mcpb_hash",
-        message: "MCPB package is missing fileSha256.",
+        message: "MCPB package is missing a valid 64-character fileSha256.",
       });
     }
   }

@@ -47,6 +47,11 @@ Findings do not make `scan` fail. `verify` checks registry metadata and optional
 live MCP tool metadata. It does not perform byte-level OCI image or MCPB bundle
 verification.
 
+Human-readable `search`, `info`, and `install` output separates trust tier from
+metadata completeness. If the overall score is capped, the output includes a
+`cap` line explaining why, for example that automated evidence is incomplete
+because verified artifact proof is missing.
+
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
 version instead of the latest one, matching the TUI install version picker.
@@ -100,6 +105,12 @@ toolpin tui
 
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
+
+The TUI Browse list shows full evidence labels (`REVIEW`, `UNVERIFIED`,
+`BLOCKED`, or `EVIDENCE`) next to the meter. Overview separates the evidence
+tier, gated overall score, metadata completeness, and trust pillars; a red
+evidence row beside green metadata rows means the metadata is strong but
+required automated proof is missing or failed.
 
 ## Common options and values
 

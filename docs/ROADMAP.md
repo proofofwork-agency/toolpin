@@ -132,7 +132,7 @@ types/capability metadata, client serializers and paths, lockfile v2, CLI/TUI co
 surface, then verification/CI modules.
 
 ### v0.2 exit criteria
-1. `toolpin verify` enforces MCPB `fileSha256` presence + OCI digest pins; trust report carries attestation badges.
+1. `toolpin verify` enforces syntactically valid MCPB `fileSha256` and OCI digest pins; trust report carries attestation badges.
 2. Correct config generation for every verified client, including Codex TOML.
 3. `mcp-lock.json` v2 keyed by `name+client`, validated on read, enforced by `toolpin ci`.
 4. Every v0.2 row in the [Known-defect fix backlog](#known-defect-fix-backlog) is closed (failing test → passing test).

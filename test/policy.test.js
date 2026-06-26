@@ -38,14 +38,32 @@ test("evaluatePolicy enforces OCI and MCPB pin requirements", () => {
   const oci = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "oci", identifier: "ghcr.io/example/server:latest" }), "claude"), {
     requireDigestPinnedOci: true,
   });
+  const fakeOci = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "oci", identifier: "ghcr.io/example/server@sha256:deadbeef" }), "claude"), {
+    requireDigestPinnedOci: true,
+  });
+  const validOci = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "oci", identifier: `ghcr.io/example/server@sha256:${"a".repeat(64)}` }), "claude"), {
+    requireDigestPinnedOci: true,
+  });
   const mcpb = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "mcpb", identifier: "example.mcpb" }), "claude"), {
+    requireMcpbSha256: true,
+  });
+  const fakeMcpb = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "mcpb", identifier: "example.mcpb", fileSha256: "x" }), "claude"), {
+    requireMcpbSha256: true,
+  });
+  const validMcpb = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "mcpb", identifier: "example.mcpb", fileSha256: "b".repeat(64) }), "claude"), {
     requireMcpbSha256: true,
   });
 
   assert.equal(oci.ok, false);
   assert.ok(oci.issues.some((issue) => issue.code === "oci_digest_required"));
+  assert.equal(fakeOci.ok, false);
+  assert.ok(fakeOci.issues.some((issue) => issue.code === "oci_digest_required"));
+  assert.equal(validOci.ok, true);
   assert.equal(mcpb.ok, false);
   assert.ok(mcpb.issues.some((issue) => issue.code === "mcpb_sha256_required"));
+  assert.equal(fakeMcpb.ok, false);
+  assert.ok(fakeMcpb.issues.some((issue) => issue.code === "mcpb_sha256_required"));
+  assert.equal(validMcpb.ok, true);
 });
 
 test("readPolicy rejects malformed policy schema", async () => {

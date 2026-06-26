@@ -6,7 +6,7 @@ import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult, TrustTier } from "../../types.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustTier } from "../../trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustTier } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
 import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } from "../constants.js";
@@ -179,10 +179,11 @@ export function OptionList({
 function GroupedOptionRow({ result, selected = false, dimmed, width, category }: { result: SearchResult; selected?: boolean; dimmed?: boolean; width: number; category?: string }) {
   const server = result.server;
   const contentWidth = Math.max(24, width - 6);
-  const titleWidth = Math.max(14, contentWidth - 20);
+  const titleWidth = Math.max(14, contentWidth - 24);
   const detailWidth = Math.max(10, contentWidth - 5);
   const project = browseProject(server);
   const detail = `${project}  ${server.registrySource}  ${(server.packageTypes[0] ?? server.remoteTypes[0] ?? "unknown")}`;
+  const meterWidth = Math.max(6, Math.min(18, contentWidth - titleWidth - TRUST_TIER_LABEL_WIDTH - 4));
   return (
     <>
       {category ? <Text color={MUTED} wrap="truncate">  category {truncate(category, Math.max(8, width - 15))}</Text> : null}
@@ -190,7 +191,7 @@ function GroupedOptionRow({ result, selected = false, dimmed, width, category }:
         <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
         <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
-        <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
+        <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={meterWidth} />
       </Text>
       <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
         <Text color={CHROME}>    project </Text>
@@ -204,7 +205,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
   const server = result.server;
   const contentWidth = Math.max(24, width - 6);
   const titleWidth = Math.max(14, Math.min(36, Math.floor(contentWidth * 0.52)));
-  const meterWidth = Math.max(9, contentWidth - 2 - 9 - 1 - titleWidth - 1 - 5);
+  const meterWidth = Math.max(6, contentWidth - 2 - 8 - 1 - titleWidth - 1 - 1 - TRUST_TIER_LABEL_WIDTH);
   return (
     <Text wrap="truncate">
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
@@ -256,7 +257,8 @@ export function SourcesView({
   const counts = sourceEntryCounts(entries);
   const sorted = [...sources].sort(compareSources);
   const connected = sorted.filter((source) => source.enabled);
-  const visibleRows = Math.max(1, height - 9);
+  const legendRows = height >= 18 ? 5 : 3;
+  const visibleRows = Math.max(1, height - 9 - legendRows);
   const visible = sorted.slice(0, visibleRows);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
@@ -278,6 +280,7 @@ export function SourcesView({
           key={source.id}
           source={source}
           count={counts.get(source.id) ?? 0}
+          dataMode={dataMode}
           active={activeSource === source.id || (activeSource === "all" && source.enabled && source.mode === "installable")}
           selected={index === selectedSource}
           width={contentWidth}
@@ -286,19 +289,18 @@ export function SourcesView({
       {visible.length < sorted.length ? <Text color={CHROME}>{" ".repeat(2)}{sorted.length - visible.length} more source(s) hidden on this terminal height.</Text> : null}
       <Box flexGrow={1} />
       <Divider width={contentWidth} />
-      <Text color={MUTED} wrap="truncate">
-        Auth-missing sources stay visible and keep stale cached partitions when refresh-all partially fails.
-      </Text>
+      <SourceLegend width={contentWidth} compact={legendRows < 5} />
     </Box>
   );
 }
 
-function SourceRow({ source, count, active, selected, width }: { source: RegistrySourceInfo; count: number; active: boolean; selected: boolean; width: number }) {
+function SourceRow({ source, count, dataMode, active, selected, width }: { source: RegistrySourceInfo; count: number; dataMode: "cache" | "live"; active: boolean; selected: boolean; width: number }) {
   const trustColorValue = source.trust === "canonical" ? OK : source.trust === "curated" ? BLUE : source.trust === "directory" ? WARN : MUTED;
   const status = source.status ?? (source.enabled ? source.mode === "discovery" ? "discovery-only" : "ready" : "disabled");
   const statusColor = status === "ready" ? OK : status === "auth-missing" || status === "fetch-error" || status === "stale" ? ERR : status === "discovery-only" ? WARN : CHROME;
   const auth = source.authRequired ? "auth required" : "no auth";
   const modeColor = source.mode === "installable" ? OK : WARN;
+  const countLabel = dataMode === "live" ? "loaded" : "cached";
   const titleWidth = Math.max(16, Math.min(34, Math.floor(width * 0.26)));
   const meta = `${source.trust} / ${source.mode} / ${source.type ?? "custom"} / ${auth}`;
   const rowColor = selected ? BLUE : active ? OK : CHROME;
@@ -314,12 +316,39 @@ function SourceRow({ source, count, active, selected, width }: { source: Registr
         <Text color={CHROME}> </Text>
         <Text color={modeColor}>{source.mode}</Text>
         <Text color={CHROME}> </Text>
-        <Text color={MUTED}>{count} cached</Text>
+        <Text color={MUTED}>{count} {countLabel}</Text>
       </Text>
       <Text color={MUTED} wrap="truncate">
         <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
         {truncate(source.setupHint && status === "auth-missing" ? source.setupHint : source.description || meta, Math.max(8, width - 18))}
       </Text>
+    </Box>
+  );
+}
+
+function SourceLegend({ width, compact }: { width: number; compact: boolean }) {
+  return (
+    <Box flexDirection="column">
+      <Text color={MUTED} wrap="truncate">
+        <Text color={OK}>installable</Text> means ToolPin has package/remote metadata it can review, lock, and write.
+      </Text>
+      <Text color={MUTED} wrap="truncate">
+        <Text color={WARN}>discovery-only</Text> means browse/search only; no install or lock until metadata is normalized.
+      </Text>
+      <Text color={MUTED} wrap="truncate">
+        <Text color={CHROME}>cached/loaded</Text> is the number of entries currently stored or fetched for that source.
+      </Text>
+      {!compact ? (
+        <>
+          <Text color={MUTED} wrap="truncate">
+            <Text color={OK}>canonical</Text>/<Text color={BLUE}>curated</Text> can carry install metadata; <Text color={WARN}>directory</Text> is broad discovery such as Glama.
+          </Text>
+          <Text color={MUTED} wrap="truncate">
+            Verified metadata comes from official/Docker or an official-compatible curated registry with pinned package/remotes.
+          </Text>
+        </>
+      ) : null}
+      {compact ? <Text color={CHROME} wrap="truncate">{truncate("Verified metadata requires an installable source with pinned package/remotes.", width)}</Text> : null}
     </Box>
   );
 }
@@ -369,15 +398,17 @@ function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: 
   );
 }
 
+const TRUST_TIER_LABEL_WIDTH = 10;
+
 function TrustTierMeter({ tier, score, issues, cells: cellCount = 9, showLabel = true }: { tier?: TrustTier; score: number; issues: SearchResult["trust"]["issues"]; cells?: number; showLabel?: boolean }) {
   const tone = trustRiskTone({ score, issues, tier });
   const filled = tierFill(tone.tier, cellCount);
-  const label = tone.label.length > 8 ? tone.label.slice(0, 8) : tone.label;
+  const label = tone.tier === "verified" ? "EVIDENCE" : tone.label;
   return (
     <Text>
       <Text color={tierColor(tone.tier)}>{"▓".repeat(filled)}</Text>
       <Text color={CHROME}>{"░".repeat(Math.max(0, cellCount - filled))}</Text>
-      {showLabel ? <Text color={tierColor(tone.tier)}> {label.padStart(8)}</Text> : null}
+      {showLabel ? <Text color={tierColor(tone.tier)}> {truncate(label, TRUST_TIER_LABEL_WIDTH).padStart(TRUST_TIER_LABEL_WIDTH)}</Text> : null}
     </Text>
   );
 }
@@ -434,6 +465,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   const trustBarCells = Math.max(9, Math.min(16, trustRowWidth - 34));
   const overallScore = trust.overallScore ?? trust.score;
   const metadataScore = trust.metadataCompleteness ?? trust.score;
+  const capExplanation = trustCapExplanation(trust);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="overview" file="server.json" />
@@ -471,7 +503,6 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         />
         <TrustScoreRow label="overall" score={overallScore} cells={trustBarCells} suffix="gated trust score" width={trustRowWidth} />
         <TrustScoreRow label="metadata" score={metadataScore} cells={trustBarCells} suffix="profile completeness" width={trustRowWidth} />
-        {trust.capReason ? <Text color={WARN} wrap="truncate">cap         {truncate(trust.capReason, width - 12)}</Text> : null}
         {dimensions.map((dimension) => (
           <TrustScoreRow
             key={dimension.label}
@@ -482,6 +513,12 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
             width={trustRowWidth}
           />
         ))}
+        {capExplanation ? (
+          <Text wrap="wrap">
+            <Text color={MUTED}>cap reason </Text>
+            <Text color={WARN}>{capExplanation}</Text>
+          </Text>
+        ) : null}
         {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
@@ -654,7 +691,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "r", "Refresh the current registry data."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
     ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
-    ["Sources", "S", "Show usable registry sources, disabled known integrations, auth status, and cached entries."],
+    ["Sources", "S", "Show installable vs discovery-only sources, auth status, cache/live counts, and the source legend."],
     ["Review", "Enter", "Open the install plan for the selected server."],
     ["Review", "t", "Test the selected server with initialize and tools/list."],
     ["Review", "v / V", "Cycle selected server version."],
@@ -704,7 +741,8 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <Text bold color={BLUE}>scoring</Text>
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
-          <HelpNote width={lineWidth} label="tiers" text="Verified means required automated evidence passed; conditional means useful metadata exists but proof is incomplete." />
+          <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus verified artifact evidence; conditional means useful metadata exists but proof is incomplete." />
+          <HelpNote width={lineWidth} label="caps" text="A cap explains why the overall score was limited, such as missing manifest/blob hash verification or verified attestation." />
           <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
@@ -712,6 +750,11 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="install" text="Install writes client config and the matching lock entry after policy and drift checks pass." />
           <HelpNote width={lineWidth} label="doctor/ci" text="Doctor and CI compare client config with mcp-lock.json so config drift, digest drift, and signature failures are visible." />
           <HelpNote width={lineWidth} label="adopt / update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
+          <Spacer />
+          <Text bold color={BLUE}>sources</Text>
+          <HelpNote width={lineWidth} label="installable" text="Official/Docker or official-compatible entries with package/remote metadata can be reviewed, installed, and locked." />
+          <HelpNote width={lineWidth} label="discovery" text="Directory entries such as Glama are browse/search only until normalized into verified install metadata." />
+          <HelpNote width={lineWidth} label="cached" text="Cached/loaded is the number of entries currently stored or fetched for that source." />
           <Spacer />
           <Text bold color={BLUE}>installed actions</Text>
           <HelpNote width={lineWidth} label="action:update" text="The row is locked and a newer registry version is loaded; u updates config and mcp-lock.json." />

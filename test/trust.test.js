@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyTrust, scoreServer, trustTier } from "../dist/trust.js";
+import { classifyTrust, scoreServer, trustCapExplanation, trustTier } from "../dist/trust.js";
 
 test("repository and namespace trust signals have exact metadata weights", () => {
   const trusted = scoreServer(packageServer());
@@ -12,6 +12,7 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(trusted.overallScore, 69);
   assert.equal(trusted.tier, "conditional");
   assert.equal(trusted.capReason, "automated evidence incomplete");
+  assert.equal(trustCapExplanation(trusted), "automated evidence incomplete: missing verified artifact proof (OCI manifest match, MCPB blob hash match, or verified attestation)");
   assert.ok(trusted.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
   assert.deepEqual(trusted.badges.filter((badge) => ["source repo", "namespaced"].includes(badge)), ["source repo", "namespaced"]);
 
@@ -19,6 +20,7 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(missingRepository.metadataCompleteness, 58);
   assert.equal(missingRepository.tier, "conditional");
   assert.equal(missingRepository.capReason, "no verified provenance");
+  assert.equal(trustCapExplanation(missingRepository), "no verified provenance: source must be official or Docker and include a repository URL");
   assert.ok(missingRepository.issues.some((issue) => issue.code === "missing_repository"));
 
   assert.equal(unnamespaced.score, 68);
@@ -49,17 +51,28 @@ test("package type and pinned version signals have exact metadata weights", () =
 });
 
 test("OCI digest and MCPB hash signals have exact metadata weights", () => {
-  const digestPinned = scoreServer(packageServer({ pkg: { registryType: "oci", identifier: "ghcr.io/example/server@sha256:abc123" } }));
+  const validDigest = "a".repeat(64);
+  const validHash = "b".repeat(64);
+  const digestPinned = scoreServer(packageServer({ pkg: { registryType: "oci", identifier: `ghcr.io/example/server@sha256:${validDigest}` } }));
+  const fakeDigest = scoreServer(packageServer({ pkg: { registryType: "oci", identifier: "ghcr.io/example/server@sha256:deadbeef" } }));
   const mutableTag = scoreServer(packageServer({ pkg: { registryType: "oci", identifier: "ghcr.io/example/server:latest" } }));
-  const hashedMcpb = scoreServer(packageServer({ pkg: { registryType: "mcpb", identifier: "example.mcpb", version: "1.0.0", fileSha256: "abc123" } }));
+  const hashedMcpb = scoreServer(packageServer({ pkg: { registryType: "mcpb", identifier: "example.mcpb", version: "1.0.0", fileSha256: validHash } }));
+  const fakeHashedMcpb = scoreServer(packageServer({ pkg: { registryType: "mcpb", identifier: "example.mcpb", version: "1.0.0", fileSha256: "x" } }));
   const unhashedMcpb = scoreServer(packageServer({ pkg: { registryType: "mcpb", identifier: "example.mcpb", version: "1.0.0" } }));
 
   assert.equal(digestPinned.score, 81);
   assert.equal(digestPinned.metadataCompleteness, 81);
-  assert.equal(digestPinned.overallScore, 73);
-  assert.equal(digestPinned.tier, "verified");
+  assert.equal(digestPinned.overallScore, 69);
+  assert.equal(digestPinned.tier, "conditional");
+  assert.equal(digestPinned.capReason, "automated evidence incomplete");
   assert.ok(digestPinned.badges.includes("digest-pinned"));
-  assert.ok(digestPinned.evidence.some((entry) => entry.code === "digest_present" && entry.status === "passed"));
+  assert.ok(digestPinned.evidence.some((entry) => entry.code === "digest_present" && entry.status === "declared"));
+  assert.ok(digestPinned.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
+
+  assert.equal(fakeDigest.score, 63);
+  assert.equal(fakeDigest.tier, "unverified");
+  assert.equal(fakeDigest.capReason, "mutable_oci_tag");
+  assert.ok(fakeDigest.evidence.some((entry) => entry.code === "digest_present" && entry.status === "failed"));
 
   assert.equal(mutableTag.score, 63);
   assert.equal(mutableTag.metadataCompleteness, 63);
@@ -67,15 +80,22 @@ test("OCI digest and MCPB hash signals have exact metadata weights", () => {
   assert.deepEqual(mutableTag.gates.map((gate) => gate.code), ["mutable_oci_tag"]);
   assert.deepEqual(mutableTag.gatedBy, ["mutable_oci_tag"]);
   assert.equal(mutableTag.capReason, "mutable_oci_tag");
+  assert.match(trustCapExplanation(mutableTag), /OCI image/);
   assert.ok(mutableTag.evidence.some((entry) => entry.code === "digest_present" && entry.status === "failed"));
   assert.ok(mutableTag.issues.some((issue) => issue.code === "mutable_oci_tag"));
 
   assert.equal(hashedMcpb.score, 86);
   assert.equal(hashedMcpb.metadataCompleteness, 86);
-  assert.equal(hashedMcpb.overallScore, 79);
-  assert.equal(hashedMcpb.tier, "verified");
+  assert.equal(hashedMcpb.overallScore, 69);
+  assert.equal(hashedMcpb.tier, "conditional");
+  assert.equal(hashedMcpb.capReason, "automated evidence incomplete");
   assert.ok(hashedMcpb.badges.includes("fileSha256"));
-  assert.ok(hashedMcpb.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "passed"));
+  assert.ok(hashedMcpb.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "declared"));
+
+  assert.equal(fakeHashedMcpb.score, 66);
+  assert.equal(fakeHashedMcpb.tier, "unverified");
+  assert.equal(fakeHashedMcpb.capReason, "missing_mcpb_hash");
+  assert.ok(fakeHashedMcpb.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "failed"));
 
   assert.equal(unhashedMcpb.score, 66);
   assert.equal(unhashedMcpb.metadataCompleteness, 66);
@@ -103,6 +123,7 @@ test("remote trust signals and penalties have exact metadata weights", () => {
   assert.deepEqual(insecureRemote.vetoes.map((gate) => gate.code), ["insecure_remote"]);
   assert.deepEqual(insecureRemote.gatedBy, ["insecure_remote"]);
   assert.equal(insecureRemote.capReason, "veto: insecure_remote");
+  assert.match(trustCapExplanation(insecureRemote), /blocked by critical issue/);
   assert.ok(insecureRemote.issues.some((issue) => issue.code === "insecure_remote"));
 
   assert.equal(sseRemote.score, 72);
@@ -136,6 +157,27 @@ test("verified requires passed artifact evidence, not high metadata completeness
     classifyTrust(95, [], [
       { code: "package_pin", status: "passed", message: "exact version" },
       { code: "digest_present", status: "passed", message: "digest" },
+    ]),
+    { tier: "conditional", gatedBy: [], gates: [] },
+  );
+  assert.deepEqual(
+    classifyTrust(95, [], [
+      { code: "package_pin", status: "passed", message: "exact version" },
+      { code: "oci_manifest_verified", status: "passed", message: "registry manifest digest matched" },
+    ]),
+    { tier: "verified", gatedBy: [], gates: [] },
+  );
+  assert.deepEqual(
+    classifyTrust(95, [], [
+      { code: "package_pin", status: "passed", message: "exact version" },
+      { code: "mcpb_blob_verified", status: "passed", message: "MCPB bytes matched fileSha256" },
+    ]),
+    { tier: "verified", gatedBy: [], gates: [] },
+  );
+  assert.deepEqual(
+    classifyTrust(95, [], [
+      { code: "package_pin", status: "passed", message: "exact version" },
+      { code: "attestation_verified", status: "passed", message: "attestation verified" },
     ]),
     { tier: "verified", gatedBy: [], gates: [] },
   );

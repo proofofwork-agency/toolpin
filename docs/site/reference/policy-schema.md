@@ -41,12 +41,13 @@ throw `Invalid policy schema ... unknown policy key <name>` before evaluation.
 | `deniedPackageTypes` | string array | omitted | Free-form strings compared against the selected package target's `registryType` (e.g. `npm`, `pypi`, `cargo`, `oci`, `mcpb`). Any match denies the plan (`package_type_denied`). |
 | `deniedTransports` | string array | omitted | Free-form strings compared against the selected target's transport (a remote target's `type`, or a package target's `transport`, e.g. `sse`, `stdio`, `http`, `ws`). Any match denies the plan (`transport_denied`). |
 | `deniedRemoteHosts` | string array | omitted | Free-form strings compared by **exact equality** against each remote host string declared in the capability manifest. The host includes its port when present, so deny `api.example.com` and `example.com:443` separately. Subdomain suffix matching (e.g. denying `.example.com`) is **not** supported. Any match denies the plan (`remote_host_denied`). |
-| `requireDigestPinnedOci` | boolean | omitted | Must be a boolean. When true and the selected target is an `oci` package, its identifier must contain `@sha256:`, otherwise denied (`oci_digest_required`). |
-| `requireMcpbSha256` | boolean | omitted | Must be a boolean. When true and the selected target is an `mcpb` package, it must declare a non-empty `fileSha256`, otherwise denied (`mcpb_sha256_required`). |
+| `requireDigestPinnedOci` | boolean | omitted | Must be a boolean. When true and the selected target is an `oci` package, its identifier must end with a valid `@sha256:<64 hex>` digest, otherwise denied (`oci_digest_required`). |
+| `requireMcpbSha256` | boolean | omitted | Must be a boolean. When true and the selected target is an `mcpb` package, it must declare a valid 64-character `fileSha256`, otherwise denied (`mcpb_sha256_required`). |
 
 `requireDigestPinnedOci` and `requireMcpbSha256` only inspect the pins already
-declared in the install plan / capability manifest. ToolPin does not download
-artifacts and recompute bytes for OCI images or MCPB bundles.
+declared in the install plan / capability manifest. They validate digest/hash
+syntax, but ToolPin does not download artifacts and recompute bytes for OCI
+images or MCPB bundles.
 
 The policy file is a local JSON gate, not the future Cedar/OPA enterprise policy
 engine. `--no-policy` is an explicit local bypass.

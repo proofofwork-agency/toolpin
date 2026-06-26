@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { canonicalJson } from "./canonicalJson.js";
 import { isClientName, type ClientName } from "./config.js";
+import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import type { InstallPlan } from "./plan.js";
 import type { RegistrySourceId } from "./types.js";
 
@@ -176,20 +177,21 @@ export function evaluatePolicy(plan: InstallPlan, policy?: PolicyConfig): Policy
   if (policy.requireDigestPinnedOci && isSelectedPackage(plan, "oci")) {
     const target = selectedTarget(plan);
     const identifier = typeof target.identifier === "string" ? target.identifier : "";
-    if (!identifier.includes("@sha256:")) {
+    if (!hasValidOciDigestPin(identifier)) {
+      const detail = hasOciDigestMarker(identifier) ? " with a valid sha256 digest" : " by digest";
       issues.push({
         code: "oci_digest_required",
-        message: `${plan.name} OCI target must be pinned by digest`,
+        message: `${plan.name} OCI target must be pinned${detail}`,
       });
     }
   }
 
   if (policy.requireMcpbSha256 && isSelectedPackage(plan, "mcpb")) {
     const target = selectedTarget(plan);
-    if (typeof target.fileSha256 !== "string" || !target.fileSha256) {
+    if (!isValidSha256Hex(target.fileSha256)) {
       issues.push({
         code: "mcpb_sha256_required",
-        message: `${plan.name} MCPB target must declare fileSha256`,
+        message: `${plan.name} MCPB target must declare a valid 64-character fileSha256`,
       });
     }
   }

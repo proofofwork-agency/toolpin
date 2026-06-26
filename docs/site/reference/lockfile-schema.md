@@ -135,15 +135,28 @@ with older lockfiles and score-based policy. Newer entries may also include:
 | Field | Type | Meaning |
 |---|---|---|
 | `tier` | `"verified" \| "conditional" \| "unverified" \| "blocked"` *(optional)* | Evidence-gated trust tier. `verified` means automated evidence passed, not that the server is safe. |
+| `overallScore` | number *(optional)* | Gated score after provenance/evidence caps. This can be lower than metadata completeness. |
+| `metadataCompleteness` | number *(optional)* | The legacy 0–100 metadata score recorded explicitly for UI/explanations. |
+| `capReason` | string *(optional)* | Reason the overall score was capped, such as `automated evidence incomplete`, `no verified provenance`, or a critical gate code. |
 | `gatedBy` | string array *(optional)* | Issue or evidence codes that prevented a stronger tier. |
+| `gates` / `vetoes` | object arrays *(optional)* | Non-blocking gates and blocking vetoes derived from critical issues or required evidence failures. |
+| `pillars` | object *(optional)* | Breakdown of provenance, integrity, reputation, and metadata completeness scores. |
 | `evidence` | object array *(optional)* | Automated evidence entries. Older lockfiles without this field remain valid and are not rewritten on read. |
 
 Evidence entries are `{ code, status, message, required? }`, where `status` is
 `passed`, `declared`, `failed`, or `unavailable`. Current codes include
 `package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
-`lock_signature`, `attestation_declared`, and `attestation_verified`. Declared
-attestations are not treated as verified unless a future verifier adds
-`attestation_verified`.
+`lock_signature`, `attestation_declared`, and `attestation_verified`. Current
+`digest_present` and `file_hash_present` entries are declared metadata checks,
+not byte-level artifact verification. Declared attestations are not treated as
+verified unless a future verifier adds `attestation_verified`; future artifact
+verifiers may also add evidence such as `oci_manifest_verified` or
+`mcpb_blob_verified`.
+
+`automated evidence incomplete` means the entry has not satisfied all evidence
+required for `verified`. In practice this usually means an exact package pin
+exists but verified artifact proof is missing: an OCI manifest digest match,
+recomputed MCPB blob hash, or future verified attestation.
 
 ## Capability manifest
 
@@ -171,13 +184,13 @@ de-duplicated and sorted deterministically.
 `toolpin verify` derives the manifest above and adds a `critical` issue (so the
 report is not `ok`) when:
 
-- an OCI package identifier is not pinned by digest (`@sha256:`) — code `mutable_oci_tag`;
-- an MCPB package is missing `fileSha256` — code `missing_mcpb_hash`;
+- an OCI package identifier is not pinned by a valid digest (`@sha256:<64 hex>`) — code `mutable_oci_tag`;
+- an MCPB package is missing a valid 64-character `fileSha256` — code `missing_mcpb_hash`;
 - a remote live probe is enabled but fails to connect or list tools — code `remote_probe_failed`;
 - no install target (package or remote) is available — code `no_install_target`.
 
-A successful OCI digest pin earns the `digest-pinned` badge; an MCPB package with
-`fileSha256` earns the `fileSha256` badge. Skipping the live probe
+A syntactically valid OCI digest pin earns the `digest-pinned` badge; an MCPB package with
+a valid `fileSha256` earns the `fileSha256` badge. Skipping the live probe
 (`--skip-live-verification`) downgrades remote tool-description pinning to a
 `remote_probe_skipped` warning rather than a blocker, leaving the manifest
 metadata-only. A successful live probe earns `tool-description-pinned`.

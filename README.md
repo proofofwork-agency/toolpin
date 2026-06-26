@@ -270,12 +270,14 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Official MCP Registry and Docker MCP Catalog ingestion, with combined or source-specific views.
 - GitHub-hosted ToolPin Curated Registry scaffold under `registry/v0/servers`, ready for PR-reviewed recommended servers without a custom backend.
 - Repo-owned custom registries via `.toolpin/registries.json`; `official-compatible` registries can be installable, while broad `http-json` directory sources default to discovery-only.
-- Planned source notes for PulseMCP, Smithery, and Glama; they are hidden from normal fetch flows until stable adapters, credentials, and normalization are implemented.
+- PulseMCP, Smithery, and Glama are visible as directory/discovery sources. They can populate browse/search results, but their entries stay discovery-only until ToolPin can normalize verified install metadata.
+- Verified install metadata means an installable source provides package or remote targets ToolPin can review and lock, preferably with exact package versions, OCI `@sha256:` digests, MCPB `fileSha256`, repository URLs, and source metadata. Use the Official MCP Registry, Docker MCP Catalog, or an `official-compatible` custom/curated registry for installable metadata.
 - Local cache at `.toolpin/registry-cache.json`.
 - Normalized package and remote metadata.
 - Search ranking over name, title, description, package type, transport, and repository.
 - Declared metadata review scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, unknown package types, and missing install targets. Treat this as review triage, not verified trust.
-- Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
+- Evidence-gated trust tiers are separate from the metadata score: `verified` requires a pinned install target plus verified artifact evidence, such as a future OCI manifest digest match, MCPB blob hash match, or verified attestation. Declared OCI digests and MCPB `fileSha256` values are metadata pins, not verified artifact proof by themselves. When the overall score is capped, CLI and TUI output include the reason.
+- Verification reports that derive a capability manifest, surface registry attestations, reject mutable or malformed OCI targets, reject MCPB packages without a valid 64-character `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
 - Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are advisory findings (warning or info level) for human review, not prompt-injection detection, sandboxing, or an install blocker.
 - `toolpin scan` exposes the advisory description scan directly. `toolpin scan --sarif`, `toolpin verify --sarif`, and `toolpin ci --sarif` emit SARIF 2.1.0 JSON for code-scanning pipelines.
@@ -301,7 +303,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Codex doctor support reads the documented `[mcp_servers.<name>]` TOML tables ToolPin writes; hand-authored inline/dotted TOML forms may be reported as missing or drift.
 - Real install writes for project/global client config files, including scope-aware `--client all`, plus lockfile generation and install progress details. Newly verified paths include Windsurf/Cascade global, Cline global, Continue global, Gemini CLI project/global, and Roo Code project. Zed install and Roo global writes fail closed until their settings paths are verified.
 - MCP server test action that connects with the SDK and lists available tools when credentials/runtime are available.
-- Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status.
+- Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status. Sources includes a legend for installable vs discovery-only, cache/live counts, and how verified metadata is obtained. Browse rows show full evidence labels (`REVIEW`, `UNVERIFIED`, `EVIDENCE`), while Overview separates evidence tier, gated overall score, metadata completeness, and the individual trust pillars.
 
 ## TUI
 
@@ -354,6 +356,12 @@ to be selected first, and `tab` skips them until one is. Most hotkeys stay live
 across every panel, but the install wizard (`i`) and the Installed delete
 modal (`x`) do trap input while open — in those, only their own keys (and `Esc`
 to cancel) apply.
+
+The Overview panel intentionally separates evidence from score. A red
+`UNVERIFIED` evidence row can appear next to green metadata/pillar rows when the
+registry metadata looks strong but automated proof failed or is missing. If the
+overall score is capped, the `cap` row explains why, such as missing artifact
+proof for an otherwise pinned package.
 
 ## Local Policy
 

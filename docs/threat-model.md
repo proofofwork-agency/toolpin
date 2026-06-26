@@ -36,8 +36,8 @@ Direction) into one authoritative reference. It is intentionally honest about ga
 
 | Threat | Defense | Limit |
 |---|---|---|
-| **Mutable OCI tags (rug-pull by tag swap)** | `verify.ts:91-101` and `policy.requireDigestPinnedOci` reject any OCI identifier without `@sha256:` as `critical: mutable_oci_tag`. | Presence check only — does not fetch and recompute the digest. A fabricated digest substring passes. |
-| **MCPB bundles without integrity** | `verify.ts:104-113` rejects MCPB packages missing a truthy `fileSha256`. | Presence only — `"x"` passes; bytes are not downloaded and matched. |
+| **Mutable OCI tags (rug-pull by tag swap)** | `verify.ts` and `policy.requireDigestPinnedOci` reject OCI identifiers without a valid `@sha256:<64 hex>` digest as `critical: mutable_oci_tag`. Declared digest pins are metadata, not verified artifact proof. | Syntax check only — ToolPin does not fetch and recompute the digest. A fabricated but valid-looking digest can satisfy pin policy, but it does not earn the `verified` tier. |
+| **MCPB bundles without integrity** | `verify.ts` rejects MCPB packages missing a valid 64-character `fileSha256`. Declared hashes are metadata, not verified artifact proof. | Syntax check only — bytes are not downloaded and matched. A fabricated but valid-looking hash can satisfy pin policy, but it does not earn the `verified` tier. |
 | **Insecure remotes** | `trust.ts:149-178` scores non-HTTPS or unparseable remote URLs as `critical: insecure_remote` / `invalid_remote_url`. | None — fail-closed. |
 | **Missing install targets** | `trust.ts:33-40` scores servers with no packages and no remotes `critical: no_install_target`. | None. |
 | **Tool-description rug-pulls (after verified install)** | When installed with `--verify`, the live `tools/list` descriptions are hashed (`capabilities.ts:31-45`) and the hash is compared on reinstall. The normalized `toolDescriptionHash` is included in per-entry integrity and the signed whole-lock digest when present. | Only enforced when **both** locked and current manifests carry a hash. A non-`--verify` reinstall can still skip live `tools/list` comparison. The hash covers `{name, description}`, not input schemas. |
@@ -98,7 +98,8 @@ flagged here so users do not infer stronger guarantees than the code provides.
 Three boundaries matter:
 
 1. **Registry → ToolPin.** Trust is *unverified metadata* until ToolPin scores
-   and verifies it. ToolPin does not re-fetch artifacts.
+   it and checks automated evidence. `verified` requires a pinned target plus
+   verified artifact evidence; declared pins alone do not count.
 2. **ToolPin → lockfile.** Integrity is cryptographically sound *within* the
    lockfile. The lockfile's own trustworthiness depends on branch protection
    + signature key management.

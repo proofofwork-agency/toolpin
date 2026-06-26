@@ -43,8 +43,9 @@ node dist/cli.js plan io.github.github/github-mcp-server --client claude --live
 ```
 
 The plan shows the selected package or remote target, generated client config,
-trust score, and review notes. Treat the output as a change request, not as an
-automatic approval.
+trust tier, metadata score, evidence summary, and review notes. Treat the output
+as a change request, not as an automatic approval. A high metadata score can
+still be capped when verified artifact proof is missing.
 
 ## Install and lock
 
@@ -62,8 +63,9 @@ This writes project-scope client config and updates `mcp-lock.json`.
 `--verify` runs metadata checks plus a live remote MCP `tools/list` probe that is
 on by default for remote targets (skip it with `--skip-live-verification`). When
 that probe succeeds, ToolPin stores a normalized tool-description hash in the
-lockfile. Package targets get registry pin checks instead (OCI digest or MCPB
-`fileSha256`); ToolPin never downloads and verifies OCI image or MCPB bundle bytes.
+lockfile. Package targets get declared pin checks instead (valid OCI digest
+syntax or valid MCPB `fileSha256` syntax); ToolPin never downloads and verifies
+OCI image or MCPB bundle bytes.
 
 Because `mcp-lock.json` now pins this server/client, a later `toolpin install`
 without `--update-lock` refuses if the version, selected target, generated client

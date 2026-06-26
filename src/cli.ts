@@ -17,7 +17,7 @@ import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustTier } from "./trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustTier } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
@@ -215,6 +215,7 @@ async function search(rest: string[]): Promise<void> {
     printField("source", `${server.registrySource}  trust ${trustTier(result.trust)} / ${result.trust.score}% complete / ${evidenceStatus(result.trust)}`);
     printField("targets", `packages ${packages}; remotes ${remotes}`);
     printField("evidence", evidenceSummary(result.trust));
+    printCapExplanation(result.trust);
     if (result.trust.badges.length) printField("badges", result.trust.badges.join(", "));
   }
 }
@@ -239,6 +240,7 @@ async function info(rest: string[]): Promise<void> {
   printField("registry", server.registrySource);
   printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
   printField("evidence", evidenceSummary(trust));
+  printCapExplanation(trust);
   if (trust.gatedBy?.length) printField("gated by", trust.gatedBy.join(", "));
   if (trust.badges.length) printField("badges", trust.badges.join(", "));
   for (const issue of trust.issues) {
@@ -697,6 +699,7 @@ async function install(rest: string[]): Promise<void> {
   const installTrust = scoreServer(server);
   printField("trust", `${trustTier(installTrust)} / ${installTrust.score}% complete / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
   printField("evidence", evidenceSummary(installTrust));
+  printCapExplanation(installTrust);
   printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? OK_COLOR : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
@@ -1151,7 +1154,7 @@ function commandHelp(command: string): void {
        toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
       return;
     case "tui":
-      console.log(`Usage: toolpin tui\n\nOpens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.`);
+      printTuiHelp();
       return;
     default:
       help();
@@ -1238,6 +1241,11 @@ Lock and governance
   toolpin lock sign --policy .toolpin/policy.json --key private.pem [--signature mcp-lock.sig] [--json]
   toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--signature mcp-lock.sig] [--json]
 
+Trust output
+  score is metadata completeness; tier is evidence-gated
+  verified requires a pinned target plus verified artifact evidence
+  cap explains why an otherwise strong score was limited
+
 Common options
   --source official|docker|all|id    choose registry source
   --live                            fetch instead of cache
@@ -1266,6 +1274,11 @@ function printSubhead(title: string): void {
 
 function printField(label: string, value: string, color?: string): void {
   console.log(`  ${label.padEnd(10)} ${colorize(value, color)}`);
+}
+
+function printCapExplanation(report: Parameters<typeof trustCapExplanation>[0]): void {
+  const explanation = trustCapExplanation(report);
+  if (explanation) printField("cap", explanation, WARN_COLOR);
 }
 
 function printBullet(value: string): void {
@@ -1322,7 +1335,7 @@ function printInstalledUpdateAllResult(result: InstalledUpdateAllResult, json: b
 
 async function runTui(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
-    console.log(`Usage: toolpin tui\n\nOpens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.`);
+    printTuiHelp();
     return;
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -1330,6 +1343,15 @@ async function runTui(rest: string[]): Promise<void> {
   }
   const { runTui: renderTui } = await import("./tui.js");
   renderTui();
+}
+
+function printTuiHelp(): void {
+  console.log(`Usage: toolpin tui
+
+Opens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.
+Browse rows show full evidence labels (REVIEW, UNVERIFIED, BLOCKED, EVIDENCE).
+Overview separates evidence tier, gated overall score, metadata completeness,
+and pillar scores; cap explains why a score was limited.`);
 }
 
 function hasFlag(values: string[], flag: string): boolean {
