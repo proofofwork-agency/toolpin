@@ -566,26 +566,44 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
   const plan = content as InstallPlan;
   const target = asObject(plan.selectedTarget);
   const targetKind = String(target.kind ?? "unknown");
-  const targetLabel = targetKind === "remote"
-    ? `${String(target.type ?? "remote")} ${String(target.url ?? "")}`
-    : `${String(target.registryType ?? "package")} ${String(target.identifier ?? "")}`;
+  const targetRuntime = targetKind === "remote"
+    ? String(target.type ?? "remote")
+    : String(target.registryType ?? "package");
+  const targetLocator = targetKind === "remote"
+    ? String(target.url ?? "")
+    : String(target.identifier ?? "");
   const targetClients = selectedClientsForScope(client, installScope);
   const clientLabel = installClientLabel(client, targetClients);
+  const trustTone = trustRiskTone(plan.trust);
+  const writeSummary = client === "all"
+    ? `${scopeLabel(installScope)} configs for ${targetClients.join(", ")} plus mcp-lock.json`
+    : `${scopeLabel(installScope)} ${client} config plus mcp-lock.json`;
 
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="install" file="plan" />
-      <Box justifyContent="space-between">
-        <Text color={MUTED}>target <Text color="white">{clientLabel}</Text>  <Text color="white">{scopeLabel(installScope)}</Text></Text>
-        <Text color={MUTED}>i install  w lock</Text>
-      </Box>
+      <Text color={MUTED}>client      <Text color="white">{clientLabel}</Text></Text>
+      <Text color={MUTED}>scope       <Text color="white">{scopeLabel(installScope)}</Text></Text>
+      <Text color={MUTED}>actions     <Text color="white">i install</Text>  <Text color="white">w lock</Text></Text>
       <Spacer />
-      <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
-      {versionInfo ? <PlanMetric label="version" value={`selected ${versionInfo.selectedVersion} / locked ${versionInfo.lockedLabel} / latest ${versionInfo.latestVersion} / ${versionInfo.status}`} width={width} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} /> : null}
+      <PlanMetric label="target" value={targetRuntime} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
+      <PlanMetric label="locator" value={targetLocator} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
+      {versionInfo ? (
+        <>
+          <Spacer />
+          <PlanMetric label="selected" value={versionInfo.selectedVersion} width={width} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} />
+          <PlanMetric label="locked" value={versionInfo.lockedLabel} width={width} valueColor={versionInfo.lockedLabel === "none" ? MUTED : OK} />
+          <PlanMetric label="latest" value={versionInfo.latestVersion} width={width} valueColor={versionInfo.status === "update available" ? WARN : OK} />
+          <PlanMetric label="status" value={versionInfo.status} width={width} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} />
+        </>
+      ) : null}
       {versionInfo && versionInfo.versions.length > 1 ? <PlanMetric label="versions" value={`${formatVersionChoices(versionInfo, 8)}  (v/V cycle)`} width={width} /> : null}
-      <PlanMetric label="trust" value={`${trustRiskTone(plan.trust).label} / ${trustTier(plan.trust)} / ${plan.trust.score}% complete / ${evidenceStatus(plan.trust)}`} width={width} valueColor={trustColor(trustTierScore(plan.trust))} />
+      <Spacer />
+      <PlanMetric label="tier" value={`${trustTone.label} / ${trustTier(plan.trust)}`} width={width} valueColor={trustColor(trustTierScore(plan.trust))} />
+      <PlanMetric label="metadata" value={`${plan.trust.score}% complete / ${evidenceStatus(plan.trust)}`} width={width} valueColor={trustColor(plan.trust.score)} />
       <PlanMetric label="evidence" value={evidenceSummary(plan.trust)} width={width} />
-      <PlanMetric label="writes" value={client === "all" ? `${scopeLabel(installScope)} configs for ${targetClients.join(", ")} + mcp-lock.json` : `${scopeLabel(installScope)} ${client} config + mcp-lock.json`} width={width} />
+      <Spacer />
+      <PlanMetric label="writes" value={writeSummary} width={width} />
       {targetClients.map((targetClient) => (
         <PlanMetric key={targetClient} label={targetClient} value={configTargetLabel(targetClient, installScope)} width={width} />
       ))}
@@ -1083,12 +1101,49 @@ function Metric({ label, value, valueColor }: { label: string; value: string; va
 
 function PlanMetric({ label, value, width, valueColor }: { label: string; value: string; width: number; valueColor?: string }) {
   const valueWidth = Math.max(8, width - 18);
+  const lines = wrapValue(value, valueWidth);
   return (
-    <Text>
-      <Text color={MUTED}>{label.padEnd(12)}</Text>
-      <Text color={valueColor ?? "white"}>{truncate(value, valueWidth).padEnd(valueWidth)}</Text>
-    </Text>
+    <>
+      {lines.map((line, index) => (
+        <Text key={`${label}:${index}:${line}`} wrap="truncate">
+          <Text color={MUTED}>{index === 0 ? label.padEnd(12) : "".padEnd(12)}</Text>
+          <Text color={valueColor ?? "white"}>{line}</Text>
+        </Text>
+      ))}
+    </>
   );
+}
+
+function wrapValue(value: string, width: number): string[] {
+  if (width <= 0) return [""];
+  const words = value.split(/(\s+)/).filter((part) => part.length > 0);
+  const lines: string[] = [];
+  let line = "";
+
+  for (const word of words) {
+    if (/^\s+$/.test(word)) {
+      if (line && !line.endsWith(" ")) line += " ";
+      continue;
+    }
+    if (word.length > width) {
+      if (line.trimEnd()) lines.push(line.trimEnd());
+      for (let index = 0; index < word.length; index += width) {
+        lines.push(word.slice(index, index + width));
+      }
+      line = "";
+      continue;
+    }
+    const candidate = line ? `${line}${word}` : word;
+    if (candidate.length > width) {
+      if (line.trimEnd()) lines.push(line.trimEnd());
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+
+  if (line.trimEnd()) lines.push(line.trimEnd());
+  return lines.length ? lines : [""];
 }
 
 function CodeBlock({ content, width, maxLines }: { content: string; width: number; maxLines: number }) {
