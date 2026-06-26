@@ -33,7 +33,7 @@ export {
   selectedServerVersion,
   switchView,
 } from "./tui/selectors.js";
-export { InstallWizard, OptionList, RegistryLoadingPanel, sourceCountLabel } from "./tui/views/panels.js";
+export { buildOperationSnapshot, InstallWizard, OperationModal, OptionList, RegistryLoadingPanel, sourceCountLabel } from "./tui/views/panels.js";
 
 export function runTui(): void {
   render(<MpmTui />, { alternateScreen: Boolean(process.stdout.isTTY) });

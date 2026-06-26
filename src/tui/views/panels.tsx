@@ -1095,15 +1095,15 @@ interface OperationSnapshot {
   active: boolean;
 }
 
-function buildOperationSnapshot({ active, log, state }: { active: boolean; log?: CommandLog; state: TuiState }): OperationSnapshot | undefined {
+export function buildOperationSnapshot({ active, log, state }: { active: boolean; log?: CommandLog; state: TuiState }): OperationSnapshot | undefined {
   if (!active && !log) return undefined;
   if (!active && log && !isOperationLog(log.title)) return undefined;
   const activeTitle = state.testing
     ? "testing"
     : state.checking
       ? "checking"
-      : operationTitle(log?.title ?? "install");
-  const title = active ? activeTitle : operationTitle(log?.title ?? "operation");
+      : activeOperationTitle(log?.title ?? "install");
+  const title = active ? activeTitle : settledOperationTitle(log?.title ?? "operation", log?.ok ?? true);
   const activeMessage = state.testing
     ? "testing selected MCP server..."
     : state.checking
@@ -1124,13 +1124,24 @@ function buildOperationSnapshot({ active, log, state }: { active: boolean; log?:
   return { key, title, lines, active };
 }
 
-function operationTitle(title: string): string {
+function activeOperationTitle(title: string): string {
   if (title === "test") return "testing";
   if (title === "install") return "installing";
   if (title === "update") return "updating";
   if (title === "adopt") return "adopting";
   if (title === "doctor") return "checking";
   return title;
+}
+
+function settledOperationTitle(title: string, ok: boolean): string {
+  const suffix = ok ? "complete" : "failed";
+  if (title === "test") return `test ${suffix}`;
+  if (title === "install") return `install ${suffix}`;
+  if (title === "update") return `update ${suffix}`;
+  if (title === "adopt") return `adopt ${suffix}`;
+  if (title === "doctor") return `check ${suffix}`;
+  if (title === "remove") return `remove ${suffix}`;
+  return `${title} ${suffix}`;
 }
 
 function isOperationLog(title: string): boolean {

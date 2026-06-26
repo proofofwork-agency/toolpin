@@ -3,6 +3,7 @@ import test from "node:test";
 import React from "react";
 import { renderToString } from "ink";
 import {
+  buildOperationSnapshot,
   browseSearchResults,
   buildTuiVersionInfo,
   cacheCoverage,
@@ -243,6 +244,27 @@ test("TUI install wizard uses step counts before install and activity bar only w
   assert.doesNotMatch(installing, /Step \d of \d|100%|progress 100%/);
   assert.match(complete, /Install complete/);
   assert.doesNotMatch(complete, /100%|progress/);
+});
+
+test("TUI settled install operation modal reports completion instead of installing", () => {
+  const snapshot = buildOperationSnapshot({
+    active: false,
+    log: {
+      title: "install",
+      command: "toolpin install example/server",
+      ok: true,
+      lines: ["installed example/server@1.0.0"],
+    },
+    state: {
+      view: "plan",
+      installing: false,
+      testing: false,
+      checking: false,
+    },
+  });
+
+  assert.equal(snapshot?.title, "install complete");
+  assert.equal(snapshot?.lines[0], "complete");
 });
 
 function entryFixture(source) {
