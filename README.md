@@ -120,7 +120,8 @@ toolpin registry list [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
 toolpin info <server-name> [--source official|docker|all|custom-id] [--json] [--live]
 toolpin audit <server-name> [--source official|docker|all|custom-id] [--live]
-toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin scan <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 toolpin list [--scope|-s all|project|global] [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--json]
 toolpin plan <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all|custom-id] [--live]
@@ -129,7 +130,7 @@ toolpin policy check <server-name> --client|-c claude|cursor|vscode|codex|openco
 toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
 toolpin remove <server-name> [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
 toolpin uninstall <server-name> [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
 toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
 toolpin test <server-name> [--source official|docker|all|custom-id] [--live] [--timeout 15000]
@@ -245,6 +246,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
 - Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are warnings for human review, not prompt-injection detection, sandboxing, or an install blocker.
+- `toolpin scan` exposes the advisory description scan directly. `toolpin scan --sarif`, `toolpin verify --sarif`, and `toolpin ci --sarif` emit SARIF 2.1.0 JSON for code-scanning pipelines.
 - `toolpin install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
@@ -284,16 +286,17 @@ tab / 1-6       Switch panels (1=Browse, 2=Installed, 3=Overview, 4=Install, 5=C
 :               Open command palette
 esc             Exit search/command mode, or return to Browse
 up/down or j/k  Move selection
-enter           Open selected-server overview
+enter           Open selected-server install plan
 r               Refresh current source
-i               Ingest live registry data into cache
-g               Cycle registry source; in Installed, cycle all/project/global inventory scope
+i / I           Open install wizard: choose version when available, folder/global, then client
+: ingest        Ingest live registry data into cache from the command palette
+f               Change Browse list layout: flat/project/category
+g               Change registry source; in Installed, change inventory scope all/project/global
 G               Toggle install scope: project or global
 t               Test selected server by connecting and listing tools; in Installed, run test-installed
-u / U           In Installed, update/adopt selected server / update all locked servers
+u / U           In Installed, resolve selected entry in registry and lock it / update all locked servers
 d               In Installed, refresh drift/lock state with doctor reconciliation
-I               Install selected server into active scope and lockfile
-x               Remove selected server from active config and lockfile (press twice outside Installed; immediate in Installed)
+x               Remove selected server from active config and lockfile (press twice outside Installed; Yes/No modal in Installed)
 l               Toggle live/cache source
 c               Cycle client target, including all
 o               Jump to opencode target

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { CHROME, ERR, MODAL_BORDER, MUTED, OK, SURFACE, WARN } from "../constants.js";
+import { CHROME, ERR, MUTED, OK, SURFACE, WARN } from "../constants.js";
 import { listWindowStart } from "../layout.js";
 import type { InstalledServerState } from "../installedState.js";
 import { shortPath, truncate } from "../format.js";
@@ -40,7 +40,7 @@ export function InstalledServersView({
       ))}
       {selectedRow ? (
         <Text color={CHROME} wrap="truncate">
-          {"  "}selected {selected + 1} of {rows.length}  u update/adopt  U all  x delete  t test-installed  d doctor  g scope
+          {"  "}selected {selected + 1} of {rows.length}  u registry+lock  U update locked  x delete  t test-installed  d doctor  g scope
         </Text>
       ) : null}
     </Box>
@@ -50,14 +50,14 @@ export function InstalledServersView({
 export function InstalledServerDetails({ row, width }: { row?: InstalledServerState; width: number }) {
   if (!row) {
     return (
-      <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+      <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
         <Text color={MUTED}>No installed server selected.</Text>
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <Text bold color="white" wrap="truncate">{row.serverName}</Text>
       <Text color={MUTED} wrap="truncate">{row.client}  {scopeText(row.scope)}  {shortPath(row.file)}</Text>
       <Spacer />
@@ -67,6 +67,7 @@ export function InstalledServerDetails({ row, width }: { row?: InstalledServerSt
       <Metric label="runtime" value={row.runningStatus} color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED} />
       <Metric label="match" value={matchText(row)} color={row.registryMatch ? OK : MUTED} />
       <Metric label="actions" value={actionText(row)} color={row.canUpdate ? WARN : MUTED} />
+      {row.lifecycleAction !== "none" ? <Metric label="u action" value={lifecycleExplanation(row)} color={WARN} /> : null}
       <Metric label="test target" value={row.testSource === "config" ? `installed config: ${shortPath(row.file)}` : row.testSource} color={row.canTest ? OK : MUTED} />
       {row.updateServer ? <Metric label="target" value={`${row.updateServer.name}@${row.updateServer.version}`} color={row.lifecycleAction === "none" ? MUTED : WARN} /> : null}
       {row.issue ? <Text color={WARN} wrap="truncate">drift       {truncate(row.issue, width - 18)}</Text> : null}
@@ -132,6 +133,12 @@ function actionText(row: InstalledServerState): string {
   if (row.canDelete) actions.push("delete");
   if (row.canTest) actions.push("test-installed");
   return actions.join(", ") || "none";
+}
+
+function lifecycleExplanation(row: InstalledServerState): string {
+  if (row.lifecycleAction === "adopt") return "find registry match, replace alias if needed, write mcp-lock.json";
+  if (row.lifecycleAction === "update") return "resolve locked server in registry, update config, update mcp-lock.json";
+  return "none";
 }
 
 function matchText(row: InstalledServerState): string {

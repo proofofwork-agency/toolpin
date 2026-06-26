@@ -2,15 +2,16 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { exportClientConfig } from "../config.js";
+import { exportClientConfig, type ClientName } from "../config.js";
 import { doctorLockfile } from "../doctor.js";
-import { installServerConfig, removeServerConfig } from "../install.js";
+import { installServerConfig, removeServerConfig, type InstallScope } from "../install.js";
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
 import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "../registry.js";
 import { searchServers } from "../search.js";
 import { testServer, type ServerTestResult } from "../tester.js";
+import type { NormalizedServer } from "../types.js";
 import { commandLineFor, commandRequiresServer } from "./command.js";
 import {
   DEFAULT_RESULT_LIMIT,
@@ -28,10 +29,10 @@ import {
   cacheHasSource,
   commandLogForView,
   filterBySource,
+  installClientChoicesForScope,
   installClientLabel,
   nextClient,
   nextSource,
-  nextView,
   pruneVersionSelections,
   scopeLabel,
   selectedClients,
@@ -39,7 +40,7 @@ import {
   selectedServerVersion,
   switchView,
 } from "./selectors.js";
-import type { DataMode, TuiCommandId, TuiState } from "./types.js";
+import type { BrowseLayout, DataMode, TuiCommandId, TuiState, View } from "./types.js";
 import { knownVersions } from "../versions.js";
 import { installedId, installedViewReducer, loadInstalledServerStates, type InstalledServerState } from "./installedState.js";
 import {
@@ -47,9 +48,12 @@ import {
   Centered,
   ChromeHeader,
   CommandPalette,
+  DeleteConfirmModal,
   Footer,
   HelpView,
+  InstallWizard,
   ModeLine,
+  OperationModal,
   OptionList,
   PromptBar,
   SelectedServerPanel,
@@ -72,12 +76,14 @@ export function MpmTui() {
     inputMode: "normal",
     dataMode: "cache",
     sourceMode: "all",
+    browseLayout: "flat",
     resultLimit: DEFAULT_RESULT_LIMIT,
     client: "claude",
     installScope: "project",
     loading: true,
     installing: false,
     testing: false,
+    checking: false,
   }));
   const [installed, dispatchInstalled] = useReducer(installedViewReducer, {
     rows: [],
@@ -104,6 +110,7 @@ export function MpmTui() {
     return searchServers(latest, state.query || "mcp", MAX_RESULT_LIMIT);
   }, [state.servers, state.query]);
   const results = useMemo(() => allResults.slice(0, state.resultLimit), [allResults, state.resultLimit]);
+  const browseLayout = state.browseLayout === "category" && !hasCategoryMetadata(results) ? "project" : state.browseLayout;
 
   const selectedIndex = clamp(state.selected, 0, Math.max(0, results.length - 1));
   const selectedResult = results[selectedIndex];
@@ -245,8 +252,9 @@ export function MpmTui() {
     }
   }
 
-  async function installSelected(): Promise<void> {
-    if (!selectedServer) {
+  async function installSelected(opts?: { server?: NormalizedServer; client?: TuiState["client"]; clients?: ClientName[]; scope?: InstallScope; clientLabel?: string }): Promise<void> {
+    const server = opts?.server ?? selectedServer;
+    if (!server) {
       setState((prev) => ({
         ...prev,
         commandLog: {
@@ -258,8 +266,18 @@ export function MpmTui() {
       }));
       return;
     }
-    const targetClients = selectedClientsForScope(state.client, state.installScope);
-    const command = commandLineFor("install", state, selectedServer);
+    const scope = opts?.scope ?? state.installScope;
+    const targetClients = opts?.clients ?? selectedClientsForScope(state.client, scope);
+    const clientLabel = opts?.clientLabel ?? installClientLabel(opts?.client ?? state.client, targetClients);
+    const command = commandLineFor("install", { ...state, client: opts?.client ?? state.client, installScope: scope }, server);
+    if (!targetClients.length) {
+      setState((prev) => ({
+        ...prev,
+        error: `no client available for ${scopeLabel(scope)} scope`,
+        commandLog: { title: "install", command, ok: false, lines: [`No client is available for ${scopeLabel(scope)} scope.`] },
+      }));
+      return;
+    }
     setState((prev) => ({
       ...prev,
       view: "plan",
@@ -270,17 +288,17 @@ export function MpmTui() {
         command,
         ok: true,
         lines: [
-          `starting install for ${selectedServer.name}`,
-          `target: ${installClientLabel(state.client, targetClients)} / ${scopeLabel(state.installScope)}`,
+          `starting install for ${server.name}`,
+          `target: ${clientLabel} / ${scopeLabel(scope)}`,
           "checking policy and lock drift...",
         ],
       },
-      lastAction: `installing ${selectedServer.name}`,
+      lastAction: `installing ${server.name}`,
     }));
     try {
       const files: string[] = [];
       let lockfile: Lockfile | undefined;
-      const plans = targetClients.map((client) => buildInstallPlan(selectedServer, client));
+      const plans = targetClients.map((client) => buildInstallPlan(server, client));
       const policyViolations = [];
       for (const plan of plans) {
         const policy = await enforcePolicy(plan);
@@ -305,16 +323,16 @@ export function MpmTui() {
           ok: true,
           lines: [
             `policy and lock checks passed for ${targetClients.length} client(s)`,
-            `writing ${scopeLabel(state.installScope)} config and mcp-lock.json...`,
+            `writing ${scopeLabel(scope)} config and mcp-lock.json...`,
           ],
         },
       }));
       for (const [index, client] of targetClients.entries()) {
-        const result = await installServerConfig(selectedServer, client, state.installScope);
+        const result = await installServerConfig(server, client, scope);
         lockfile = await writeLockfile(
           plans[index],
           "mcp-lock.json",
-          lockKey(selectedServer.name, client),
+          lockKey(server.name, client),
         );
         files.push(result.file);
       }
@@ -322,15 +340,16 @@ export function MpmTui() {
         ...prev,
         lockfile,
         installing: false,
-        lastAction: `installed for ${state.client} -> ${unique(files).join(", ")}`,
+        installFlow: prev.installFlow ? { ...prev.installFlow, step: "complete", selected: 0 } : undefined,
+        lastAction: `installed ${server.name} -> ${unique(files).join(", ")}`,
         commandLog: {
           title: "install",
           command,
           ok: true,
           lines: [
-            `installed for ${installClientLabel(state.client, targetClients)}`,
-            `scope: ${scopeLabel(state.installScope)}`,
-            `paths: ${unique(files).join(", ")}`,
+            `installed ${server.name}@${server.version} for ${clientLabel}`,
+            `scope: ${scopeLabel(scope)}`,
+            `${unique(files).length === 1 ? "path" : "paths"}: ${unique(files).join(", ")}`,
             "updated mcp-lock.json",
           ],
         },
@@ -340,6 +359,7 @@ export function MpmTui() {
       setState((prev) => ({
         ...prev,
         installing: false,
+        installFlow: prev.installFlow ? { ...prev.installFlow, step: "failed", selected: 0 } : undefined,
         error: message,
         commandLog: {
           title: "install",
@@ -349,6 +369,48 @@ export function MpmTui() {
         },
       }));
     }
+  }
+
+  function beginInstallFlow(): void {
+    const baseServer = selectedResult?.server ?? selectedServer;
+    if (!baseServer) {
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "install",
+          command: commandLineFor("install", state, selectedServer),
+          ok: false,
+          lines: ["Select a server before installing."],
+        },
+      }));
+      return;
+    }
+    const versions = installVersionServers(baseServer);
+    const server = versions[0] ?? baseServer;
+    setState((prev) => ({
+      ...prev,
+      installFlow: {
+        step: versions.length > 1 ? "version" : "scope",
+        server,
+        versions,
+        preferredClient: prev.client,
+        selected: versions.length > 1 ? 0 : prev.installScope === "global" ? 1 : 0,
+      },
+      inputMode: "normal",
+      lastAction: versions.length > 1 ? `install ${server.name}: choose version` : `install ${server.name}: choose scope`,
+    }));
+  }
+
+  function installVersionServers(server: NormalizedServer): NormalizedServer[] {
+    const versions = knownVersions(state.servers, server.name);
+    const versionServers = versions
+      .map((entry) => state.servers.find((candidate) =>
+        candidate.name === server.name
+        && candidate.version === entry.version
+        && candidate.registrySource === entry.source,
+      ) ?? state.servers.find((candidate) => candidate.name === server.name && candidate.version === entry.version))
+      .filter((candidate): candidate is NormalizedServer => Boolean(candidate));
+    return versionServers.length ? versionServers : [server];
   }
 
   async function removeSelected(): Promise<void> {
@@ -388,6 +450,22 @@ export function MpmTui() {
         scope: state.installScope,
       },
       lastAction: `press x again to remove ${selectedServer.name} from ${state.client} ${state.installScope}`,
+    }));
+  }
+
+  function requestInstalledRemoveConfirmation(row: InstalledServerState | undefined): void {
+    if (!row) return;
+    setState((prev) => ({
+      ...prev,
+      deleteConfirm: {
+        source: "installed",
+        serverName: row.serverName,
+        client: row.client,
+        scope: row.scope,
+        selected: "no",
+      },
+      pendingRemove: undefined,
+      lastAction: `confirm delete ${row.serverName}`,
     }));
   }
 
@@ -492,6 +570,9 @@ export function MpmTui() {
         ok: true,
         lines: [
           row.lifecycleAction === "update" ? `updating locked ${row.serverName}` : `adopting unlocked ${row.serverName}`,
+          row.lifecycleAction === "update"
+            ? "resolving locked registry entry and updating config + mcp-lock.json"
+            : "resolving installed alias in registry, making it registry-backed, and locking it",
           row.serverName !== updateServer.name ? `will replace installed alias ${row.serverName} with ${updateServer.name}` : `registry entry ${updateServer.name}`,
           `version ${row.lockedVersion ?? "unlocked"} -> ${updateServer.version}`,
         ],
@@ -527,7 +608,7 @@ export function MpmTui() {
             ...result.planned,
             result.removedAlias ? `removed old alias: ${result.removedAlias.action} ${result.removedAlias.file}` : "no alias removal needed",
             result.config ? `config: ${result.config.action} ${result.config.file}` : "config write skipped",
-            result.lockfileWritten ? "lockfile updated" : "lockfile unchanged",
+            result.lockfileWritten ? "mcp-lock.json updated with registry-backed entry" : "mcp-lock.json unchanged",
           ],
         },
       }));
@@ -577,8 +658,8 @@ export function MpmTui() {
           command,
           ok: true,
           lines: [
-            `updated ${result.updated.length} locked server(s)`,
-            `skipped ${result.skippedAdoptable.length} unlocked adoptable server(s)`,
+            `updated ${result.updated.length} locked registry-backed server(s)`,
+            `skipped ${result.skippedAdoptable.length} unlocked adoptable server(s); use u to adopt and lock them`,
             ...result.updated.slice(0, 4).map((entry) => `${entry.serverName} -> ${entry.targetName}@${entry.toVersion}`),
           ],
         },
@@ -596,26 +677,26 @@ export function MpmTui() {
     }
   }
 
-  async function removeInstalled(row: InstalledServerState | undefined): Promise<void> {
-    if (!row) return;
+  async function removeInstalledTarget(target: Pick<InstalledServerState, "serverName" | "client" | "scope">): Promise<void> {
     try {
-      const configResult = await removeServerConfig(row.serverName, row.client, row.scope);
-      const lockResult = await removeLockfileEntry(row.serverName, row.client, "mcp-lock.json");
+      const configResult = await removeServerConfig(target.serverName, target.client, target.scope);
+      const lockResult = await removeLockfileEntry(target.serverName, target.client, "mcp-lock.json");
       const lockfile = lockResult.lockfile;
       setState((prev) => ({
         ...prev,
         lockfile,
+        deleteConfirm: undefined,
         commandLog: {
           title: "remove",
-          command: `toolpin remove ${row.serverName} --client ${row.client} --scope ${row.scope}`,
+          command: `toolpin remove ${target.serverName} --client ${target.client} --scope ${target.scope}`,
           ok: true,
           lines: [`config ${configResult.action}: ${configResult.file}`, `lock ${lockResult.removed ? "removed" : "missing"}`],
         },
-        lastAction: `removed ${row.serverName} from ${row.client} ${row.scope}`,
+        lastAction: `removed ${target.serverName} from ${target.client} ${target.scope}`,
       }));
       await refreshInstalledRows(state.servers, lockfile);
     } catch (error) {
-      setState((prev) => ({ ...prev, error: error instanceof Error ? error.message : String(error) }));
+      setState((prev) => ({ ...prev, deleteConfirm: undefined, error: error instanceof Error ? error.message : String(error) }));
     }
   }
 
@@ -679,6 +760,7 @@ export function MpmTui() {
   async function runInstalledDoctor(): Promise<void> {
     setState((prev) => ({
       ...prev,
+      checking: true,
       commandLog: {
         title: "doctor",
         command: `toolpin doctor --scope ${installed.scope}`,
@@ -693,6 +775,7 @@ export function MpmTui() {
       await refreshInstalledRows();
       setState((prev) => ({
         ...prev,
+        checking: false,
         commandLog: {
           title: "doctor",
           command: `toolpin doctor --scope ${installed.scope}`,
@@ -711,6 +794,7 @@ export function MpmTui() {
       const message = error instanceof Error ? error.message : String(error);
       setState((prev) => ({
         ...prev,
+        checking: false,
         commandLog: {
           title: "doctor",
           command: `toolpin doctor --scope ${installed.scope}`,
@@ -803,16 +887,27 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, view: "plan" }));
         break;
       case "install":
-        await installSelected();
+        beginInstallFlow();
         break;
       case "remove":
         await removeSelected();
         break;
       case "doctor": {
+        setState((prev) => ({
+          ...prev,
+          checking: true,
+          commandLog: {
+            title: "doctor",
+            command: commandLine,
+            ok: true,
+            lines: [`checking ${state.installScope} config against mcp-lock.json...`],
+          },
+        }));
         try {
           const report = await doctorLockfile("mcp-lock.json", state.installScope);
           setState((prev) => ({
             ...prev,
+            checking: false,
             commandLog: {
               title: "doctor",
               command: commandLine,
@@ -825,6 +920,7 @@ export function MpmTui() {
         } catch (error) {
           setState((prev) => ({
             ...prev,
+            checking: false,
             commandLog: {
               title: "doctor",
               command: commandLine,
@@ -879,7 +975,7 @@ export function MpmTui() {
           ok: true,
           lines: [
             nextLimit === prev.resultLimit ? `already showing the maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
-            "Use / to edit the search, g to change source, i to refresh listings.",
+            "Use / to edit the search, g to change source, r to refresh listings.",
           ],
         },
         lastAction: nextLimit === prev.resultLimit ? `showing maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
@@ -902,6 +998,7 @@ export function MpmTui() {
       installScope: "project",
       versionSelections: {},
       pendingRemove: undefined,
+      deleteConfirm: undefined,
       commandLog: {
         title: "reset",
         command: "toolpin tui",
@@ -923,9 +1020,100 @@ export function MpmTui() {
       return;
     }
 
+    if (state.deleteConfirm) {
+      const confirm = state.deleteConfirm;
+      if (key.escape || input === "n" || input === "N") {
+        setState((prev) => ({ ...prev, deleteConfirm: undefined, lastAction: "delete cancelled" }));
+        return;
+      }
+      if (input === "y" || input === "Y") {
+        setState((prev) => ({ ...prev, deleteConfirm: undefined, lastAction: `deleting ${confirm.serverName}` }));
+        void removeInstalledTarget(confirm);
+        return;
+      }
+      if (key.leftArrow || key.rightArrow || input === "h" || input === "l" || input === "j" || input === "k") {
+        setState((prev) => (prev.deleteConfirm
+          ? {
+              ...prev,
+              deleteConfirm: {
+                ...prev.deleteConfirm,
+                selected: prev.deleteConfirm.selected === "no" ? "yes" : "no",
+              },
+            }
+          : prev));
+        return;
+      }
+      if (key.return) {
+        setState((prev) => ({ ...prev, deleteConfirm: undefined, lastAction: confirm.selected === "yes" ? `deleting ${confirm.serverName}` : "delete cancelled" }));
+        if (confirm.selected === "yes") void removeInstalledTarget(confirm);
+        return;
+      }
+      return;
+    }
+
+    if (state.installFlow) {
+      const flow = state.installFlow;
+      if (key.escape) {
+        if (flow.step === "installing") return;
+        setState((prev) => ({ ...prev, installFlow: undefined, lastAction: "install cancelled" }));
+        return;
+      }
+      const clientChoices = installClientChoicesForScope(flow.scope ?? "project", flow.preferredClient);
+      const optionCount = flow.step === "version" ? flow.versions.length : flow.step === "scope" ? 2 : flow.step === "client" ? clientChoices.length : 1;
+      if (key.upArrow || input === "k") {
+        setState((prev) => (prev.installFlow ? { ...prev, installFlow: { ...prev.installFlow, selected: Math.max(0, prev.installFlow.selected - 1) } } : prev));
+        return;
+      }
+      if (key.downArrow || input === "j") {
+        setState((prev) => (prev.installFlow ? { ...prev, installFlow: { ...prev.installFlow, selected: Math.min(optionCount - 1, prev.installFlow.selected + 1) } } : prev));
+        return;
+      }
+      if (key.return) {
+        if (flow.step === "version") {
+          const server = flow.versions[Math.min(flow.selected, flow.versions.length - 1)] ?? flow.server;
+          setState((prev) => (prev.installFlow
+            ? {
+                ...prev,
+                versionSelections: { ...prev.versionSelections, [server.name]: server.version },
+                installFlow: {
+                  ...prev.installFlow,
+                  step: "scope",
+                  server,
+                  selected: prev.installScope === "global" ? 1 : 0,
+                },
+                lastAction: `install ${server.name}@${server.version}: choose scope`,
+              }
+            : prev));
+        } else if (flow.step === "scope") {
+          const scope: InstallScope = flow.selected === 1 ? "global" : "project";
+          setState((prev) => (prev.installFlow ? { ...prev, installFlow: { ...prev.installFlow, step: "client", scope, selected: 0 } } : prev));
+        } else if (flow.step === "client") {
+          const scope = flow.scope ?? "project";
+          const client = clientChoices[Math.min(flow.selected, clientChoices.length - 1)];
+          const clients = client === "all" ? selectedClientsForScope("all", scope) : [client];
+          const clientLabel = installClientLabel(client, clients);
+          setState((prev) => (prev.installFlow
+            ? { ...prev, installFlow: { ...prev.installFlow, step: "installing", selected: 0 }, client, installScope: scope }
+            : { ...prev, client, installScope: scope }));
+          void installSelected({ server: flow.server, client, clients, scope, clientLabel });
+        } else if (flow.step === "complete" || flow.step === "failed") {
+          setState((prev) => ({ ...prev, installFlow: undefined }));
+        }
+        return;
+      }
+      return;
+    }
+
     if (state.inputMode === "search") {
       if (key.escape) {
-        setState((prev) => ({ ...prev, inputMode: "normal" }));
+        setState((prev) => ({
+          ...prev,
+          inputMode: "normal",
+          query: "",
+          selected: 0,
+          view: "discover",
+          pendingRemove: undefined,
+        }));
         return;
       }
       if (key.return) {
@@ -971,11 +1159,11 @@ export function MpmTui() {
     }
 
     if (key.escape && state.view !== "discover") {
-      setState((prev) => switchView(prev, "discover"));
+      switchToView("discover");
       return;
     }
     if (key.tab) {
-      setState((prev) => switchView(prev, nextView(prev.view)));
+      switchToView(nextEnabledView(state.view));
       return;
     }
     if (state.view === "installed" && (key.upArrow || input === "k")) {
@@ -995,7 +1183,11 @@ export function MpmTui() {
       return;
     }
     if (key.return) {
-      setState((prev) => switchView(prev, prev.view === "discover" ? "details" : prev.view));
+      if ((state.view === "discover" || state.view === "details") && selectedServer) {
+        switchToView("plan");
+      } else if (state.view === "plan" && selectedServer) {
+        beginInstallFlow();
+      }
       return;
     }
 
@@ -1016,18 +1208,26 @@ export function MpmTui() {
         resetViewDefaults();
         break;
       case "i":
-        void refreshCache();
+      case "I":
+        if (state.view !== "installed") beginInstallFlow();
         break;
       case "m":
       case "+":
         showMoreResults();
         break;
-      case "I":
-        void installSelected();
+      case "f":
+        if (state.view === "discover") {
+          setState((prev) => ({
+            ...prev,
+            browseLayout: nextBrowseLayout(prev.browseLayout, hasCategoryMetadata(results)),
+            selected: 0,
+            pendingRemove: undefined,
+          }));
+        }
         break;
       case "x":
         if (state.view === "installed") {
-          void removeInstalled(selectedInstalled);
+          requestInstalledRemoveConfirmation(selectedInstalled);
         } else {
           requestRemoveConfirmation();
         }
@@ -1093,27 +1293,28 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, view: prev.view === "help" ? "discover" : "help" }));
         break;
       case "1":
-        setState((prev) => switchView(prev, "discover"));
+        switchToView("discover");
         break;
       case "2":
-        setState((prev) => switchView(prev, "installed"));
+        switchToView("installed");
         break;
       case "3":
-        setState((prev) => switchView(prev, "details"));
+        switchToView("details");
         break;
       case "4":
-        setState((prev) => switchView(prev, "plan"));
+        switchToView("plan");
         break;
       case "5":
-        setState((prev) => switchView(prev, "config"));
+        switchToView("config");
         break;
       case "6":
-        setState((prev) => switchView(prev, "help"));
+        switchToView("help");
         break;
     }
   });
 
   function handleMouseClick(x: number, y: number): boolean {
+    if (state.installFlow || state.deleteConfirm) return false;
     const hit = hitTestTui(x, y, buildTuiHitZones({
       width,
       listHeight,
@@ -1177,11 +1378,25 @@ export function MpmTui() {
     }));
   }
 
+  function switchToView(view: View): void {
+    if (SERVER_VIEWS.has(view) && !selectedServer) return;
+    setState((prev) => switchView(prev, view));
+  }
+
+  function nextEnabledView(view: View): View {
+    const order: View[] = selectedServer ? ["discover", "installed", "details", "plan", "config", "help"] : ["discover", "installed", "help"];
+    return order[(order.indexOf(view) + 1) % order.length] ?? "discover";
+  }
+
   const visibleCommandLog = commandLogForView(state);
   const activityRows = visibleCommandLog?.lines.length ? Math.min(3, visibleCommandLog.lines.length) : 1;
-  const listHeight = state.view === "discover" || state.view === "installed" ? Math.max(4, height - 12 - activityRows) : Math.min(6, Math.max(3, height - 18 - activityRows));
+  const paneHeight = Math.max(8, height - 14 - activityRows);
+  const listHeight = state.view === "discover" || state.view === "installed" ? paneHeight : Math.min(6, Math.max(3, height - 18 - activityRows));
   const modalWidth = Math.min(width - 4, 104);
   const modalContentWidth = Math.max(40, modalWidth - 4);
+  const desiredLeftPaneWidth = Math.max(44, Math.min(88, Math.floor(width * 0.56)));
+  const rightPaneWidth = Math.max(40, width - desiredLeftPaneWidth - 4);
+  const leftPaneWidth = Math.max(34, width - rightPaneWidth - 4);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -1202,60 +1417,62 @@ export function MpmTui() {
             </Box>
           </Centered>
         ) : state.view === "help" ? (
-          <Centered width={width}>
-            <Box width={modalWidth}>
-              <HelpView width={modalContentWidth} />
-            </Box>
-          </Centered>
+          <Box marginX={2} height={paneHeight}>
+            <HelpView width={width - 4} height={paneHeight} />
+          </Box>
         ) : state.view === "installed" ? (
-          <>
+          <Box marginX={2} height={paneHeight}>
             <InstalledServersView
               rows={installed.rows}
               selected={installed.selected}
-              height={Math.max(6, Math.floor(listHeight * 0.58))}
-              width={width}
+              height={paneHeight}
+              width={leftPaneWidth}
               loading={installed.loading}
             />
-            <Centered width={width}>
-              <Box width={modalWidth}>
-                <InstalledServerDetails row={selectedInstalled} width={modalContentWidth} />
-              </Box>
-            </Centered>
-          </>
+            <Box width={rightPaneWidth} height={paneHeight} flexDirection="column">
+              <InstalledServerDetails row={selectedInstalled} width={rightPaneWidth - 4} />
+            </Box>
+          </Box>
         ) : (
-          <>
+          <Box marginX={2} height={paneHeight}>
             <OptionList
               results={results}
               totalMatches={allResults.length}
               totalServers={latestOnly(state.servers).length}
               selected={selectedIndex}
-              height={listHeight}
-              width={width}
+              height={paneHeight}
+              width={leftPaneWidth}
+              query={state.query}
+              browseLayout={browseLayout}
               dimmed={state.view !== "discover"}
             />
-            {SERVER_VIEWS.has(state.view) ? (
-              <Centered width={width}>
-                <Box width={modalWidth}>
+            {(state.view === "discover" && selectedServer) || SERVER_VIEWS.has(state.view) || state.installFlow ? (
+              <Box width={rightPaneWidth} height={paneHeight} flexDirection="column">
+                {state.installFlow ? (
+                  <InstallWizard flow={state.installFlow} width={rightPaneWidth - 4} height={paneHeight} />
+                ) : (
                   <SelectedServerPanel
                     view={state.view}
                     result={selectedResult}
                     server={selectedServer}
                     client={state.client}
                     installScope={state.installScope}
-                    width={modalContentWidth}
+                    width={rightPaneWidth - 4}
                     testResult={state.testResult}
                     testing={state.testing}
                     versionInfo={selectedVersionInfo}
                   />
-                </Box>
-              </Centered>
+                )}
+              </Box>
             ) : null}
-          </>
+          </Box>
         )}
       </Box>
+      <OperationModal state={state} width={width} height={height} />
+      <DeleteConfirmModal state={state} width={width} height={height} />
       <ActivityStrip state={state} width={width} />
       {state.error ? <Text color={ERR} wrap="truncate"> error: {truncate(state.error, width - 8)}</Text> : null}
-      <Footer view={state.view} inputMode={state.inputMode} />
+      <Footer view={state.view} inputMode={state.inputMode} width={width} />
     </Box>
   );
 }
@@ -1277,6 +1494,22 @@ function useTerminalSize(stdout: ReturnType<typeof useStdout>["stdout"]): { widt
   }, [stdout]);
 
   return size;
+}
+
+function nextBrowseLayout(current: BrowseLayout, hasCategories: boolean): BrowseLayout {
+  if (current === "flat") return "project";
+  if (current === "project") return hasCategories ? "category" : "flat";
+  return "flat";
+}
+
+function hasCategoryMetadata(results: Array<{ server: NormalizedServer }>): boolean {
+  return results.some((result) => {
+    const sourceMeta = result.server.raw._meta?.["dev.toolpin/source"];
+    const category = sourceMeta && typeof sourceMeta === "object" && !Array.isArray(sourceMeta)
+      ? (sourceMeta as Record<string, unknown>).category
+      : undefined;
+    return typeof category === "string" && category.trim().length > 0;
+  });
 }
 
 function parseMouse(input: string): { x: number; y: number; pressed: boolean } | undefined {

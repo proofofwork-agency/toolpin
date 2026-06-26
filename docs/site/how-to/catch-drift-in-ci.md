@@ -11,6 +11,17 @@ if reviewed MCP installs drift.
 plans, checks lock integrity, enforces policy unless bypassed, and exits
 non-zero on drift. It does not update `mcp-lock.json`.
 
+`toolpin ci --sarif` emits SARIF 2.1.0 JSON to stdout and still exits non-zero
+on drift:
+
+```bash
+toolpin ci --file mcp-lock.json --live --sarif > toolpin.sarif
+```
+
+Automatic GitHub code-scanning upload is not wired into the composite action in
+this pass; add an explicit upload step after reviewing the desired repository
+permissions.
+
 ## GitHub Action
 
 The composite action installs ToolPin from the action source by default, so it
@@ -166,6 +177,8 @@ CI exits non-zero when:
   supplied as a pair.
 - The selected policy rejects a locked entry.
 - `--verify` finds critical verification findings.
+- `--sarif` changes the output format only; it does not make failing checks
+  advisory.
 
 Use `toolpin install --update-lock` or `toolpin lock <server> --client <client>`
 only after reviewing the drift locally. CI should not update the lockfile.

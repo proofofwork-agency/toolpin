@@ -85,12 +85,14 @@ export function computeMenuLayout({ width, hasSelection, selectedLabel }: { widt
   const selectedFrom = cursor;
   const selectedTo = cursor + chosenLabel.length - 1;
   cursor += chosenLabel.length;
-  cursor += "  |  ".length;
-  push("details", "Overview", hasSelection);
-  cursor += "  ".length;
-  push("plan", "Install", hasSelection);
-  cursor += "  ".length;
-  push("config", "Config", hasSelection);
+  if (hasSelection) {
+    cursor += "  |  ".length;
+    push("details", "Overview", true);
+    cursor += "  ".length;
+    push("plan", "Install", true);
+    cursor += "  ".length;
+    push("config", "Config", true);
+  }
 
   segments.push({ view: "help", label: helpLabel, from: helpFrom, to: helpTo, enabled: true });
   return { selectedLabel: chosenLabel, selectedFrom, selectedTo, segments };

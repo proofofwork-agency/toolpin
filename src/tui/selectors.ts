@@ -27,7 +27,7 @@ export function commandLogForView(state: TuiState): CommandLog | undefined {
 
 export function commandLogBelongsToView(log: CommandLog | undefined, view: View): boolean {
   if (!log) return false;
-  if (view === "installed") return ["installed", "remove", "install", "test", "doctor", "versions"].includes(log.title);
+  if (view === "installed") return ["installed", "remove", "install", "update", "adopt", "test", "doctor", "versions"].includes(log.title);
   if (view === "details") return ["info", "audit", "test", "versions"].includes(log.title);
   if (view === "plan") return ["install", "lock", "plan", "versions"].includes(log.title);
   if (view === "config") return ["export-config", "config", "versions"].includes(log.title);
@@ -45,6 +45,12 @@ export function selectedClients(client: ClientSelection): ClientName[] {
 
 export function selectedClientsForScope(client: ClientSelection, scope: InstallScope): ClientName[] {
   return client === "all" ? clientsForScope(scope) : [client];
+}
+
+export function installClientChoicesForScope(scope: InstallScope, preferredClient: ClientSelection): ClientSelection[] {
+  const choices: ClientSelection[] = [...clientsForScope(scope), "all"];
+  if (!choices.includes(preferredClient)) return choices;
+  return [preferredClient, ...choices.filter((client) => client !== preferredClient)];
 }
 
 export function selectedServerVersion(servers: NormalizedServer[], defaultServer: NormalizedServer, selectedVersion?: string): NormalizedServer {

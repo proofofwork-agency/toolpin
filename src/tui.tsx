@@ -2,7 +2,7 @@ import React from "react";
 import { render } from "ink";
 import { MpmTui } from "./tui/app.js";
 
-export type { ClientSelection, DataMode, InputMode, SourceMode, TuiCommandId, TuiCommandState, TuiState, TuiVersionInfo, View } from "./tui/types.js";
+export type { BrowseLayout, ClientSelection, DataMode, InputMode, SourceMode, TuiCommandId, TuiCommandState, TuiState, TuiVersionInfo, View } from "./tui/types.js";
 export type { InstalledRuntimeStatus, InstalledServerState, InstalledViewAction, InstalledViewState } from "./tui/installedState.js";
 export type { TuiHitAction, TuiHitZones, TuiMenuLayout, TuiMenuSegment } from "./tui/layout.js";
 export { commandLineFor, commandRequiresServer, shellQuote } from "./tui/command.js";
@@ -16,6 +16,7 @@ export {
   configTargetLabel,
   filterBySource,
   formatVersionChoices,
+  installClientChoicesForScope,
   installClientLabel,
   nextClient,
   nextSource,

@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   buildTuiVersionInfo,
   commandLineFor,
+  commandLogForView,
   configTargetLabel,
   formatVersionChoices,
+  installClientChoicesForScope,
   selectedClientsForScope,
 } from "../dist/tui.js";
 
@@ -28,6 +30,21 @@ test("TUI all-client selection respects project and global scope support", () =>
   assert.deepEqual(selectedClientsForScope("opencode", "project"), ["opencode"]);
   assert.deepEqual(selectedClientsForScope("all", "project"), ["claude", "cursor", "vscode", "codex", "opencode", "gemini", "roo"]);
   assert.deepEqual(selectedClientsForScope("all", "global"), ["cursor", "vscode", "codex", "opencode", "windsurf", "cline", "continue", "gemini"]);
+});
+
+test("TUI install wizard puts the selected client first when it is valid for scope", () => {
+  assert.deepEqual(installClientChoicesForScope("project", "opencode").slice(0, 3), ["opencode", "claude", "cursor"]);
+  assert.deepEqual(installClientChoicesForScope("global", "all").slice(0, 3), ["all", "cursor", "vscode"]);
+  assert.deepEqual(installClientChoicesForScope("project", "windsurf").slice(0, 3), ["claude", "cursor", "vscode"]);
+});
+
+test("TUI installed view keeps update and adopt operation logs visible", () => {
+  const updateLog = { title: "update", command: "toolpin update server", ok: true, lines: ["updated server"] };
+  const adoptLog = { title: "adopt", command: "toolpin adopt server", ok: true, lines: ["adopted server"] };
+
+  assert.equal(commandLogForView({ view: "installed", commandLog: updateLog }), updateLog);
+  assert.equal(commandLogForView({ view: "installed", commandLog: adoptLog }), adoptLog);
+  assert.equal(commandLogForView({ view: "discover", commandLog: updateLog }), undefined);
 });
 
 test("TUI version labels report selected, locked, latest, and older versions", () => {

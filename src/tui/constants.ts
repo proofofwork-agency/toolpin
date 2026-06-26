@@ -14,7 +14,7 @@ export const TUI_COMMANDS: TuiCommand[] = [
   { id: "info", label: "Server info", description: "Open selected server metadata and trust summary.", requiresServer: true },
   { id: "audit", label: "Audit trust", description: "Show selected server trust score, badges, and issues.", requiresServer: true },
   { id: "plan", label: "Install plan", description: "Preview target, trust, secrets, and config writes.", requiresServer: true },
-  { id: "install", label: "Install server", description: "Write selected server into the active client config.", requiresServer: true },
+  { id: "install", label: "Install server", description: "Open the install wizard: choose scope and client, then write config + lockfile.", requiresServer: true },
   { id: "remove", label: "Remove server", description: "Delete selected server from active client config and lockfile.", requiresServer: true },
   { id: "doctor", label: "Check config drift", description: "Compare mcp-lock.json against active-scope client configs." },
   { id: "test", label: "Test server", description: "Connect and run MCP tools/list.", requiresServer: true },
@@ -29,9 +29,8 @@ export const BLUE = "#8aa7ff";
 export const ACCENT = "#22d3ee";
 export const MUTED = "#8b8b94";
 export const CHROME = "#52525b";
-export const SURFACE = "#171719";
+export const SURFACE = "#252525";
 export const SURFACE_2 = "#202023";
-export const MODAL_BORDER = "#3f3f46";
 export const OK = "#4ade80";
 export const WARN = "#fbbf24";
 export const ERR = "#f87171";

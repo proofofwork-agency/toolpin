@@ -9,6 +9,7 @@ export type InputMode = "normal" | "search" | "command";
 export type DataMode = "cache" | "live";
 export type SourceMode = RegistrySourceId | "all";
 export type ClientSelection = ClientName | "all";
+export type BrowseLayout = "flat" | "project" | "category";
 export type TuiCommandId =
   | "ingest"
   | "installed"
@@ -55,21 +56,40 @@ export interface TuiState {
   inputMode: InputMode;
   dataMode: DataMode;
   sourceMode: SourceMode;
+  browseLayout: BrowseLayout;
   resultLimit: number;
   client: ClientSelection;
   installScope: InstallScope;
   loading: boolean;
   installing: boolean;
   testing: boolean;
+  checking: boolean;
   testResult?: ServerTestResult;
   error?: string;
   lastAction?: string;
   commandLog?: CommandLog;
+  installFlow?: InstallFlow;
   pendingRemove?: {
     serverName: string;
     client: ClientSelection;
     scope: InstallScope;
   };
+  deleteConfirm?: {
+    source: "installed";
+    serverName: string;
+    client: ClientName;
+    scope: InstallScope;
+    selected: "no" | "yes";
+  };
+}
+
+export interface InstallFlow {
+  step: "version" | "scope" | "client" | "installing" | "complete" | "failed";
+  server: NormalizedServer;
+  versions: NormalizedServer[];
+  scope?: InstallScope;
+  preferredClient: ClientSelection;
+  selected: number;
 }
 
 export interface TuiVersionInfo {

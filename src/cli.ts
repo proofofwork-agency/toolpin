@@ -11,14 +11,16 @@ import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry
 import { enforcePolicy } from "./policy.js";
 import { CacheSchemaError, fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache, writeCache } from "./registry.js";
 import { searchServers } from "./search.js";
+import { scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { auditSecrets } from "./secrets.js";
+import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
 import { scoreServer } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
-import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId } from "./types.js";
+import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId, ToolDescriptionScan } from "./types.js";
 
 const args = process.argv.slice(2);
 type ClientSelection = ClientName | "all";
@@ -69,6 +71,9 @@ async function main(): Promise<void> {
       return;
     case "audit":
       await audit(rest);
+      return;
+    case "scan":
+      await scan(rest);
       return;
     case "verify":
       await verify(rest);
@@ -205,9 +210,55 @@ async function audit(rest: string[]): Promise<void> {
   console.log(JSON.stringify({ name: server.name, version: server.version, trust }, null, 2));
 }
 
+async function scan(rest: string[]): Promise<void> {
+  const name = positional(rest)[0];
+  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000]");
+
+  const server = await findServer(rest, name);
+  const generatedAt = new Date().toISOString();
+  const scans: ToolDescriptionScan[] = [scanServerMetadata(server, generatedAt)];
+  let liveProbe;
+  if (hasFlag(rest, "--live")) {
+    liveProbe = await testServer(server, numberFlag(rest, "--timeout", 15000));
+    if (liveProbe.ok) {
+      scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
+    } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
+      console.error(`Live probe skipped tool-description scan: ${liveProbe.message}`);
+    }
+  }
+
+  const findings = scans.flatMap((entry) => entry.findings);
+  if (hasFlag(rest, "--sarif")) {
+    console.log(JSON.stringify(sarifLog(scanSarifResults(scans), { generatedAt, executionSuccessful: true }), null, 2));
+    return;
+  }
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({
+      server: {
+        name: server.name,
+        version: server.version,
+        registrySource: server.registrySource,
+      },
+      liveProbe: liveProbe ? { ok: liveProbe.ok, message: liveProbe.message, toolCount: liveProbe.tools.length } : undefined,
+      scannedDescriptions: scans.reduce((count, entry) => count + entry.scannedDescriptions, 0),
+      findings,
+      scans,
+    }, null, 2));
+    return;
+  }
+
+  printHeader(`Description scan: ${server.name}@${server.version}`);
+  printField("registry", `${server.registrySource} metadata`);
+  printField("scanned", `${scans.reduce((count, entry) => count + entry.scannedDescriptions, 0)} description(s)`);
+  printField("findings", `${findings.length} advisory finding(s)`);
+  for (const finding of findings) {
+    printBullet(`${finding.severity.toUpperCase()}: ${finding.code}: ${finding.subject}: ${finding.message}`);
+  }
+}
+
 async function verify(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--timeout 15000] [--skip-live-verification]");
+  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]");
 
   const server = await findServer(rest, name);
   const report = await verifyServer(server, {
@@ -215,7 +266,9 @@ async function verify(rest: string[]): Promise<void> {
     timeoutMs: numberFlag(rest, "--timeout", 15000),
   });
 
-  if (hasFlag(rest, "--json")) {
+  if (hasFlag(rest, "--sarif")) {
+    console.log(JSON.stringify(sarifLog(verificationSarifResults(report), { executionSuccessful: report.ok }), null, 2));
+  } else if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify(report, null, 2));
   } else {
     printVerificationReport(report);
@@ -763,16 +816,27 @@ async function ci(rest: string[]): Promise<void> {
   const verifyBeforeUse = hasFlag(rest, "--verify");
   const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
   const enforcePolicies = !hasFlag(rest, "--no-policy");
+  const sarif = hasFlag(rest, "--sarif");
   if (signaturePath || publicKeyPath) {
     if (!signaturePath || !publicKeyPath) throw new Error("toolpin ci requires both --signature and --public-key when verifying a lock signature.");
     const signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath);
     if (!signature.ok) {
+      if (sarif) {
+        console.log(JSON.stringify(sarifLog([ciSarifResult("ci_signature_failed", `Lockfile signature verification failed for ${path}: ${signature.message}`, path)], { executionSuccessful: false }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
       throw new Error(`Lockfile signature verification failed for ${path}: ${signature.message}`);
     }
   }
   if (expectedDigest) {
     const actualDigest = await readLockfileDigest(path);
     if (actualDigest !== expectedDigest) {
+      if (sarif) {
+        console.log(JSON.stringify(sarifLog([ciSarifResult("ci_digest_mismatch", `Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`, path)], { executionSuccessful: false }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
       throw new Error(`Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`);
     }
   }
@@ -801,6 +865,12 @@ async function ci(rest: string[]): Promise<void> {
     }
     return plan;
   });
+
+  if (sarif) {
+    console.log(JSON.stringify(sarifLog(ciSarifResults(report, path), { executionSuccessful: report.ok }), null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
 
   if (!report.ok) {
     throw new Error([
@@ -951,7 +1021,8 @@ Discovery
   toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
   toolpin info <server> [--json] [--live]
   toolpin audit <server> [--live]
-  toolpin verify <server> [--live] [--json] [--timeout 15000] [--skip-live-verification]
+  toolpin scan <server> [--live] [--json] [--sarif] [--timeout 15000]
+  toolpin verify <server> [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]
   toolpin versions <server> [--live] [--limit 10] [--json]
   toolpin test <server> [--live] [--timeout 15000]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
@@ -968,7 +1039,7 @@ Install and config
   toolpin export-config <server> --client|-c <client|all> [--live]
 
 Lock and governance
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--live] [--verify]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--live] [--verify] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
@@ -982,6 +1053,7 @@ Common options
   --source official|docker|all|id    choose registry source
   --live                            fetch instead of cache
   --json                            machine-readable output
+  --sarif                           SARIF 2.1.0 output where supported
   --version, -v                     print ToolPin version
   --scope, -s project|global        project folder vs current-user config
   --global, -g                      npm-style shortcut for --scope global

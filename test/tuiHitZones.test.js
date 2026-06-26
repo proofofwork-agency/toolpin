@@ -23,7 +23,7 @@ test("TUI hit zones route menu clicks and dim unavailable selected-server facets
 
   const emptyLayout = computeMenuLayout({ width: 100, hasSelection: false, selectedLabel: "Long selected server label" });
   assert.deepEqual(hitTestTui(pointInside(emptyLayout, "discover"), noSelection.menuY, noSelection), { kind: "view", view: "discover" });
-  assert.equal(hitTestTui(pointInside(emptyLayout, "details"), noSelection.menuY, noSelection), undefined);
+  assert.equal(emptyLayout.segments.some((entry) => ["details", "plan", "config"].includes(entry.view)), false);
   assert.deepEqual(hitTestTui(pointInside(emptyLayout, "help"), noSelection.menuY, noSelection), { kind: "view", view: "help" });
 
   const withSelection = buildTuiHitZones({

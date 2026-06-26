@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "postbuild": "node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "docs:build": "docusaurus build website",
     "docs:clear": "docusaurus clear website",
     "docs:start": "docusaurus start website",

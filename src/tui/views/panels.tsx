@@ -8,12 +8,13 @@ import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, SearchResult } from "../../types.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
-import { ACCENT, BLUE, CHROME, ERR, MODAL_BORDER, MUTED, OK, SURFACE, SURFACE_2, TUI_COMMANDS, WARN } from "../constants.js";
+import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } from "../constants.js";
 import { formatClientConfigSnippet } from "../configSnippet.js";
 import { asObject, safeJson, shortPath, truncate } from "../format.js";
 import { computeMenuLayout, listWindowStart } from "../layout.js";
-import { commandLogForView, configTargetLabel, formatVersionChoices, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
-import type { ClientSelection, InputMode, TuiState, TuiVersionInfo, View } from "../types.js";
+import { commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
+import type { BrowseLayout, ClientSelection, CommandLog, InputMode, InstallFlow, TuiState, TuiVersionInfo, View } from "../types.js";
+import { riskTone, scoreBreakdown, trustBarCells } from "../ui/trust.js";
 
 export function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
@@ -50,7 +51,7 @@ export function PromptBar({ state, width }: { state: TuiState; width: number }) 
   const active = state.inputMode === "search";
   const commandActive = state.inputMode === "command";
   return (
-    <Box marginX={2} marginBottom={1} backgroundColor={SURFACE_2} paddingX={1}>
+    <Box marginX={2} marginBottom={1} backgroundColor={SURFACE} paddingX={1} paddingY={1}>
       <Box justifyContent="space-between" width={Math.max(1, width - 6)}>
         <Text wrap="truncate">
           {commandActive ? (
@@ -61,7 +62,7 @@ export function PromptBar({ state, width }: { state: TuiState; width: number }) 
             </>
           ) : (
             <>
-              <Text color={MUTED}>Search </Text>
+              <Text color={MUTED}>Search: </Text>
               <Text color="white">{state.query || "Search MCP servers"}</Text>
             </>
           )}
@@ -75,23 +76,28 @@ export function PromptBar({ state, width }: { state: TuiState; width: number }) 
 export function ModeLine({ active, selectedServer, width }: { active: View; selectedServer?: NormalizedServer; width: number }) {
   const hasSelection = Boolean(selectedServer);
   const layout = computeMenuLayout({ width, hasSelection, selectedLabel: selectedServer?.title || selectedServer?.name });
+  const segment = (view: View) => layout.segments.find((entry) => entry.view === view);
   return (
     <Box paddingX={2} marginBottom={1} justifyContent="space-between">
       <Text wrap="truncate">
-        <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>{layout.segments[0]?.label}</Text>
+        <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>{segment("discover")?.label}</Text>
         <Text color={CHROME}>  </Text>
-        <Text bold={active === "installed"} color={active === "installed" ? BLUE : MUTED}>{layout.segments[1]?.label}</Text>
+        <Text bold={active === "installed"} color={active === "installed" ? BLUE : MUTED}>{segment("installed")?.label}</Text>
         <Text color={CHROME}>  |  </Text>
         <Text color={hasSelection ? MUTED : CHROME}>Selected: </Text>
         <Text color={hasSelection ? "white" : CHROME}>{layout.selectedLabel}</Text>
-        <Text color={CHROME}>  |  </Text>
-        <Text bold={active === "details"} color={!hasSelection ? CHROME : active === "details" ? BLUE : MUTED}>{layout.segments[2]?.label}</Text>
-        <Text color={CHROME}>  </Text>
-        <Text bold={active === "plan"} color={!hasSelection ? CHROME : active === "plan" ? BLUE : MUTED}>{layout.segments[3]?.label}</Text>
-        <Text color={CHROME}>  </Text>
-        <Text bold={active === "config"} color={!hasSelection ? CHROME : active === "config" ? BLUE : MUTED}>{layout.segments[4]?.label}</Text>
+        {hasSelection ? (
+          <>
+            <Text color={CHROME}>  |  </Text>
+            <Text bold={active === "details"} color={active === "details" ? BLUE : MUTED}>{segment("details")?.label}</Text>
+            <Text color={CHROME}>  </Text>
+            <Text bold={active === "plan"} color={active === "plan" ? BLUE : MUTED}>{segment("plan")?.label}</Text>
+            <Text color={CHROME}>  </Text>
+            <Text bold={active === "config"} color={active === "config" ? BLUE : MUTED}>{segment("config")?.label}</Text>
+          </>
+        ) : null}
       </Text>
-      <Text bold={active === "help"} color={active === "help" ? BLUE : MUTED}>{layout.segments[5]?.label}</Text>
+      <Text bold={active === "help"} color={active === "help" ? BLUE : MUTED}>{segment("help")?.label}</Text>
     </Box>
   );
 }
@@ -103,6 +109,8 @@ export function OptionList({
   selected,
   height,
   width,
+  query,
+  browseLayout,
   dimmed,
 }: {
   results: SearchResult[];
@@ -111,19 +119,55 @@ export function OptionList({
   selected: number;
   height: number;
   width: number;
+  query: string;
+  browseLayout: BrowseLayout;
   dimmed?: boolean;
 }) {
-  const visibleCount = Math.max(2, height - 2);
+  const grouped = browseLayout !== "flat";
+  const visibleCount = grouped ? Math.max(1, Math.floor((height - 2) / 2)) : Math.max(2, height - 1);
   const start = listWindowStart(selected, visibleCount, results.length);
   const visible = results.slice(start, start + visibleCount);
+  let previousCategory = "";
+  let usedLines = 0;
+  const maxLines = Math.max(1, height - 1);
 
   return (
     <Box flexDirection="column" paddingX={3} height={height}>
-      {results.length === 0 ? <Text color={MUTED}>No servers matched. Type / to search or l for live results.</Text> : null}
-      {visible.map((result, index) => <OptionRow key={`${result.server.name}:${result.server.version}`} result={result} selected={start + index === selected} dimmed={dimmed} width={width} />)}
+      {results.length === 0 ? (
+        <Box flexDirection="column" paddingTop={1}>
+          <Text bold color="white">No servers found</Text>
+          <Text color={MUTED} wrap="wrap">
+            {query.trim()
+              ? `No MCP servers match "${query.trim()}". Try a different search, press r to refresh cached registries, or press l to search live sources.`
+              : "No MCP servers are available for the current filters. Type / to search, press r to refresh cached registries, or press l to search live sources."}
+          </Text>
+        </Box>
+      ) : null}
+      {visible.map((result, index) => {
+        if (!grouped) {
+          return <OptionRow key={`${result.server.name}:${result.server.version}`} result={result} selected={start + index === selected} dimmed={dimmed} width={width} />;
+        }
+        const category = browseCategory(result.server);
+        const showCategory = browseLayout === "category" && category !== previousCategory;
+        const rowLines = showCategory ? 3 : 2;
+        previousCategory = category;
+        if (usedLines + rowLines > maxLines) return null;
+        usedLines += rowLines;
+        return (
+          <GroupedOptionRow
+            key={`${result.server.name}:${result.server.version}`}
+            result={result}
+            selected={start + index === selected}
+            dimmed={dimmed}
+            width={width}
+            category={showCategory ? category : undefined}
+          />
+        );
+      })}
       {results.length > 0 ? (
         <Text color={CHROME} wrap="truncate">
           {"  "}selected {selected + 1} of {results.length} shown / {totalMatches} matches / {totalServers} cached servers
+          <Text color={MUTED}>  layout:{browseLayout}</Text>
           {results.length < totalMatches ? <Text color={MUTED}>  press m for more</Text> : null}
         </Text>
       ) : null}
@@ -131,22 +175,78 @@ export function OptionList({
   );
 }
 
+function GroupedOptionRow({ result, selected = false, dimmed, width, category }: { result: SearchResult; selected?: boolean; dimmed?: boolean; width: number; category?: string }) {
+  const server = result.server;
+  const contentWidth = Math.max(24, width - 6);
+  const titleWidth = Math.max(14, contentWidth - 20);
+  const detailWidth = Math.max(10, contentWidth - 5);
+  const project = browseProject(server);
+  const detail = `${project}  ${server.registrySource}  ${(server.packageTypes[0] ?? server.remoteTypes[0] ?? "unknown")}`;
+  return (
+    <>
+      {category ? <Text color={MUTED} wrap="truncate">  category {truncate(category, Math.max(8, width - 15))}</Text> : null}
+      <Text wrap="truncate">
+        <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
+        <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
+        <Text color={CHROME}> </Text>
+        <TrustMeter score={result.trust.score} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
+      </Text>
+      <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
+        <Text color={CHROME}>    project </Text>
+        {truncate(detail, detailWidth)}
+      </Text>
+    </>
+  );
+}
+
 function OptionRow({ result, selected = false, dimmed, width }: { result: SearchResult; selected?: boolean; dimmed?: boolean; width: number }) {
   const server = result.server;
-  const runtime = server.packageTypes.join(",") || server.remoteTypes.join(",") || "none";
-  const titleWidth = width < 90 ? 26 : 34;
-  const nameWidth = width < 90 ? 26 : 36;
+  const contentWidth = Math.max(24, width - 6);
+  const titleWidth = Math.max(14, Math.min(36, Math.floor(contentWidth * 0.52)));
+  const meterWidth = Math.max(9, contentWidth - 2 - 9 - 1 - titleWidth - 1 - 5);
   return (
     <Text wrap="truncate">
-      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? ">" : ":"}</Text>
-      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}> {server.registrySource.padEnd(8)}  </Text>
-      <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title, titleWidth).padEnd(titleWidth + 2)}</Text>
+      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
+      <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{truncate(server.registrySource, 8).padEnd(8)} </Text>
+      <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
       <Text color={CHROME}> </Text>
-      <Text color={dimmed ? CHROME : MUTED}>{truncate(server.name, nameWidth)}</Text>
-      <Text color={CHROME}>  </Text>
-      <Text color={trustColor(result.trust.score)}>trust {result.trust.score}</Text>
-      <Text color={CHROME}>  </Text>
-      <Text color={dimmed ? CHROME : MUTED}>{runtime}</Text>
+      <TrustMeter score={result.trust.score} cells={meterWidth} />
+    </Text>
+  );
+}
+
+function browseCategory(server: NormalizedServer): string {
+  const sourceMeta = server.raw._meta?.["dev.toolpin/source"];
+  const category = sourceMeta && typeof sourceMeta === "object" && !Array.isArray(sourceMeta)
+    ? (sourceMeta as Record<string, unknown>).category
+    : undefined;
+  return typeof category === "string" && category.trim() ? category.trim() : "uncategorized";
+}
+
+function browseProject(server: NormalizedServer): string {
+  if (!server.repositoryUrl) return "no project declared";
+  try {
+    const url = new URL(server.repositoryUrl);
+    const parts = url.pathname.replace(/\.git$/, "").split("/").filter(Boolean);
+    return parts.length >= 2 ? parts.slice(-2).join("/") : server.repositoryUrl;
+  } catch {
+    return server.repositoryUrl;
+  }
+}
+
+function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: number; showScore?: boolean; cells?: number }) {
+  const cells = cellCount === 9
+    ? trustBarCells(score)
+    : {
+        filled: Math.max(0, Math.min(cellCount, Math.round((score / 100) * cellCount))),
+        empty: Math.max(0, cellCount - Math.max(0, Math.min(cellCount, Math.round((score / 100) * cellCount)))),
+      };
+  const color = trustColor(score);
+  return (
+    <Text>
+      <Text color={color}>{"▓".repeat(cells.filled)}</Text>
+      <Text color={CHROME}>{"░".repeat(cells.empty)}</Text>
+      {showScore ? <Text color={color}>{" " + `${score}%`.padStart(4)}</Text> : null}
     </Text>
   );
 }
@@ -197,8 +297,10 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   if (!result) return <EmptyPanel title="Overview" />;
   const server = selectedServer ?? result.server;
   const trust = result.trust;
+  const risk = riskTone(trust.score);
+  const deltas = scoreBreakdown(trust);
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="overview" file="server.json" />
       <Text bold color="white" wrap="truncate">{server.name}@{server.version}</Text>
       <Text color={MUTED} wrap="wrap">{server.description || "No description declared."}</Text>
@@ -212,21 +314,31 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         <>
           <Metric label="selected" value={versionInfo.selectedVersion} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} />
           <Metric label="latest" value={versionInfo.latestVersion} valueColor={versionInfo.status === "update available" ? WARN : OK} />
-          <Metric label="locked" value={`${versionInfo.lockedLabel} (${versionInfo.status})`} valueColor={versionInfo.status === "update available" ? WARN : versionInfo.status === "current" ? OK : MUTED} />
+          <Metric label="locked" value={`${versionInfo.lockedLabel} (${versionInfo.status})`} valueColor={lockStatusColor(versionInfo.status)} />
           {versionInfo.versions.length > 1 ? <Metric label="versions" value={formatVersionChoices(versionInfo, 6)} /> : null}
         </>
       ) : null}
-      <Text>
-        <Text color={MUTED}>trust       </Text>
-        <Text color={trustColor(trust.score)}>{trust.score}</Text>
-        <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>{trust.badges.join(", ") || "no badges"}</Text>
-      </Text>
-      {trust.issues.slice(0, 4).map((issue) => (
-        <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
-          {issue.severity}: {truncate(issue.message, width - 12)}
+      <Metric label="badges" value={trust.badges.join(", ") || "no badges"} />
+      <Divider width={width} />
+      <Box flexDirection="column">
+        <Text>
+          <Text color={MUTED}>trust       </Text>
+          <Text color={trustColor(trust.score)}>{trust.score}%</Text>
+          <Text color={CHROME}>  </Text>
+          <TrustMeter score={trust.score} showScore={false} />
+          <Text color={CHROME}>  </Text>
+          <Text color={MUTED}>{risk.label}</Text>
         </Text>
-      ))}
+        <Text color={MUTED} wrap="truncate">
+          breakdown  {deltas.map((delta) => delta.label).join("  ")}
+        </Text>
+        {trust.issues.slice(0, 4).map((issue) => (
+          <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
+            {issue.severity}: {truncate(issue.message, width - 12)}
+          </Text>
+        ))}
+      </Box>
+      <Divider width={width} />
       <Spacer />
       <Text>
         <Text color={MUTED}>test        </Text>
@@ -247,7 +359,7 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
   const content = safeJson(() => buildInstallPlan(server, planClient));
   if ("error" in asObject(content)) {
     return (
-      <Box flexDirection="column" borderStyle="single" borderColor={ERR} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+      <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
         <ModalTitle title="install" file="plan" />
         <Text color={ERR}>{String(asObject(content).error)}</Text>
       </Box>
@@ -263,11 +375,11 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
   const clientLabel = installClientLabel(client, targetClients);
 
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="install" file="plan" />
       <Box justifyContent="space-between">
         <Text color={MUTED}>target <Text color="white">{clientLabel}</Text>  <Text color="white">{scopeLabel(installScope)}</Text></Text>
-        <Text color={MUTED}>I install  w lock</Text>
+        <Text color={MUTED}>i install  w lock</Text>
       </Box>
       <Spacer />
       <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
@@ -292,7 +404,7 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
   if (!server) return <EmptyPanel title="Config" />;
   if (client === "all") {
     return (
-      <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+      <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
         <ModalTitle title="config" file="targets" />
         <Text color={MUTED}>client <Text color="white">all</Text>  scope <Text color="white">{installScope}</Text></Text>
         <Spacer />
@@ -311,35 +423,50 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
     ? "json"
     : (formatted as ReturnType<typeof formatClientConfigSnippet>).extension;
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="config" file={`${client}.${extension}`} />
       <Text color={MUTED}>client <Text color="white">{client}</Text>  scope <Text color="white">{installScope}</Text>  target <Text color="white">{configTargetLabel(client, installScope)}</Text></Text>
-      <Text color={MUTED}>I install  s save</Text>
+      <Text color={MUTED}>i install  s save</Text>
       <CodeBlock content={content} width={width} maxLines={16} />
     </Box>
   );
 }
 
-export function HelpView({ width }: { width: number }) {
-  const lines: Array<[string, string]> = [
-    ["what", "trusted install, lockfile, and governance for MCP servers; not a host"],
-    ["sources", `enabled: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}; cache .toolpin/registry-cache.json`],
-    ["results", "50 shown first; m/+ adds more up to 500; i refreshes; g filters source"],
-    ["installed", "Installed tab shows registry match, test source, update/adopt actions, delete, and doctor"],
-    ["score", "0-100 advisory trust from source, hashes, transport, secrets, and scans"],
-    ["test", "t runs initialize + tools/list; tokens, APIs, or local services may be needed"],
-    ["install", "I writes project-folder or global/current-user config; all writes all clients"],
-    ["lock", "mcp-lock.json pins target/config/trust; ci catches drift; digest/signature pin it"],
-    ["versions", "Overview/Install show locked vs latest; toolpin versions lists older releases"],
-    ["keys", "/ search, j/k move, c/G client+scope, t/I test+install, u update/adopt installed, : commands"],
-    ["files", "w lock, s save snippets, x remove config+lock, R reset, q quit"],
+export function HelpView({ width, height }: { width: number; height: number }) {
+  const lines: Array<[string, string, string]> = [
+    ["Browse", "/", "Edit the search text. Press Esc while searching to clear it."],
+    ["Browse", "j/k", "Move through the current server list."],
+    ["Browse", "f", "Change list layout: flat, grouped by project, or grouped by category when categories exist."],
+    ["Browse", "m / +", "Show more results, up to the maximum cached set."],
+    ["Browse", "r", "Refresh the current registry data."],
+    ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
+    ["Review", "Enter", "Open the install plan for the selected server."],
+    ["Review", "t", "Test the selected server with initialize and tools/list."],
+    ["Review", "v / V", "Cycle selected server version."],
+    ["Install", "i", "Open the install wizard; choose version when available, then folder/global and client."],
+    ["Install", "w", "Write only the lockfile entry for the selected server."],
+    ["Config", "s", "Save the shown client config snippet under .toolpin/ for manual review."],
+    ["Installed", "u", "Resolve the installed entry in the registry, make it registry-backed, and write/update mcp-lock.json."],
+    ["Installed", "U", "Update all locked installed entries; unlocked adoptable entries are reported separately."],
+    ["Installed", "x", "Open a Yes/No confirmation before removing the selected config and lock entry."],
+    ["Installed", "d", "Run doctor against installed config and mcp-lock.json."],
+    ["Global", "c / G", "Cycle target client and project/global install scope."],
+    ["Global", ":", "Open the command palette."],
+    ["Global", "R", "Reset search, source, result count, client, and scope."],
+    ["Global", "q", "Quit ToolPin."],
   ];
   const lineWidth = Math.max(24, width - 8);
+  const visibleLines = Math.max(1, height - 4);
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
-      {lines.map(([label, description]) => (
-        <Text key={label} color={MUTED} wrap="truncate">
-          {truncate(`${label.padEnd(8)} ${description}`, lineWidth).padEnd(lineWidth)}
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
+      <ModalTitle title="help" file="shortcuts" />
+      <Text color={MUTED} wrap="truncate">Keyboard shortcuts and what each action changes.</Text>
+      <Spacer />
+      {lines.slice(0, visibleLines).map(([section, keys, description]) => (
+        <Text key={`${section}:${keys}`} wrap="truncate">
+          <Text color={MUTED}>{section.padEnd(10)}</Text>
+          <Text bold color={OK}>{keys.padEnd(10)}</Text>
+          <Text color="white">{truncate(description, lineWidth - 20)}</Text>
         </Text>
       ))}
     </Box>
@@ -367,9 +494,9 @@ export function CommandPalette({
     return truncate(`${marker} ${command.id.padEnd(13)} ${command.label}${suffix}`, width - 4);
   }).join("\n");
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="commands" file="toolpin" />
-      <Text color={MUTED} wrap="truncate">Enter runs the selected CLI-equivalent command with the active server/client/source.</Text>
+      <Text color={MUTED} wrap="truncate">Enter runs the selected command; install opens the scope/client wizard.</Text>
       {commands.length === 0 ? <Text color={MUTED}>No command matched.</Text> : null}
       {commands.length > 0 ? <Text color="white">{commandRows}</Text> : null}
       {selectedCommand ? (
@@ -391,18 +518,116 @@ export function CommandPalette({
   );
 }
 
+export function InstallWizard({ flow, width, height }: { flow: InstallFlow; width: number; height: number }) {
+  const contentWidth = Math.max(24, width - 6);
+  const progress = installProgress(flow);
+  const versionStepEnabled = flow.versions.length > 1;
+  const totalSteps = versionStepEnabled ? 3 : 2;
+  const versionOptions = flow.versions.map((server, index) => ({
+    id: server.version,
+    label: server.version,
+    hint: index === 0 ? "latest version" : `older version from ${server.registrySource}`,
+  }));
+  const scopeOptions = [
+    { id: "project", label: "folder (project)", hint: "config in this folder" },
+    { id: "global", label: "global (user)", hint: "current-user config" },
+  ];
+  const clientOptions = installClientChoicesForScope(flow.scope ?? "project", flow.preferredClient).map((client) => ({
+    id: client,
+    label: client,
+    hint: client === "all" ? "every supported client for the chosen scope" : "",
+  }));
+  const options = flow.step === "version" ? versionOptions : flow.step === "scope" ? scopeOptions : clientOptions;
+  const scopeText = flow.scope === "global" ? "global/user" : "folder/project";
+  const stepLabel = flow.step === "version"
+    ? `Step 1 of ${totalSteps}: choose version`
+    : flow.step === "scope"
+    ? `Step ${versionStepEnabled ? 2 : 1} of ${totalSteps}: choose where to install`
+    : flow.step === "client"
+      ? `Step ${versionStepEnabled ? 3 : 2} of ${totalSteps}: choose client (${scopeText})`
+      : flow.step === "complete"
+        ? "Install complete"
+        : flow.step === "failed"
+          ? "Install failed"
+          : "Installing selected MCP server";
+  const visibleCount = Math.max(3, height - 10);
+  const start = listWindowStart(flow.selected, visibleCount, options.length);
+  const visible = options.slice(start, start + visibleCount);
+
+  return (
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height}>
+      <ModalTitle title="install" file={flow.server.name} />
+      <Text color={MUTED} wrap="truncate">{stepLabel}</Text>
+      {flow.step === "version" || flow.step === "scope" || flow.step === "client" ? (
+        <Text color={OK} wrap="truncate">Select an option, then press Enter to continue.</Text>
+      ) : null}
+      <Divider width={contentWidth} />
+      <ProgressBar percent={progress} width={contentWidth} tone={flow.step === "failed" ? ERR : progress === 100 ? OK : ACCENT} />
+      <Divider width={contentWidth} />
+      <Spacer />
+      {flow.step === "installing" ? (
+        <Text color={MUTED}>Writing config and mcp-lock.json...</Text>
+      ) : flow.step === "complete" ? (
+        <Text color={MUTED}>Press Enter or Esc to close.</Text>
+      ) : flow.step === "failed" ? (
+        <Text color={ERR}>Review the status message, then press Enter or Esc.</Text>
+      ) : visible.map((option, index) => {
+          const isSelected = start + index === flow.selected;
+          return (
+            <Text key={option.id} wrap="truncate">
+              <Text color={isSelected ? OK : CHROME}>{isSelected ? ">" : ":"}</Text>
+              <Text bold={isSelected} color={isSelected ? OK : "white"}> {option.label.padEnd(18)}</Text>
+              <Text color={isSelected ? OK : MUTED}>{truncate(option.hint, Math.max(0, contentWidth - 22))}</Text>
+            </Text>
+          );
+        })}
+      <Box flexGrow={1} />
+      <Text color={CHROME} wrap="truncate">  j/k or arrows move  Enter continue  Esc cancel</Text>
+    </Box>
+  );
+}
+
+function installProgress(flow: InstallFlow): number {
+  const hasVersionStep = flow.versions.length > 1;
+  if (flow.step === "version") return 0;
+  if (flow.step === "scope") return hasVersionStep ? 33 : 0;
+  if (flow.step === "client") return hasVersionStep ? 66 : 50;
+  if (flow.step === "installing") return 75;
+  if (flow.step === "complete") return 100;
+  return 100;
+}
+
+function ProgressBar({ percent, width, tone }: { percent: number; width: number; tone: string }) {
+  const barWidth = Math.max(6, Math.min(36, width - 10));
+  const filled = Math.max(0, Math.min(barWidth, Math.round((percent / 100) * barWidth)));
+  const empty = Math.max(0, barWidth - filled);
+  return (
+    <Box flexDirection="column" width={width}>
+      <Text wrap="truncate">
+        <Text color={MUTED}> 0% </Text>
+        <Text color={tone}>{"▓".repeat(filled)}</Text>
+        <Text color={CHROME}>{"░".repeat(empty)}</Text>
+        <Text color={MUTED}> 100%</Text>
+      </Text>
+      <Text color={tone} wrap="truncate">progress {percent}%</Text>
+    </Box>
+  );
+}
+
 export function ActivityStrip({ state, width }: { state: TuiState; width: number }) {
-  const active = state.installing || state.testing || state.loading;
+  const active = state.installing || state.testing || state.loading || state.checking;
   const log = commandLogForView(state);
   const color = state.error || log?.ok === false ? ERR : active ? WARN : log ? OK : MUTED;
   const label = active ? "working" : log ? log.title : "status";
   const activeMessage = state.loading
     ? "loading registry data..."
     : state.installing
-      ? "installing selected server..."
+      ? "installing reviewed server..."
       : state.testing
         ? "testing selected MCP server..."
-        : undefined;
+        : state.checking
+          ? "checking installed config drift..."
+          : undefined;
   const primary = activeMessage ?? log?.lines[0] ?? state.lastAction ?? "ready";
   const secondary = active ? log?.lines.slice(0, 2) ?? [] : log?.lines.slice(1, 3) ?? [];
 
@@ -414,7 +639,7 @@ export function ActivityStrip({ state, width }: { state: TuiState; width: number
       </Text>
       {secondary.map((line, index) => (
         <Text key={`${index}:${line}`} color={MUTED} wrap="truncate">
-          <Text color={CHROME}>         </Text>
+          <Text color={CHROME}>{" ".repeat(8)}</Text>
           {truncate(line, width - 11)}
         </Text>
       ))}
@@ -422,36 +647,172 @@ export function ActivityStrip({ state, width }: { state: TuiState; width: number
   );
 }
 
-export function Footer({ view, inputMode }: { view: View; inputMode: InputMode }) {
+export function OperationModal({ state, width, height }: { state: TuiState; width: number; height: number }) {
+  const active = state.installing || state.testing || state.checking;
+  const log = commandLogForView(state);
+  const candidate = buildOperationSnapshot({ active, log, state });
+  const [snapshot, setSnapshot] = React.useState<OperationSnapshot | undefined>(candidate);
+  const candidateKey = candidate?.key;
+
+  React.useEffect(() => {
+    if (state.installFlow || !candidate) {
+      setSnapshot(undefined);
+      return undefined;
+    }
+    setSnapshot(candidate);
+    if (candidate.active) return undefined;
+    const timer = setTimeout(() => {
+      setSnapshot((current) => current?.key === candidate.key ? undefined : current);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [candidateKey, state.installFlow]);
+
+  if (!snapshot || state.installFlow) return null;
+  const modalWidth = Math.min(Math.max(44, Math.floor(width * 0.44)), 86);
+  const lines = snapshot.lines.slice(0, 4);
+  const modalHeight = lines.length + 6;
+  const left = Math.max(0, Math.floor((width - modalWidth) / 2));
+  const top = Math.max(0, Math.floor((height - modalHeight) / 2));
+  const lineWidth = Math.max(8, modalWidth - 4);
+  return (
+    <Box position="absolute" left={left} top={top} width={modalWidth} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexDirection="column">
+      <Text bold color={BLUE} wrap="truncate">{truncate(snapshot.title, modalWidth - 4)}</Text>
+      <Box marginTop={1}>
+        <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
+      </Box>
+      <Spacer />
+      {lines.map((line, index) => (
+        <Text key={`${index}:${line}`} color={MUTED} wrap="truncate">
+          {truncate(line, modalWidth - 4)}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+export function DeleteConfirmModal({ state, width, height }: { state: TuiState; width: number; height: number }) {
+  const confirm = state.deleteConfirm;
+  if (!confirm) return null;
+  const modalWidth = Math.min(Math.max(54, Math.floor(width * 0.42)), 84);
+  const modalHeight = 12;
+  const left = Math.max(0, Math.floor((width - modalWidth) / 2));
+  const top = Math.max(0, Math.floor((height - modalHeight) / 2));
+  const lineWidth = Math.max(8, modalWidth - 4);
+  const selectedNo = confirm.selected === "no";
+  const selectedYes = confirm.selected === "yes";
+  return (
+    <Box position="absolute" left={left} top={top} width={modalWidth} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexDirection="column">
+      <Text bold color={BLUE}>delete installed server?</Text>
+      <Box marginTop={1}>
+        <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
+      </Box>
+      <Spacer />
+      <Text color={MUTED} wrap="wrap">
+        This will remove the client config entry and matching mcp-lock.json entry.
+      </Text>
+      <Text color="white" wrap="truncate">{truncate(confirm.serverName, modalWidth - 4)}</Text>
+      <Text color={MUTED} wrap="truncate">
+        {confirm.client} / {confirm.scope}
+      </Text>
+      <Spacer />
+      <Text>
+        <Text bold={selectedNo} color={selectedNo ? OK : MUTED}>{selectedNo ? "> " : "  "}No, keep it</Text>
+        <Text color={CHROME}>    </Text>
+        <Text bold={selectedYes} color={selectedYes ? ERR : MUTED}>{selectedYes ? "> " : "  "}Yes, delete</Text>
+      </Text>
+      <Spacer />
+      <Text color={CHROME}>Left/right or j/k choose  Enter confirm  y yes  n/Esc no</Text>
+    </Box>
+  );
+}
+
+interface OperationSnapshot {
+  key: string;
+  title: string;
+  lines: string[];
+  active: boolean;
+}
+
+function buildOperationSnapshot({ active, log, state }: { active: boolean; log?: CommandLog; state: TuiState }): OperationSnapshot | undefined {
+  if (!active && !log) return undefined;
+  if (!active && log && !isOperationLog(log.title)) return undefined;
+  const activeTitle = state.testing
+    ? "testing"
+    : state.checking
+      ? "checking"
+      : operationTitle(log?.title ?? "install");
+  const title = active ? activeTitle : operationTitle(log?.title ?? "operation");
+  const activeMessage = state.testing
+    ? "testing selected MCP server..."
+    : state.checking
+      ? "checking config and lock drift..."
+      : "installing or updating MCP server...";
+  const outcome = !active && log ? (log.ok ? "complete" : "failed") : undefined;
+  const lines = [
+    active ? activeMessage : outcome,
+    ...(log?.lines ?? []),
+  ].filter((line): line is string => Boolean(line));
+  const key = [
+    active ? "active" : "settled",
+    title,
+    log?.ok === false ? "error" : "ok",
+    log?.command ?? "",
+    lines.join("\u0000"),
+  ].join("\u0001");
+  return { key, title, lines, active };
+}
+
+function operationTitle(title: string): string {
+  if (title === "test") return "testing";
+  if (title === "install") return "installing";
+  if (title === "update") return "updating";
+  if (title === "adopt") return "adopting";
+  if (title === "doctor") return "checking";
+  return title;
+}
+
+function isOperationLog(title: string): boolean {
+  return ["install", "update", "adopt", "test", "doctor", "remove"].includes(title);
+}
+
+export function Footer({ view, inputMode, width }: { view: View; inputMode: InputMode; width: number }) {
   const hints = inputMode === "search"
     ? [["Enter", "apply"], ["Esc", "cancel"], ["Backspace", "edit"]]
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["m", "more"], ["i", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["m", "more"], ["i", "install"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["u", "update/adopt"], ["U", "update all"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
+        ? [["j/k", "move"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "details"
-        ? [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["I", "install"], ["q", "quit"]]
-        : [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["I", "install"], ["q", "quit"]];
+        ? [["Enter", "plan"], ["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["i", "install"], ["q", "quit"]]
+      : view === "plan"
+        ? [["Enter", "install"], ["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["i", "install"], ["q", "quit"]]
+        : [["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["i", "install"], ["q", "quit"]];
+  const copyright = "© 2026 Proofofwork Agency · https://github.com/proofofwork-agency/toolpin";
+  const copyrightWidth = Math.min(copyright.length, Math.max(0, width - 8));
+  const hintWidth = Math.max(10, width - copyrightWidth - 8);
   return (
-    <Box paddingX={2} marginTop={1} flexShrink={0}>
-      <Text wrap="truncate">
-        {hints.map(([keyName, label], index) => (
-          <React.Fragment key={keyName}>
-            {index > 0 ? <Text color={CHROME}>  |  </Text> : null}
-            <Text bold color="white">{keyName}</Text>
-            <Text color={MUTED}>:{label}</Text>
-          </React.Fragment>
-        ))}
-      </Text>
+    <Box paddingX={2} marginTop={1} flexShrink={0} justifyContent="space-between">
+      <Box width={hintWidth}>
+        <Text wrap="truncate">
+          {hints.map(([keyName, label], index) => (
+            <React.Fragment key={keyName}>
+              {index > 0 ? <Text color={CHROME}>  |  </Text> : null}
+              <Text bold color="white">{keyName}</Text>
+              <Text color={MUTED}>:{label}</Text>
+            </React.Fragment>
+          ))}
+        </Text>
+      </Box>
+      <Text color={CHROME} wrap="truncate">{truncate(copyright, copyrightWidth)}</Text>
     </Box>
   );
 }
 
 function EmptyPanel({ title }: { title: string }) {
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={MODAL_BORDER} backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title={title.toLowerCase()} file="empty" />
       <Text color={MUTED}>No server selected. Search and select a server first.</Text>
     </Box>
@@ -461,8 +822,7 @@ function EmptyPanel({ title }: { title: string }) {
 function ModalTitle({ title, file }: { title: string; file: string }) {
   return (
     <Box justifyContent="space-between">
-      <Text color={CHROME}>----------------</Text>
-      <Text bold color={ACCENT}> {title} </Text>
+      <Text bold color={ACCENT}>{title}</Text>
       <Text color={CHROME}>{file}</Text>
     </Box>
   );
@@ -503,6 +863,22 @@ function CodeBlock({ content, width, maxLines }: { content: string; width: numbe
 
 function Spacer() {
   return <Text> </Text>;
+}
+
+function Divider({ width }: { width: number }) {
+  const lineWidth = Math.max(8, width - 6);
+  return (
+    <Box marginTop={1}>
+      <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
+    </Box>
+  );
+}
+
+function lockStatusColor(status: TuiVersionInfo["status"]): string {
+  if (status === "current") return OK;
+  if (status === "not locked") return ERR;
+  if (status === "update available" || status === "ahead of registry") return WARN;
+  return MUTED;
 }
 
 function trustColor(score: number): string {

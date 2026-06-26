@@ -22,13 +22,14 @@ toolpin registry list [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
 toolpin info <server-name> [--source official|docker|all|custom-id] [--json] [--live]
 toolpin audit <server-name> [--source official|docker|all|custom-id] [--live]
+toolpin scan <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
 toolpin test <server-name> [--source official|docker|all|custom-id] [--live] [--timeout 15000]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
 toolpin plan <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
@@ -39,8 +40,11 @@ toolpin update --all [--scope all|project|global] [--client <client|all>] [--sou
 toolpin export-config <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
 ```
 
-`verify` checks registry metadata and optional live MCP tool metadata. It does
-not perform byte-level OCI image or MCPB bundle verification.
+`scan` runs advisory description checks against registry metadata and, with
+`--live`, the returned `tools/list` descriptions when the probe succeeds.
+Findings do not make `scan` fail. `verify` checks registry metadata and optional
+live MCP tool metadata. It does not perform byte-level OCI image or MCPB bundle
+verification.
 
 `test-installed` reads the installed client config entry and performs the MCP
 handshake against that target directly. `adopt` is the explicit unlocked-alias
@@ -66,13 +70,14 @@ toolpin lock <server-name> --client <client|all> [--source official|docker|all|c
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
 selected policy unless `--no-policy` is used, and exits non-zero on drift. It
-does not update `mcp-lock.json`.
+does not update `mcp-lock.json`. `scan`, `verify`, and `ci` support SARIF 2.1.0
+output with `--sarif`.
 
 ## Secret hygiene and TUI
 
