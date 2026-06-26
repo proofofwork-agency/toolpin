@@ -172,6 +172,15 @@ export interface TrustGate {
   tier: "unverified" | "blocked";
 }
 
+export type TrustEvidenceStatus = "passed" | "declared" | "failed" | "unavailable";
+
+export interface TrustEvidence {
+  code: string;
+  status: TrustEvidenceStatus;
+  message: string;
+  required?: boolean;
+}
+
 export interface TrustReport {
   score: number;
   overallScore?: number;
@@ -186,6 +195,8 @@ export interface TrustReport {
     reputation: number;
     metadataCompleteness: number;
   };
+  gatedBy?: string[];
+  evidence?: TrustEvidence[];
   badges: string[];
   issues: TrustIssue[];
 }

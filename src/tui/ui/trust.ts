@@ -11,17 +11,25 @@ export function trustBand(score: number): TrustBand {
 
 export function riskTone(score: number): { label: string; band: TrustBand } {
   const band = trustBand(score);
-  if (band === "high") return { label: "LOW RISK", band };
+  if (band === "high") return { label: "COMPLETE", band };
   if (band === "medium") return { label: "REVIEW", band };
-  return { label: "ELEVATED RISK", band };
+  return { label: "INCOMPLETE", band };
 }
 
-export function trustRiskTone(report: Pick<TrustReport, "score" | "issues" | "tier">): { label: string; band: TrustBand; tier: TrustTier } {
+export function trustRiskTone(report: Pick<TrustReport, "score" | "issues" | "tier" | "evidence">): { label: string; band: TrustBand; tier: TrustTier } {
   const tier = trustTier(report);
-  if (tier === "verified") return { label: "VERIFIED", band: "high", tier };
+  if (tier === "verified") return { label: "EVIDENCE OK", band: "high", tier };
   if (tier === "conditional") return { label: "REVIEW", band: "medium", tier };
   if (tier === "unverified") return { label: "UNVERIFIED", band: "low", tier };
   return { label: "BLOCKED", band: "low", tier };
+}
+
+export function trustTierScore(report: Pick<TrustReport, "score" | "issues" | "tier" | "evidence">): number {
+  const tier = trustTier(report);
+  if (tier === "verified") return 100;
+  if (tier === "conditional") return 67;
+  if (tier === "unverified") return 34;
+  return 0;
 }
 
 export const TRUST_BAR_CELLS = 9;
@@ -37,7 +45,9 @@ export interface TrustDimension {
   tone: TrustBand;
 }
 
-export function trustDimensions(report: Pick<TrustReport, "score" | "badges" | "issues" | "tier" | "gates" | "pillars" | "metadataCompleteness">): TrustDimension[] {
+export function trustDimensions(
+  report: Pick<TrustReport, "score" | "badges" | "issues" | "tier" | "gates" | "gatedBy" | "pillars" | "metadataCompleteness" | "evidence">,
+): TrustDimension[] {
   if (report.pillars) {
     return [
       dimension("provenance", report.pillars.provenance),
@@ -47,13 +57,18 @@ export function trustDimensions(report: Pick<TrustReport, "score" | "badges" | "
     ];
   }
 
-  const gates = report.gates ?? classifyTrust(report.score, report.issues).gates;
+  const classified = classifyTrust(report.score, report.issues, report.evidence);
+  const gates = report.gates ?? classified.gates;
+  const gatedBy = report.gatedBy ?? classified.gatedBy;
   const hasRepo = report.badges.includes("source repo");
   const hasDeclaredAttestation = report.badges.some((badge) => badge.endsWith("-declared"));
   const hasCapabilityPin = report.badges.includes("capability-pinned");
-  const integrityBlocked = gates.some((gate) => ["no_install_target", "insecure_remote", "invalid_remote_url"].includes(gate.code));
-  const integrityUnverified = gates.length > 0;
-  const hasIntegritySignal = report.badges.some((badge) => ["digest-pinned", "fileSha256", "https remote", "pinned version"].includes(badge));
+  const hasPassedEvidence = (report.evidence ?? []).some((entry) => entry.status === "passed");
+  const hasFailedEvidence = (report.evidence ?? []).some((entry) => entry.status === "failed");
+  const integrityBlocked = gates.some((gate) => ["no_install_target", "insecure_remote", "invalid_remote_url"].includes(gate.code))
+    || gatedBy.some((code) => ["no_install_target", "insecure_remote", "invalid_remote_url"].includes(code));
+  const integrityUnverified = gates.length > 0 || gatedBy.length > 0 || hasFailedEvidence;
+  const hasIntegritySignal = hasPassedEvidence || report.badges.some((badge) => ["digest-pinned", "fileSha256", "https remote", "pinned version"].includes(badge));
   const provenanceScore = hasRepo ? (hasCapabilityPin || hasDeclaredAttestation ? 100 : 80) : 30;
   const integrityScore = integrityBlocked ? 0 : integrityUnverified ? 25 : hasIntegritySignal ? 85 : 50;
   const reputationScore = report.badges.includes("description-scan-advisory") ? 45 : 60;

@@ -10,6 +10,7 @@ test("verifyServer accepts digest-pinned OCI packages", async () => {
   assert.equal(report.ok, true);
   assert.equal(report.issues.some((issue) => issue.code === "mutable_oci_tag"), false);
   assert.ok(report.badges.includes("digest-pinned"));
+  assert.ok(report.evidence.some((entry) => entry.code === "digest_present" && entry.status === "passed"));
 });
 
 test("verifyServer rejects mutable OCI packages", async () => {
@@ -17,6 +18,7 @@ test("verifyServer rejects mutable OCI packages", async () => {
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "mutable_oci_tag"));
+  assert.ok(report.evidence.some((entry) => entry.code === "digest_present" && entry.status === "failed"));
 });
 
 test("verifyServer rejects MCPB packages without fileSha256", async () => {
@@ -24,6 +26,7 @@ test("verifyServer rejects MCPB packages without fileSha256", async () => {
 
   assert.equal(report.ok, false);
   assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "missing_mcpb_hash"));
+  assert.ok(report.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "failed"));
 });
 
 test("verifyServer accepts MCPB packages with fileSha256", async () => {
@@ -32,6 +35,7 @@ test("verifyServer accepts MCPB packages with fileSha256", async () => {
   assert.equal(report.ok, true);
   assert.equal(report.issues.some((issue) => issue.code === "missing_mcpb_hash"), false);
   assert.ok(report.badges.includes("fileSha256"));
+  assert.ok(report.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "passed"));
 });
 
 test("remote probe skip is warning-only", async () => {
@@ -39,6 +43,7 @@ test("remote probe skip is warning-only", async () => {
 
   assert.equal(report.ok, true);
   assert.ok(report.issues.some((issue) => issue.severity === "warning" && issue.code === "remote_probe_skipped"));
+  assert.ok(report.evidence.some((entry) => entry.code === "tool_description_hash" && entry.status === "unavailable"));
 });
 
 test("tool-description hash is stable across order and generatedAt", () => {
@@ -72,6 +77,8 @@ test("attestation metadata is declared, not verified", async () => {
 
   assert.ok(verification.badges.includes("sigstore-declared"));
   assert.ok(trust.badges.includes("sigstore-declared"));
+  assert.ok(verification.evidence.some((entry) => entry.code === "attestation_declared" && entry.status === "declared"));
+  assert.ok(trust.evidence.some((entry) => entry.code === "attestation_declared" && entry.status === "declared"));
   assert.equal(verification.badges.some((badge) => badge.includes("verified")), false);
   assert.equal(trust.badges.some((badge) => badge.includes("verified")), false);
 });

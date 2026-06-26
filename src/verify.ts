@@ -2,7 +2,8 @@ import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
-import type { Attestation, CapabilityManifest, NormalizedServer, TrustIssue } from "./types.js";
+import { scoreServer } from "./trust.js";
+import type { Attestation, CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue } from "./types.js";
 
 export interface VerificationOptions {
   liveRemoteProbe?: boolean;
@@ -16,12 +17,14 @@ export interface VerificationReport {
   capabilityManifest: CapabilityManifest;
   attestations: Attestation[];
   badges: string[];
+  evidence: TrustEvidence[];
   issues: TrustIssue[];
 }
 
 export async function verifyServer(server: NormalizedServer, options: VerificationOptions = {}): Promise<VerificationReport> {
   const issues: TrustIssue[] = [];
   const badges: string[] = [];
+  const evidence: TrustEvidence[] = [...(scoreServer(server).evidence ?? [])];
   const attestations = readAttestations(server);
   const declaredCapabilityManifest = readCapabilityManifest(server);
   const launch = selectLaunchTarget(server);
@@ -57,7 +60,13 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
         const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
         capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
         capabilityManifest.toolManifestHash = toolManifestHash;
+        badges.push("tool-description-pinned");
         badges.push("tool-manifest-pinned");
+        evidence.push({
+          code: "tool_description_hash",
+          status: "passed",
+          message: "Live tools/list descriptions were hashed into the capability manifest.",
+        });
         if (toolDescriptionScan.findings.length) {
           badges.push("tool-description-scan-advisory");
           issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));
@@ -68,12 +77,23 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
           code: "remote_probe_failed",
           message: `Remote capability verification failed: ${result.message}`,
         });
+        evidence.push({
+          code: "tool_description_hash",
+          status: "failed",
+          message: `Remote tools/list descriptions were not hashed: ${result.message}`,
+          required: true,
+        });
       }
     } else {
       issues.push({
         severity: "warning",
         code: "remote_probe_skipped",
         message: "Remote tool-description hashing was skipped; capability pin is metadata-only.",
+      });
+      evidence.push({
+        code: "tool_description_hash",
+        status: "unavailable",
+        message: "Remote tools/list hashing was skipped.",
       });
     }
   }
@@ -86,6 +106,7 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     capabilityManifest,
     attestations,
     badges: [...new Set(badges)],
+    evidence: dedupeEvidence(evidence),
     issues,
   };
 }
@@ -114,4 +135,13 @@ function verifyPackagePins(pkg: { registryType: string; identifier: string; file
       });
     }
   }
+}
+
+function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
+  const byKey = new Map<string, TrustEvidence>();
+  for (const entry of evidence) {
+    const key = `${entry.code}:${entry.status}:${entry.message}`;
+    if (!byKey.has(key)) byKey.set(key, entry);
+  }
+  return [...byKey.values()];
 }

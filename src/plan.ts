@@ -4,8 +4,8 @@ import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.j
 import { canonicalJson } from "./canonicalJson.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import type { InstallScope } from "./install.js";
-import { scoreServer, trustTier } from "./trust.js";
-import type { CapabilityManifest, NormalizedServer, TrustIssue, TrustReport, TrustTier } from "./types.js";
+import { classifyTrust, scoreServer, trustTier } from "./trust.js";
+import type { CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue, TrustReport, TrustTier } from "./types.js";
 
 export const LOCKFILE_VERSION = 2;
 
@@ -271,6 +271,9 @@ function parseInstallPlan(value: unknown, key: string): InstallPlan {
 function parseTrust(value: unknown, key: string): TrustReport {
   if (!isRecord(value)) throw new Error(`Invalid lockfile entry ${key}: invalid trust`);
   if (typeof value.score !== "number" || !Number.isFinite(value.score)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.score`);
+  if (value.tier !== undefined && !isTrustTier(value.tier)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.tier`);
+  if (value.gatedBy !== undefined && (!Array.isArray(value.gatedBy) || !value.gatedBy.every((code) => typeof code === "string"))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.gatedBy`);
+  if (value.evidence !== undefined && !Array.isArray(value.evidence)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence`);
   if (!Array.isArray(value.badges) || !value.badges.every((badge) => typeof badge === "string")) throw new Error(`Invalid lockfile entry ${key}: invalid trust.badges`);
   if (!Array.isArray(value.issues)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues`);
   if (value.tier !== undefined && !isTrustTier(value.tier)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.tier`);
@@ -290,10 +293,16 @@ function parseTrust(value: unknown, key: string): TrustReport {
     ...(Array.isArray(value.gates) ? { gates: value.gates } : {}),
     ...(Array.isArray(value.vetoes) ? { vetoes: value.vetoes } : {}),
     ...(isTrustPillars(value.pillars) ? { pillars: value.pillars } : {}),
+    ...(Array.isArray(value.gatedBy) ? { gatedBy: value.gatedBy } : {}),
+    ...(Array.isArray(value.evidence) ? { evidence: value.evidence.map((entry, index) => parseTrustEvidence(entry, key, index)) } : {}),
     badges: value.badges,
     issues: value.issues.map((issue, index) => parseTrustIssue(issue, key, index)),
   };
   return trust;
+}
+
+function isTrustTier(value: unknown): value is TrustTier {
+  return value === "verified" || value === "conditional" || value === "unverified" || value === "blocked";
 }
 
 function parseTrustIssue(value: unknown, key: string, index: number): TrustIssue {
@@ -309,10 +318,6 @@ function parseTrustIssue(value: unknown, key: string, index: number): TrustIssue
   };
 }
 
-function isTrustTier(value: unknown): value is TrustTier {
-  return value === "verified" || value === "conditional" || value === "unverified" || value === "blocked";
-}
-
 function isTrustGate(value: unknown): value is NonNullable<TrustReport["gates"]>[number] {
   if (!isRecord(value)) return false;
   return typeof value.code === "string"
@@ -326,6 +331,21 @@ function isTrustPillars(value: unknown): value is NonNullable<TrustReport["pilla
     && typeof value.integrity === "number" && Number.isFinite(value.integrity)
     && typeof value.reputation === "number" && Number.isFinite(value.reputation)
     && typeof value.metadataCompleteness === "number" && Number.isFinite(value.metadataCompleteness);
+}
+
+function parseTrustEvidence(value: unknown, key: string, index: number): TrustEvidence {
+  if (!isRecord(value)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}]`);
+  const status = value.status;
+  if (status !== "passed" && status !== "declared" && status !== "failed" && status !== "unavailable") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].status`);
+  if (typeof value.code !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].code`);
+  if (typeof value.message !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].message`);
+  if (value.required !== undefined && typeof value.required !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].required`);
+  return {
+    code: value.code,
+    status,
+    message: value.message,
+    ...(typeof value.required === "boolean" ? { required: value.required } : {}),
+  };
 }
 
 function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
@@ -371,9 +391,11 @@ export function computePlanIntegrity(plan: InstallPlan): string {
 }
 
 function finalizeLockEntry(plan: InstallPlan, lockedAt: string): InstallPlan {
+  const trust = withLockIntegrityEvidence(plan.trust);
   const next: InstallPlan = {
     ...plan,
     scope: plan.scope ?? "project",
+    trust,
     resolvedAt: plan.resolvedAt ?? lockedAt,
     lockedAt,
     resolved: plan.resolved ?? {
@@ -393,6 +415,34 @@ function finalizeLockEntry(plan: InstallPlan, lockedAt: string): InstallPlan {
     },
   };
   return { ...next, integrity: computePlanIntegrity(next) };
+}
+
+function withLockIntegrityEvidence(report: TrustReport): TrustReport {
+  const evidence: TrustEvidence[] = [
+    ...(report.evidence ?? []),
+    {
+      code: "lock_integrity",
+      status: "passed",
+      message: "Lock entry integrity digest is computed over the reviewed install plan.",
+    },
+  ];
+  const uniqueEvidence = dedupeTrustEvidence(evidence);
+  const gated = classifyTrust(report.score, report.issues, uniqueEvidence);
+  return {
+    ...report,
+    tier: gated.tier,
+    gatedBy: gated.gatedBy,
+    evidence: uniqueEvidence,
+  };
+}
+
+function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
+  const byKey = new Map<string, TrustEvidence>();
+  for (const entry of evidence) {
+    const key = `${entry.code}:${entry.status}:${entry.message}`;
+    if (!byKey.has(key)) byKey.set(key, entry);
+  }
+  return [...byKey.values()];
 }
 
 function integrityPayload(plan: InstallPlan): unknown {
