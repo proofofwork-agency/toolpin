@@ -42,7 +42,7 @@ export function InstalledServersView({
         <Box flexDirection="column" marginTop={1}>
           <Text color={CHROME}>{"-".repeat(Math.max(0, width - 6))}</Text>
           <Text color={CHROME} wrap="truncate">
-            {"  "}selected {selected + 1} of {rows.length}  u registry+lock  U update locked  x delete  t test-installed  d doctor  g scope
+            {"  "}selected {selected + 1} of {rows.length}  u registry+lock  v/V version  U update locked  x delete  t test-installed  d doctor  g scope
           </Text>
         </Box>
       ) : null}
@@ -50,7 +50,7 @@ export function InstalledServersView({
   );
 }
 
-export function InstalledServerDetails({ row, width }: { row?: InstalledServerState; width: number }) {
+export function InstalledServerDetails({ row, width, selectedVersion, selectedTarget }: { row?: InstalledServerState; width: number; selectedVersion?: string; selectedTarget?: InstalledServerState["updateServer"] }) {
   if (!row) {
     return (
       <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
@@ -70,9 +70,9 @@ export function InstalledServerDetails({ row, width }: { row?: InstalledServerSt
       <Metric label="runtime" value={row.runningStatus} color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED} />
       <Metric label="match" value={matchText(row)} color={row.registryMatch ? OK : MUTED} />
       <Metric label="actions" value={actionText(row)} color={row.canUpdate ? WARN : MUTED} />
-      {row.lifecycleAction !== "none" ? <Metric label="u action" value={lifecycleExplanation(row)} color={WARN} /> : null}
+      {row.lifecycleAction !== "none" || selectedVersion ? <Metric label="u action" value={lifecycleExplanation(row, selectedVersion)} color={WARN} /> : null}
       <Metric label="test target" value={row.testSource === "config" ? `installed config: ${shortPath(row.file)}` : row.testSource} color={row.canTest ? OK : MUTED} />
-      {row.updateServer ? <Metric label="target" value={`${row.updateServer.name}@${row.updateServer.version}`} color={row.lifecycleAction === "none" ? MUTED : WARN} /> : null}
+      {selectedTarget ? <Metric label={selectedVersion ? "selected" : "target"} value={`${selectedTarget.name}@${selectedTarget.version}${selectedVersion ? " (press u to apply)" : ""}`} color={row.lifecycleAction === "none" && !selectedVersion ? MUTED : WARN} /> : null}
       {row.issue ? <Text color={WARN} wrap="truncate">drift       {truncate(row.issue, width - 18)}</Text> : null}
       {row.testResult ? (
         <>
@@ -138,7 +138,8 @@ function actionText(row: InstalledServerState): string {
   return actions.join(", ") || "none";
 }
 
-function lifecycleExplanation(row: InstalledServerState): string {
+function lifecycleExplanation(row: InstalledServerState, selectedVersion?: string): string {
+  if (selectedVersion) return "rewrite installed config and mcp-lock.json for selected version";
   if (row.lifecycleAction === "adopt") return "find registry match, replace alias if needed, write mcp-lock.json";
   if (row.lifecycleAction === "update") return "resolve locked server in registry, update config, update mcp-lock.json";
   return "none";

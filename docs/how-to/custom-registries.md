@@ -118,6 +118,6 @@ Open the `Installed` tab to inspect servers already written to supported config 
 - locked and latest known versions
 - lifecycle action: `action:update`, `action:adopt`, or `action:none`
 - test source: `test:config` when ToolPin can test the installed client config
-- delete, update/adopt, doctor, and `test-installed` actions
+- delete, update/adopt, explicit version relock, doctor, and `test-installed` actions
 
 Runtime status is advisory. ToolPin can mark a server `reachable` after `t` succeeds and `stale` when lock/config or version drift is detected. It does not claim process monitoring unless ToolPin owns the runtime or can query a client/gateway API.

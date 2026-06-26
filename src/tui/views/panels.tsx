@@ -557,6 +557,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Install", "w", "Write only the lockfile entry for the selected server."],
     ["Config", "s", "Save the shown client config snippet under .toolpin/ for manual review."],
     ["Installed", "u", "Resolve the installed entry in the registry, make it registry-backed, and write/update mcp-lock.json."],
+    ["Installed", "v / V", "Cycle the selected locked install target version; press u to rewrite config and lockfile for that explicit version."],
     ["Installed", "U", "Update all locked installed entries; unlocked adoptable entries are reported separately."],
     ["Installed", "x", "Open a Yes/No confirmation before removing the selected config and lock entry."],
     ["Installed", "d", "Run doctor against installed config and mcp-lock.json."],
@@ -931,7 +932,7 @@ export function Footer({ view, inputMode, width }: { view: View; inputMode: Inpu
     : view === "discover"
       ? [["/", "search"], ["f", "layout"], ["g", "source"], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["I", "refresh list"], ["S", "sources"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
+        ? [["j/k", "move"], ["I", "refresh list"], ["S", "sources"], ["u", "registry+lock"], ["v/V", "version"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "sources"
         ? [["Esc", "browse"], ["g", "source"], ["l", "cache/live"], ["r", "refresh"], ["1", "browse"], ["2", "installed"], ["q", "quit"]]
       : view === "details"

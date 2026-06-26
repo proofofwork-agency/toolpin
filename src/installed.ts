@@ -47,6 +47,7 @@ export interface InstalledLifecycleOptions {
   source?: string;
   live?: boolean;
   lockfilePath?: string;
+  version?: string;
   verify?: boolean;
   timeoutMs?: number;
   policyPath?: string;
@@ -192,11 +193,17 @@ export async function updateInstalledServer(options: InstalledLifecycleOptions &
   const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
   const row = await getInstalledLifecycleRow(options.serverName, options.client, options.scope, options.servers, lockfilePath);
   if (!row.locked) throw new Error(`${row.serverName} is not locked for ${row.client}; use \`toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}\` if you want to lock a registry match.`);
-  if (row.lifecycleAction !== "update" || !row.updateServer) {
+  if (row.registryCandidates?.length) {
+    throw new Error(`Ambiguous registry alias match for ${row.serverName}: ${row.registryCandidates.join(", ")}`);
+  }
+  const targetServer = options.version
+    ? resolveInstalledRegistryVersion(options.servers, row, options.version)
+    : row.updateServer;
+  if (!targetServer) {
     throw new Error(`No locked update is available for ${row.serverName}.`);
   }
 
-  return mutateInstalledRow(row, row.updateServer, "update", options);
+  return mutateInstalledRow(row, targetServer, "update", options);
 }
 
 export async function updateAllInstalledServers(options: InstalledLifecycleOptions & {
@@ -416,6 +423,17 @@ function resolveInstalledRegistryMatch(
     currentServer,
     updateServer,
   };
+}
+
+function resolveInstalledRegistryVersion(servers: NormalizedServer[], row: InstalledServerState, version: string): NormalizedServer {
+  const pool = matchingServers(servers, row.serverName)
+    .filter((server) => !row.updateServer || server.name === row.updateServer.name);
+  const server = pool.find((candidate) => candidate.version === version);
+  if (!server) {
+    const known = pool.map((candidate) => candidate.version).filter(Boolean).join(", ");
+    throw new Error(`No installable registry version ${version} found for ${row.serverName}.${known ? ` Known versions: ${known}.` : ""}`);
+  }
+  return server;
 }
 
 function findLockedPlan(lockfile: Lockfile | undefined, serverName: string, client: ClientName): InstallPlan | undefined {

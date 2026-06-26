@@ -706,7 +706,7 @@ async function adoptInstalled(rest: string[]): Promise<void> {
 
 async function updateInstalled(rest: string[]): Promise<void> {
   if (isHelp(rest)) {
-    console.log(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+    console.log(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--version <server-version>] [--source all] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
        toolpin update --all [--scope all|project|global] [--client <client|all>] [--source all] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
     return;
   }
@@ -731,7 +731,7 @@ async function updateInstalled(rest: string[]): Promise<void> {
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source all] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
+  if (!name) throw new Error(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--version <server-version>] [--source all] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
 
   const client = clientFlag(rest, "generic");
   if (client === "all") throw new Error("update <server-name> requires one --client value, not all.");
@@ -742,6 +742,7 @@ async function updateInstalled(rest: string[]): Promise<void> {
     client,
     scope,
     servers,
+    version: stringFlag(rest, "--version", ""),
     lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
     verify: hasFlag(rest, "--verify"),
     timeoutMs: numberFlag(rest, "--timeout", 15000),
@@ -1071,7 +1072,7 @@ Install and config
   toolpin plan <server> --client|-c <client> [--version <server-version>] [--live]
   toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
   toolpin adopt <installed> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
-  toolpin update <server> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
+  toolpin update <server> --client|-c <client> --scope|-s project|global [--version <server-version>] [--dry-run] [--json]
   toolpin update --all [--scope|-s all|project|global] [--client|-c <client|all>] [--dry-run] [--json]
   toolpin remove <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
   toolpin uninstall <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]

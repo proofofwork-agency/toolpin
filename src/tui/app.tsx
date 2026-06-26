@@ -74,6 +74,7 @@ export function MpmTui() {
     commandSelected: 0,
     selected: 0,
     versionSelections: {},
+    installedVersionSelections: {},
     view: "discover",
     inputMode: "normal",
     dataMode: "cache",
@@ -133,6 +134,10 @@ export function MpmTui() {
   const selectedCommandIndex = clamp(state.commandSelected, 0, Math.max(0, commandResults.length - 1));
   const selectedCommand = commandResults[selectedCommandIndex];
   const selectedInstalled = installed.rows[installed.selected];
+  const selectedInstalledTargetVersion = selectedInstalled ? state.installedVersionSelections[selectedInstalled.id] : undefined;
+  const selectedInstalledTarget = selectedInstalled
+    ? installedTargetServer(selectedInstalled, selectedInstalledTargetVersion)
+    : undefined;
 
   async function loadData(mode: DataMode, query = state.query, sourceMode = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined, dataMode: mode }));
@@ -549,7 +554,10 @@ export function MpmTui() {
 
   async function updateInstalled(row: InstalledServerState | undefined): Promise<void> {
     if (!row) return;
-    if (!row.canUpdate || !row.updateServer || row.lifecycleAction === "none") {
+    const targetVersion = state.installedVersionSelections[row.id];
+    const updateServer = installedTargetServer(row, targetVersion);
+    const hasExplicitTarget = Boolean(targetVersion && updateServer);
+    if ((!row.canUpdate && !hasExplicitTarget) || !updateServer || (row.lifecycleAction === "none" && !hasExplicitTarget)) {
       const lines = row.locked
         ? [
             `${row.serverName} is already registry-backed and locked for ${row.client}.`,
@@ -576,9 +584,8 @@ export function MpmTui() {
       return;
     }
 
-    const updateServer = row.updateServer;
     const command = row.lifecycleAction === "update"
-      ? `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`
+      ? `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}${targetVersion ? ` --version ${targetVersion}` : ""}`
       : `toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}`;
     setState((prev) => ({
       ...prev,
@@ -594,7 +601,7 @@ export function MpmTui() {
             ? "resolving locked registry entry and updating config + mcp-lock.json"
             : "resolving installed alias in registry, making it registry-backed, and locking it",
           row.serverName !== updateServer.name ? `will replace installed alias ${row.serverName} with ${updateServer.name}` : `registry entry ${updateServer.name}`,
-          `version ${row.lockedVersion ?? "unlocked"} -> ${updateServer.version}`,
+          `version ${row.lockedVersion ?? "unlocked"} -> ${updateServer.version}${targetVersion ? " (explicit)" : ""}`,
         ],
       },
       lastAction: row.lifecycleAction === "update" ? `updating ${row.serverName}` : `adopting ${row.serverName}`,
@@ -607,6 +614,7 @@ export function MpmTui() {
             client: row.client,
             scope: row.scope,
             servers: state.servers,
+            version: targetVersion,
           })
         : await adoptInstalledServer({
             installedName: row.serverName,
@@ -1313,10 +1321,12 @@ export function MpmTui() {
         }));
         break;
       case "v":
-        cycleSelectedVersion(1);
+        if (state.view === "installed") cycleInstalledVersion(1);
+        else cycleSelectedVersion(1);
         break;
       case "V":
-        cycleSelectedVersion(-1);
+        if (state.view === "installed") cycleInstalledVersion(-1);
+        else cycleSelectedVersion(-1);
         break;
       case "c":
         setState((prev) => ({ ...prev, client: nextClient(prev.client), pendingRemove: undefined }));
@@ -1425,6 +1435,71 @@ export function MpmTui() {
     }));
   }
 
+  function installedVersionServers(row: InstalledServerState | undefined): NormalizedServer[] {
+    if (!row) return [];
+    const targetName = row.updateServer?.name ?? row.installableServer?.name;
+    if (!targetName) return [];
+    return knownVersions(state.servers, targetName)
+      .map((entry) => state.servers.find((candidate) => candidate.name === targetName && candidate.version === entry.version))
+      .filter((server): server is NormalizedServer => Boolean(server?.installable));
+  }
+
+  function installedTargetServer(row: InstalledServerState, selectedVersion?: string): NormalizedServer | undefined {
+    if (!selectedVersion) return row.updateServer;
+    return installedVersionServers(row).find((server) => server.version === selectedVersion);
+  }
+
+  function cycleInstalledVersion(direction: 1 | -1): void {
+    const row = selectedInstalled;
+    if (!row) return;
+    if (!row.locked) {
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "versions",
+          command: `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`,
+          ok: false,
+          lines: ["Version selection is for locked installed entries. Use u to adopt and lock this entry first."],
+        },
+      }));
+      return;
+    }
+    const versions = installedVersionServers(row);
+    if (versions.length <= 1) {
+      setState((prev) => ({
+        ...prev,
+        commandLog: {
+          title: "versions",
+          command: `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`,
+          ok: true,
+          lines: [`only one known registry version for ${row.serverName}: ${row.lockedVersion ?? row.latestVersion ?? "unknown"}`],
+        },
+      }));
+      return;
+    }
+    const currentVersion = state.installedVersionSelections[row.id] ?? row.updateServer?.version ?? row.lockedVersion ?? versions[0]?.version;
+    const currentIndex = Math.max(0, versions.findIndex((entry) => entry.version === currentVersion));
+    const nextIndex = (currentIndex + direction + versions.length) % versions.length;
+    const nextVersion = versions[nextIndex]?.version ?? currentVersion;
+    setState((prev) => ({
+      ...prev,
+      installedVersionSelections: {
+        ...prev.installedVersionSelections,
+        [row.id]: nextVersion,
+      },
+      commandLog: {
+        title: "versions",
+        command: `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope} --version ${nextVersion}`,
+        ok: true,
+        lines: [
+          `selected installed target ${row.serverName}@${nextVersion}`,
+          "Press u to rewrite the client config and mcp-lock.json for this explicit version.",
+        ],
+      },
+      lastAction: `selected installed version ${nextVersion}`,
+    }));
+  }
+
   function switchToView(view: View): void {
     if (SERVER_VIEWS.has(view) && !selectedServer) return;
     setState((prev) => switchView(prev, view));
@@ -1488,7 +1563,12 @@ export function MpmTui() {
               loading={installed.loading}
             />
             <Box width={rightPaneWidth} height={paneHeight} flexDirection="column">
-              <InstalledServerDetails row={selectedInstalled} width={rightPaneWidth - 4} />
+              <InstalledServerDetails
+                row={selectedInstalled}
+                width={rightPaneWidth - 4}
+                selectedVersion={selectedInstalledTargetVersion}
+                selectedTarget={selectedInstalledTarget}
+              />
             </Box>
           </Box>
         ) : (

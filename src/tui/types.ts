@@ -54,6 +54,7 @@ export interface TuiState {
   commandSelected: number;
   selected: number;
   versionSelections: Record<string, string>;
+  installedVersionSelections: Record<string, string>;
   view: View;
   inputMode: InputMode;
   dataMode: DataMode;

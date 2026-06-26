@@ -251,6 +251,15 @@ test("CLI update only updates locked rows and update --all skips adoptable unloc
     assert.ok(config.mcpServers.github);
     const lockfile = await readLockfile();
     assert.equal(lockfile.servers["io.github/locked:claude"].version, "2.0.0");
+
+    const explicit = await execFileAsync(process.execPath, [CLI, "update", "io.github/locked", "--client", "claude", "--scope", "project", "--source", "official", "--version", "1.0.0", "--json"]);
+    const explicitParsed = JSON.parse(explicit.stdout);
+    assert.equal(explicitParsed.fromVersion, "2.0.0");
+    assert.equal(explicitParsed.toVersion, "1.0.0");
+    const downgradedConfig = JSON.parse(await readFile(".mcp.json", "utf8"));
+    assert.deepEqual(downgradedConfig.mcpServers["io.github/locked"].args, ["-y", "@example/locked@1.0.0"]);
+    const downgradedLockfile = await readLockfile();
+    assert.equal(downgradedLockfile.servers["io.github/locked:claude"].version, "1.0.0");
   });
 });
 

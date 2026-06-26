@@ -134,8 +134,8 @@ status (`registry:exact`, `registry:alias`, or `registry:none`), lifecycle actio
 
 The Installed hotkeys map to the same CLI actions: `t` runs
 `toolpin test-installed`, `u` runs either `toolpin update` or `toolpin adopt`,
-`U` runs `toolpin update --all`, `d` runs `toolpin doctor`, and `x` runs
-`toolpin remove`.
+`v`/`V` chooses an explicit locked target version before `u`, `U` runs
+`toolpin update --all`, `d` runs `toolpin doctor`, and `x` runs `toolpin remove`.
 
 ## Discovery-Only HTTP JSON
 

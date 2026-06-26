@@ -36,7 +36,7 @@ toolpin test-installed <server-name> --client <client> --scope project|global [-
 toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
-toolpin update <server-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
 toolpin export-config <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 ```
@@ -53,8 +53,9 @@ version instead of the latest one, matching the TUI install version picker.
 
 `test-installed` reads the installed client config entry and performs the MCP
 handshake against that target directly. `adopt` is the explicit unlocked-alias
-path; `update` only updates locked entries. `update --all` skips unlocked
-adoptable rows and reports them separately.
+path; `update` only updates locked entries and can explicitly relock one entry
+to a selected `--version`. `update --all` stays latest-only, skips unlocked
+adoptable rows, and reports them separately.
 
 ## Inventory and cleanup
 
