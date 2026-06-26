@@ -6,6 +6,7 @@ import {
   commandLogForView,
   configTargetLabel,
   formatVersionChoices,
+  initialInstallVersionIndex,
   installClientChoicesForScope,
   selectedClientsForScope,
 } from "../dist/tui.js";
@@ -36,6 +37,17 @@ test("TUI install wizard puts the selected client first when it is valid for sco
   assert.deepEqual(installClientChoicesForScope("project", "opencode").slice(0, 3), ["opencode", "claude", "cursor"]);
   assert.deepEqual(installClientChoicesForScope("global", "all").slice(0, 3), ["all", "cursor", "vscode"]);
   assert.deepEqual(installClientChoicesForScope("project", "windsurf").slice(0, 3), ["claude", "cursor", "vscode"]);
+});
+
+test("TUI install wizard starts on selected version when v/V picked one", () => {
+  const versions = [
+    serverFixture({ version: "1.2.0", isLatest: true }),
+    serverFixture({ version: "1.1.0" }),
+    serverFixture({ version: "1.0.0" }),
+  ];
+
+  assert.equal(initialInstallVersionIndex(versions, "1.1.0"), 1);
+  assert.equal(initialInstallVersionIndex(versions, "9.9.9"), 0);
 });
 
 test("TUI installed view keeps update and adopt operation logs visible", () => {

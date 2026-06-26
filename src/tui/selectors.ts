@@ -59,6 +59,10 @@ export function selectedServerVersion(servers: NormalizedServer[], defaultServer
   return servers.find((server) => server.name === defaultServer.name && server.version === selectedVersion) ?? defaultServer;
 }
 
+export function initialInstallVersionIndex(versions: NormalizedServer[], selectedVersion: string): number {
+  return Math.max(0, versions.findIndex((entry) => entry.version === selectedVersion));
+}
+
 export function pruneVersionSelections(selections: Record<string, string>, servers: NormalizedServer[]): Record<string, string> {
   const available = new Set(servers.map((server) => `${server.name}@${server.version}`));
   return Object.fromEntries(Object.entries(selections).filter(([name, version]) => available.has(`${name}@${version}`)));

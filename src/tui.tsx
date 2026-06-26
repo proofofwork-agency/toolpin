@@ -16,6 +16,7 @@ export {
   configTargetLabel,
   filterBySource,
   formatVersionChoices,
+  initialInstallVersionIndex,
   installClientChoicesForScope,
   installClientLabel,
   nextClient,

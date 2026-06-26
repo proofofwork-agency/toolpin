@@ -31,6 +31,7 @@ import {
   filterBySource,
   installClientChoicesForScope,
   installClientLabel,
+  initialInstallVersionIndex,
   nextClient,
   nextSource,
   pruneVersionSelections,
@@ -388,7 +389,7 @@ export function MpmTui() {
   }
 
   function beginInstallFlow(): void {
-    const baseServer = selectedResult?.server ?? selectedServer;
+    const baseServer = selectedServer ?? selectedResult?.server;
     if (!baseServer) {
       setState((prev) => ({
         ...prev,
@@ -402,7 +403,8 @@ export function MpmTui() {
       return;
     }
     const versions = installVersionServers(baseServer);
-    const server = versions[0] ?? baseServer;
+    const selectedVersionIndex = initialInstallVersionIndex(versions, baseServer.version);
+    const server = versions[selectedVersionIndex] ?? versions[0] ?? baseServer;
     setState((prev) => ({
       ...prev,
       installFlow: {
@@ -410,7 +412,7 @@ export function MpmTui() {
         server,
         versions,
         preferredClient: prev.client,
-        selected: versions.length > 1 ? 0 : prev.installScope === "global" ? 1 : 0,
+        selected: versions.length > 1 ? selectedVersionIndex : prev.installScope === "global" ? 1 : 0,
       },
       inputMode: "normal",
       lastAction: versions.length > 1 ? `install ${server.name}: choose version` : `install ${server.name}: choose scope`,
