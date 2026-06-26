@@ -3,7 +3,7 @@ import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
 import { normalizeEntries } from "../registry.js";
 import type { NormalizedServer, RegistryEntry } from "../types.js";
-import { compareVersionish, knownVersions } from "../versions.js";
+import { compareVersionStatus, knownVersions } from "../versions.js";
 import { CLIENTS, VIEWS } from "./constants.js";
 import { asObject, safeJson, shortPath, unique } from "./format.js";
 import type { ClientSelection, CommandLog, SourceMode, TuiState, TuiVersionInfo, View } from "./types.js";
@@ -94,9 +94,11 @@ export function buildTuiVersionInfo(
     status = "unknown";
   } else if (!lockedVersions.length) {
     status = "not locked";
-  } else if (lockedVersions.some((lockedVersion) => compareVersionish(latestVersion, lockedVersion) > 0)) {
+  } else if (lockedVersions.some((lockedVersion) => compareVersionStatus(latestVersion, lockedVersion) === undefined)) {
+    status = "unknown";
+  } else if (lockedVersions.some((lockedVersion) => (compareVersionStatus(latestVersion, lockedVersion) ?? 0) > 0)) {
     status = "update available";
-  } else if (lockedVersions.some((lockedVersion) => compareVersionish(latestVersion, lockedVersion) < 0)) {
+  } else if (lockedVersions.some((lockedVersion) => (compareVersionStatus(latestVersion, lockedVersion) ?? 0) < 0)) {
     status = "ahead of registry";
   } else {
     status = "current";

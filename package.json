@@ -11,13 +11,13 @@
     "cli",
     "github-action"
   ],
-  "homepage": "https://github.com/proofofworks/TPN#readme",
+  "homepage": "https://github.com/proofofwork-agency/toolpin#readme",
   "bugs": {
-    "url": "https://github.com/proofofworks/TPN/issues"
+    "url": "https://github.com/proofofwork-agency/toolpin/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/proofofworks/TPN.git"
+    "url": "git+https://github.com/proofofwork-agency/toolpin.git"
   },
   "type": "module",
   "packageManager": "npm@10.9.2",

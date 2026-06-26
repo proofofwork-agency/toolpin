@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { exportClientConfig } from "../dist/config.js";
 import { doctorLockfile } from "../dist/doctor.js";
-import { installServerConfig, removeServerConfig, resolveConfigTarget } from "../dist/install.js";
+import { installServerConfig, removeServerConfig, resolveConfigTarget, vsCodeGlobalConfigFile } from "../dist/install.js";
 import { buildInstallPlan, writeLockfile } from "../dist/plan.js";
 
 test("new object-map clients export documented local config shapes", () => {
@@ -97,6 +97,21 @@ test("global-only and path-caveat clients are gated by verified paths", () => {
   assert.throws(() => resolveConfigTarget("roo", "global"), /Global Roo Code mcp_settings\.json path is not verified/);
 });
 
+test("VS Code global config path follows the host platform", () => {
+  assert.equal(
+    vsCodeGlobalConfigFile("/home/alice", "linux"),
+    path.join("/home/alice", ".config", "Code", "User", "mcp.json"),
+  );
+  assert.equal(
+    vsCodeGlobalConfigFile("/Users/alice", "darwin"),
+    path.join("/Users/alice", "Library", "Application Support", "Code", "User", "mcp.json"),
+  );
+  assert.equal(
+    vsCodeGlobalConfigFile("C:\\Users\\Alice", "win32", "C:\\Users\\Alice\\AppData\\Roaming"),
+    path.join("C:\\Users\\Alice\\AppData\\Roaming", "Code", "User", "mcp.json"),
+  );
+});
+
 test("new JSON root keys merge, remove, and doctor correctly", async () => {
   await withTempCwd(async () => {
     await installServerConfig(packageServer("io.github/one"), "gemini", "project");
@@ -114,6 +129,26 @@ test("new JSON root keys merge, remove, and doctor correctly", async () => {
 
     assert.equal(report.ok, true);
     assert.equal(report.checked, 1);
+  });
+});
+
+test("opencode install preserves existing top-level metadata", async () => {
+  await withTempCwd(async () => {
+    await writeFile("opencode.json", JSON.stringify({
+      $schema: "https://example.com/custom-opencode-schema.json",
+      name: "user config",
+      mcp: {
+        "io.github/existing": { type: "local", command: ["node", "existing.js"], enabled: true },
+      },
+    }, null, 2), "utf8");
+
+    await installServerConfig(packageServer("io.github/new"), "opencode", "project");
+
+    const config = JSON.parse(await readFile("opencode.json", "utf8"));
+    assert.equal(config.$schema, "https://example.com/custom-opencode-schema.json");
+    assert.equal(config.name, "user config");
+    assert.ok(config.mcp["io.github/existing"]);
+    assert.ok(config.mcp["io.github/new"]);
   });
 });
 

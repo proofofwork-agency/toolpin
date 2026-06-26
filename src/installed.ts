@@ -5,7 +5,7 @@ import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, writeLock
 import { enforcePolicy } from "./policy.js";
 import { testInstalledClientConfig, type ServerTestResult } from "./tester.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
-import { compareVersionish } from "./versions.js";
+import { compareVersionStatus, compareVersionish } from "./versions.js";
 import type { ClientName } from "./config.js";
 import type { CapabilityManifest, NormalizedServer } from "./types.js";
 
@@ -99,7 +99,8 @@ export async function loadInstalledServerStates(options: {
     const registryMatch = match.registryMatch ?? (locked ? "exact" : undefined);
     const testResult = options.tests?.[installedId(entry.serverName, entry.client, entry.scope)];
     const lockDrift = issues.some((issue) => issueMatchesInstalled(issue, entry.serverName, entry.client, entry.scope));
-    const updateAvailable = Boolean(locked?.version && match.latestVersion && compareVersionish(match.latestVersion, locked.version) > 0);
+    const versionDelta = locked?.version && match.latestVersion ? compareVersionStatus(match.latestVersion, locked.version) : undefined;
+    const updateAvailable = versionDelta !== undefined && versionDelta > 0;
     const lifecycleAction = lifecycleActionFor({ locked: Boolean(locked), updateAvailable, updateServer: match.updateServer, registryMatch });
     const canTest = entry.client !== "zed";
     const runningStatus: InstalledRuntimeStatus = testResult?.ok

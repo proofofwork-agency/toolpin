@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { buildInstallPlan, writeLockfile } from "../dist/plan.js";
-import { compareLockedToLatest, knownVersions } from "../dist/versions.js";
+import { compareLockedToLatest, compareVersionStatus, compareVersionish, knownVersions } from "../dist/versions.js";
 
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("dist", "cli.js");
@@ -33,6 +33,39 @@ test("knownVersions sorts versions newest first and exposes older releases", () 
   assert.equal(versions[0].isLatest, true);
 });
 
+test("knownVersions uses semver ordering including prereleases and leading v", () => {
+  const servers = [
+    packageServer({ version: "v1.0.0-beta.2" }),
+    packageServer({ version: "1.0.0" }),
+    packageServer({ version: "1.0.0-alpha.10" }),
+    packageServer({ version: "1.0.0-alpha.2" }),
+    packageServer({ version: "v1.1.0-alpha.1" }),
+  ];
+
+  const versions = knownVersions(servers, "io.github/example");
+
+  assert.deepEqual(versions.map((entry) => entry.version), [
+    "v1.1.0-alpha.1",
+    "1.0.0",
+    "v1.0.0-beta.2",
+    "1.0.0-alpha.10",
+    "1.0.0-alpha.2",
+  ]);
+});
+
+test("compareVersionish compares valid semver and ignores build metadata", () => {
+  assert.equal(compareVersionish("v1.0.0", "1.0.0"), 0);
+  assert.equal(compareVersionish("1.0.0+build.2", "1.0.0+build.1"), 0);
+  assert.equal(compareVersionish("1.0.0-rc.1", "1.0.0-beta.11"), 1);
+  assert.equal(compareVersionish("1.0.0-alpha", "1.0.0-alpha.1"), -1);
+});
+
+test("compareVersionStatus exposes unknown non-semver comparisons", () => {
+  assert.equal(compareVersionStatus("20f7c0f0dbe3", "9fceb02d0ae5"), undefined);
+  assert.equal(compareVersionStatus("1.2.0", "9fceb02d0ae5"), undefined);
+  assert.equal(compareVersionStatus("v1.2.0", "1.0.0"), 1);
+});
+
 test("compareLockedToLatest reports update availability", () => {
   const servers = [
     packageServer({ version: "1.0.0" }),
@@ -46,6 +79,30 @@ test("compareLockedToLatest reports update availability", () => {
   assert.equal(comparison.latestVersion, "1.3.0");
   assert.equal(comparison.status, "update-available");
   assert.deepEqual(comparison.previousVersions.map((entry) => entry.version), ["1.2.0", "1.0.0"]);
+});
+
+test("compareLockedToLatest reports unknown for non-semver comparisons", () => {
+  const servers = [
+    packageServer({ version: "9fceb02d0ae5" }),
+    packageServer({ version: "20f7c0f0dbe3", isLatest: true }),
+  ];
+
+  const comparison = compareLockedToLatest("io.github/example", "9fceb02d0ae5", servers);
+
+  assert.equal(comparison.lockedVersion, "9fceb02d0ae5");
+  assert.equal(comparison.latestVersion, "20f7c0f0dbe3");
+  assert.equal(comparison.status, "unknown");
+});
+
+test("compareLockedToLatest reports unknown when only one side is semver", () => {
+  const servers = [
+    packageServer({ version: "1.2.0", isLatest: true }),
+  ];
+
+  const comparison = compareLockedToLatest("io.github/example", "9fceb02d0ae5", servers);
+
+  assert.equal(comparison.latestVersion, "1.2.0");
+  assert.equal(comparison.status, "unknown");
 });
 
 test("CLI versions lists known current and previous versions", async () => {

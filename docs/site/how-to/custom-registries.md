@@ -42,7 +42,7 @@ default yet. Add it as an `official-compatible` registry:
     {
       "id": "toolpin",
       "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0",
+      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
       "mode": "installable",
       "trust": "curated"
     }
@@ -57,10 +57,6 @@ toolpin registry list
 toolpin ingest --source toolpin
 toolpin search github --source toolpin
 ```
-
-The URL above is the post-rename target. Until the repository rename completes,
-use the current working URL
-`https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0`.
 
 See [ToolPin Curated Registry](./toolpin-curated-registry.md) for the PR-based
 review workflow.

@@ -13,7 +13,7 @@ interface SarifRun {
   tool: {
     driver: {
       name: "ToolPin";
-      informationUri: "https://github.com/proofofworks/TPN";
+      informationUri: "https://github.com/proofofwork-agency/toolpin";
       rules: SarifRule[];
     };
   };
@@ -55,7 +55,7 @@ interface SarifLocation {
 }
 
 const SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json";
-const HELP_URI = "https://github.com/proofofworks/TPN#security-model";
+const HELP_URI = "https://github.com/proofofwork-agency/toolpin#security-model";
 
 const RULES: SarifRule[] = [
   rule("agent_instruction_override", "Agent instruction override", "Registry or tool metadata asks the agent to ignore higher-priority instructions.", "scan", "warning"),
@@ -83,7 +83,7 @@ export function sarifLog(results: SarifResult[], options: { generatedAt?: string
         tool: {
           driver: {
             name: "ToolPin",
-            informationUri: "https://github.com/proofofworks/TPN",
+            informationUri: "https://github.com/proofofwork-agency/toolpin",
             rules: rulesForResults(results),
           },
         },

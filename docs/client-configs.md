@@ -27,9 +27,9 @@ explicit-only (works in both scopes when passed directly but is in neither
 |--------|----------|--------------|-------------|----------------|
 | claude | `mcpServers` | `.mcp.json` | fail closed | Project only. Global owned by the Claude CLI; use `claude mcp add-json --scope user`. |
 | cursor | `mcpServers` | `.cursor/mcp.json` | `~/.cursor/mcp.json` | Project + global. |
-| vscode | `servers` | `.vscode/mcp.json` | `~/.config/Code/User/mcp.json` | Project + global. |
+| vscode | `servers` | `.vscode/mcp.json` | Platform user settings path | Project + global. Linux `~/.config/Code/User/mcp.json`; macOS `~/Library/Application Support/Code/User/mcp.json`; Windows `%APPDATA%\Code\User\mcp.json`. |
 | codex | `mcp_servers` | `.codex/config.toml` | `~/.codex/config.toml` | Project + global. TOML `[mcp_servers.<name>]` tables; project must be trusted by Codex. |
-| opencode | `mcp` | `opencode.json` | `~/.config/opencode/opencode.json` | Project + global. Adds `$schema: https://opencode.ai/config.json`. |
+| opencode | `mcp` | `opencode.json` | `~/.config/opencode/opencode.json` | Project + global. Adds `$schema: https://opencode.ai/config.json` when creating a new config; preserves an existing top-level `$schema`. |
 | windsurf | `mcpServers` | fail closed | `~/.codeium/windsurf/mcp_config.json` | Global only. Project path not documented. |
 | cline | `mcpServers` | fail closed | `~/.cline/mcp.json` | Global only. Project path not documented. |
 | continue | `mcpServers` (YAML list) | fail closed | `~/.continue/config.yaml` | Global only. YAML; top-level `name`/`version`/`schema` required; `mcpServers` is a list keyed by `name`. |

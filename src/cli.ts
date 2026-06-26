@@ -829,6 +829,11 @@ async function listInstalled(rest: string[]): Promise<void> {
 }
 
 async function ci(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    ciHelp();
+    return;
+  }
+
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const expectedDigest = stringFlag(rest, "--expect-digest", "");
   const signaturePath = stringFlag(rest, "--signature", "");
@@ -973,6 +978,11 @@ async function secrets(rest: string[]): Promise<void> {
 }
 
 async function doctor(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    doctorHelp();
+    return;
+  }
+
   const path = stringFlag(rest, "--file", "mcp-lock.json");
   const scope = scopeFlag(rest, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
@@ -998,6 +1008,14 @@ async function doctor(rest: string[]): Promise<void> {
   }
 
   if (!report.ok) process.exitCode = 1;
+}
+
+function ciHelp(): void {
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
+}
+
+function doctorHelp(): void {
+  console.log("Usage: toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]");
 }
 
 async function test(rest: string[]): Promise<void> {

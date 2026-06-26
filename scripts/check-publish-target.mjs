@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const canonicalRepositoryUrl = "git+https://github.com/proofofwork-agency/toolpin.git";
+const canonicalHomepage = "https://github.com/proofofwork-agency/toolpin#readme";
+const canonicalIssuesUrl = "https://github.com/proofofwork-agency/toolpin/issues";
 
 function fail(message) {
   console.error(message);
@@ -31,6 +34,9 @@ assertField(packageJson.license === "Apache-2.0", "license must be Apache-2.0");
 assertField(packageJson.repository?.url, "repository.url is required before publish");
 assertField(packageJson.homepage, "homepage is required before publish");
 assertField(packageJson.bugs?.url, "bugs.url is required before publish");
+assertField(packageJson.repository?.url === canonicalRepositoryUrl, `repository.url must be ${canonicalRepositoryUrl}`);
+assertField(packageJson.homepage === canonicalHomepage, `homepage must be ${canonicalHomepage}`);
+assertField(packageJson.bugs?.url === canonicalIssuesUrl, `bugs.url must be ${canonicalIssuesUrl}`);
 assertField(packageJson.bin?.toolpin === "./dist/cli.js", "toolpin bin must point at ./dist/cli.js");
 assertField(packageJson.bin?.tpn === "./dist/cli.js", "tpn bin must point at ./dist/cli.js");
 assertField(packageJson.files?.includes("dist"), "npm files must include dist");

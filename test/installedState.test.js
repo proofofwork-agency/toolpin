@@ -37,6 +37,28 @@ test("loadInstalledServerStates joins inventory, lockfile, and registry version 
   });
 });
 
+test("loadInstalledServerStates leaves non-semver locked updates unknown", async () => {
+  await withTempHomeAndCwd(async () => {
+    const lockedServer = packageServer({ version: "9fceb02d0ae5" });
+    const latestServer = packageServer({ version: "20f7c0f0dbe3", isLatest: true });
+    await installServerConfig(lockedServer, "claude", "project");
+    const lockfile = await writeLockfile(buildInstallPlan(lockedServer, "claude"));
+
+    const rows = await loadInstalledServerStates({
+      servers: [lockedServer, latestServer],
+      lockfile,
+      scope: "project",
+    });
+
+    const row = rows.find((entry) => entry.serverName === "io.github/example" && entry.client === "claude");
+    assert.ok(row);
+    assert.equal(row.latestVersion, "20f7c0f0dbe3");
+    assert.equal(row.updateAvailable, false);
+    assert.equal(row.lifecycleAction, "none");
+    assert.equal(row.runningStatus, "not_checked");
+  });
+});
+
 test("installedViewReducer clamps selection across loaded row changes", () => {
   const initial = { rows: [], selected: 0, scope: "all", loading: true };
   const loaded = installedViewReducer(initial, { type: "loaded", rows: [row("one"), row("two")] });

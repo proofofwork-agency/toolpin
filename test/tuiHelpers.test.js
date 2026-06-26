@@ -73,6 +73,26 @@ test("TUI version labels report selected, locked, latest, and older versions", (
   assert.equal(formatVersionChoices(info, 2), "1.2.0 latest, [1.1.0] +1 more");
 });
 
+test("TUI version labels report unknown for non-semver locked comparisons", () => {
+  const servers = [
+    serverFixture({ version: "20f7c0f0dbe3", isLatest: true }),
+    serverFixture({ version: "9fceb02d0ae5" }),
+  ];
+  const lockfile = {
+    lockfileVersion: 2,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    servers: {
+      "example/server:claude": { name: "example/server", version: "9fceb02d0ae5", client: "claude" },
+    },
+  };
+
+  const info = buildTuiVersionInfo(servers, "example/server", "20f7c0f0dbe3", lockfile, "claude", "project");
+
+  assert.equal(info.latestVersion, "20f7c0f0dbe3");
+  assert.equal(info.lockedLabel, "9fceb02d0ae5");
+  assert.equal(info.status, "unknown");
+});
+
 test("TUI config target labels use resolved install targets and preserve unsupported-scope errors", () => {
   assert.match(configTargetLabel("codex", "project"), /(?:^|\/)\.codex\/config\.toml$/);
   assert.match(configTargetLabel("opencode", "global"), /(?:^|\/)\.config\/opencode\/opencode\.json$/);

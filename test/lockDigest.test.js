@@ -5,10 +5,54 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { canonicalJson } from "../dist/canonicalJson.js";
 import { buildInstallPlan, computeLockfileDigest, readLockfile, writeLockfile } from "../dist/plan.js";
 
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("dist", "cli.js");
+
+test("canonical JSON orders accented and non-ASCII keys without locale collation", () => {
+  const originalLocaleCompare = String.prototype.localeCompare;
+  String.prototype.localeCompare = () => {
+    throw new Error("localeCompare must not be used for canonical JSON key ordering");
+  };
+
+  try {
+    assert.equal(
+      canonicalJson({
+        "\u00e9": 1,
+        z: 2,
+        "\u00c4": 3,
+        a: 4,
+      }),
+      '{"a":4,"z":2,"\u00c4":3,"\u00e9":1}',
+    );
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
+});
+
+test("lock digest normalizes object keys to NFC before hashing", () => {
+  const plan = buildInstallPlan(packageServer(), "claude");
+  const composed = "io.github/caf\u00e9:claude";
+  const decomposed = "io.github/cafe\u0301:claude";
+
+  assert.equal(
+    computeLockfileDigest(lockfileWithServerKey(composed, plan)),
+    computeLockfileDigest(lockfileWithServerKey(decomposed, plan)),
+  );
+});
+
+test("canonical JSON rejects object keys that collide after NFC normalization", () => {
+  assert.throws(
+    () =>
+      canonicalJson({
+        "io.github/caf\u00e9:claude": 1,
+        "io.github/cafe\u0301:claude": 2,
+      }),
+    /duplicate key after NFC normalization/,
+  );
+});
 
 test("CLI lock digest prints the canonical whole-lock digest", async () => {
   await withTempCwd(async () => {
@@ -145,6 +189,16 @@ function packageServer() {
           transport: { type: "stdio" },
         },
       ],
+    },
+  };
+}
+
+function lockfileWithServerKey(key, plan) {
+  return {
+    lockfileVersion: 2,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    servers: {
+      [key]: plan,
     },
   };
 }

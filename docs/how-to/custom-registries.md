@@ -17,7 +17,7 @@ the CLI by default yet; add it as a custom `official-compatible` registry:
     {
       "id": "toolpin",
       "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0",
+      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
       "mode": "installable",
       "trust": "curated"
     }
@@ -26,9 +26,7 @@ the CLI by default yet; add it as a custom `official-compatible` registry:
 ```
 
 See [ToolPin Curated Registry](./toolpin-curated-registry.md) for the PR-based
-review workflow. The URL above is the post-rename target; until the repository
-rename completes, use the current working URL
-`https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0`.
+review workflow.
 
 ## Official-Compatible Registry
 

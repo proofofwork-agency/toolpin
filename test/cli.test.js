@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -80,6 +80,30 @@ test("CLI accepts npm-style -g as global scope", async () => {
 
     assert.equal(parsed.ok, true);
     assert.equal(parsed.checked, 0);
+  });
+});
+
+test("CLI ci --help prints usage without cwd side effects", async () => {
+  await withTempCwd(async (dir) => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "ci", "--help"], {
+      env: isolatedHomeEnv(dir),
+    });
+
+    assert.match(stdout, /^Usage: toolpin ci /);
+    assert.equal(stderr, "");
+    assert.deepEqual(await readdir(dir), []);
+  });
+});
+
+test("CLI doctor --help prints usage without cwd side effects", async () => {
+  await withTempCwd(async (dir) => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "doctor", "--help"], {
+      env: isolatedHomeEnv(dir),
+    });
+
+    assert.match(stdout, /^Usage: toolpin doctor /);
+    assert.equal(stderr, "");
+    assert.deepEqual(await readdir(dir), []);
   });
 });
 
@@ -240,6 +264,14 @@ async function withTempCwd(fn) {
     process.chdir(originalCwd);
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+function isolatedHomeEnv(dir) {
+  return {
+    ...process.env,
+    HOME: dir,
+    USERPROFILE: dir,
+  };
 }
 
 async function writeRegistryCache(servers) {

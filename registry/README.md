@@ -17,11 +17,10 @@ Canonical source file:
 registry/v0/servers
 ```
 
-Raw GitHub URL after merge to `main` and after the public repository has been
-renamed to `proofofworks/TPN`:
+Raw GitHub URL after merge to `main`:
 
 ```text
-https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
 ```
 
 GitHub Pages / Docusaurus URL after the website is deployed:
@@ -32,12 +31,6 @@ https://toolpin.dev/registry/v0
 
 ToolPin appends `/servers`, so configure the registry URL without the trailing
 `/servers`.
-Until the repository rename is complete, use the matching raw GitHub URL for
-the current repository location:
-
-```text
-https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
-```
 
 ## Local Configuration
 
@@ -47,7 +40,7 @@ https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
     {
       "id": "toolpin",
       "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0",
+      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
       "mode": "installable",
       "trust": "curated"
     }

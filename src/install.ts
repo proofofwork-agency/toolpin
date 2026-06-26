@@ -162,7 +162,7 @@ export function resolveConfigTarget(client: ClientName, scope: InstallScope): { 
     case "cursor":
       return { file: path.join(home, ".cursor", "mcp.json"), notes: ["Global Cursor MCP config written. Restart Cursor or reload MCP servers to load it."] };
     case "vscode":
-      return { file: path.join(home, ".config", "Code", "User", "mcp.json"), notes: ["Global VS Code user MCP config path written."] };
+      return { file: vsCodeGlobalConfigFile(home), notes: ["Global VS Code user MCP config path written."] };
     case "codex":
       return { file: path.join(home, ".codex", "config.toml"), notes: ["Global Codex config.toml written."] };
     case "windsurf":
@@ -198,14 +198,29 @@ function removeClientConfig(existing: Record<string, unknown>, serverName: strin
 function mergeClientConfig(existing: Record<string, unknown>, incoming: unknown, client: ClientName): Record<string, unknown> {
   const incomingObject = asObject(incoming);
   const key = clientConfigRootKey(client);
-  return {
-    ...existing,
-    ...incomingObject,
-    [key]: {
-      ...asObject(existing[key]),
-      ...asObject(incomingObject[key]),
-    },
+  const next = { ...existing };
+  if (client === "opencode" && typeof next.$schema !== "string" && typeof incomingObject.$schema === "string") {
+    next.$schema = incomingObject.$schema;
+  }
+  next[key] = {
+    ...asObject(existing[key]),
+    ...asObject(incomingObject[key]),
   };
+  return next;
+}
+
+export function vsCodeGlobalConfigFile(
+  home = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
+  appData = process.env.APPDATA,
+): string {
+  if (platform === "darwin") {
+    return path.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+  }
+  if (platform === "win32") {
+    return path.join(appData || path.join(home, "AppData", "Roaming"), "Code", "User", "mcp.json");
+  }
+  return path.join(home, ".config", "Code", "User", "mcp.json");
 }
 
 async function readJsonObject(file: string): Promise<Record<string, unknown>> {

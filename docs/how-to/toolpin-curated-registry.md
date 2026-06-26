@@ -9,11 +9,10 @@ a broad directory.
 
 ## URLs
 
-Raw GitHub, no deploy required after the public repository has been renamed to
-`proofofworks/TPN`:
+Raw GitHub, no deploy required:
 
 ```text
-https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
 ```
 
 GitHub Pages / Docusaurus, after the site is deployed:
@@ -23,12 +22,6 @@ https://toolpin.dev/registry/v0
 ```
 
 ToolPin appends `/servers` automatically for `official-compatible` registries.
-Until the repository rename is complete, use the matching raw GitHub URL for
-the current repository location:
-
-```text
-https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
-```
 
 ## Configure ToolPin
 
@@ -40,7 +33,7 @@ Create `.toolpin/registries.json`:
     {
       "id": "toolpin",
       "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofworks/TPN/main/registry/v0",
+      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
       "mode": "installable",
       "trust": "curated"
     }
