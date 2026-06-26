@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { dedupeRegistryEntries, fetchRegistry, fetchRegistryResult, listRegistrySources, readCache, readCacheMetadata, refreshCache, retryAfterDelayMs } from "../dist/registry.js";
+import { canonicalRepoUrl, dedupeRegistryEntries, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, fetchRegistryResult, listRegistrySources, normalizeEntry, readCache, readCacheMetadata, refreshCache, retryAfterDelayMs, updateRegistrySourceEnabled } from "../dist/registry.js";
 
 test("fetchRegistry retries one 429 response with an injected fetch", async () => {
   const calls = [];
@@ -24,6 +24,47 @@ test("fetchRegistry retries one 429 response with an injected fetch", async () =
   assert.equal(typeof calls[0].signal?.aborted, "boolean");
   assert.equal(entries.length, 1);
   assert.equal(entries[0].source, "official");
+});
+
+test("directory sources are disabled by default and can be enabled in source preferences", async () => {
+  await withTempDir(async (tempDir) => {
+    const configPath = path.join(tempDir, "registries.json");
+    const defaults = await listRegistrySources({ registryConfigPath: configPath });
+
+    assert.equal(defaults.find((source) => source.id === "official")?.enabled, true);
+    assert.equal(defaults.find((source) => source.id === "docker")?.enabled, true);
+    assert.equal(defaults.find((source) => source.id === "glama")?.enabled, false);
+    assert.equal(defaults.find((source) => source.id === "smithery")?.enabled, false);
+
+    await updateRegistrySourceEnabled("glama", true, configPath);
+    const enabled = await listRegistrySources({ registryConfigPath: configPath });
+
+    assert.equal(enabled.find((source) => source.id === "glama")?.enabled, true);
+    assert.equal(enabled.find((source) => source.id === "smithery")?.enabled, false);
+  });
+});
+
+test("fetchRegistry all skips disabled directory sources and explicit disabled source fails", async () => {
+  const calls = [];
+  const entries = await fetchRegistry({
+    source: "all",
+    limit: 1,
+    maxPages: 1,
+    fetch: async (url) => {
+      const href = String(url);
+      calls.push(href);
+      if (href.includes("registry.modelcontextprotocol.io")) return jsonResponse(200, { servers: [registryEntry()] });
+      if (href.includes("api.github.com/repos/docker/mcp-registry")) return jsonResponse(200, { tree: [] });
+      throw new Error(`Unexpected disabled source fetch ${href}`);
+    },
+  });
+
+  assert.equal(entries.length, 1);
+  assert.ok(calls.some((url) => url.includes("registry.modelcontextprotocol.io")));
+  assert.ok(calls.some((url) => url.includes("api.github.com/repos/docker/mcp-registry")));
+  assert.equal(calls.some((url) => url.includes("glama.ai")), false);
+  assert.equal(calls.some((url) => url.includes("smithery.ai")), false);
+  await assert.rejects(() => fetchRegistry({ source: "glama", fetch: async () => jsonResponse(200, { servers: [] }) }), /glama is disabled/);
 });
 
 test("fetchRegistry honors Retry-After over fallback backoff for 429", async () => {
@@ -239,27 +280,240 @@ test("listRegistrySources includes configured discovery registries", async () =>
 });
 
 test("fetchRegistry normalizes Glama discovery entries", async () => {
-  const entries = await fetchRegistry({
-    source: "glama",
-    limit: 1,
-    maxPages: 1,
-    fetch: async (url) => {
-      assert.equal(String(url), "https://glama.ai/api/mcp/v1/servers?first=1");
-      return jsonResponse(200, {
+  await withTempDir(async (tempDir) => {
+    const registryConfigPath = path.join(tempDir, "registries.json");
+    await updateRegistrySourceEnabled("glama", true, registryConfigPath);
+    const entries = await fetchRegistry({
+      source: "glama",
+      registryConfigPath,
+      limit: 1,
+      maxPages: 1,
+      fetch: async (url) => {
+        assert.equal(String(url), "https://glama.ai/api/mcp/v1/servers?first=1");
+        return jsonResponse(200, {
+          servers: [{
+            name: "glama/example",
+            title: "Glama Example",
+            description: "Discovery-only server",
+            repositoryUrl: "https://github.com/example/glama",
+          }],
+        });
+      },
+    });
+
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].source, "glama");
+    assert.equal(entries[0].server.name, "glama/example");
+    assert.equal(entries[0]._meta["dev.toolpin/source"].mode, "discovery");
+    assert.equal(normalizeEntry(entries[0]).installable, false);
+  });
+});
+
+test("canonicalRepoUrl normalizes common git repository URL forms", () => {
+  const expected = "github.com/acme/docs-mcp";
+  assert.equal(canonicalRepoUrl("git+ssh://git@github.com/Acme/Docs-MCP.git?x=1#frag"), expected);
+  assert.equal(canonicalRepoUrl("git@github.com:Acme/Docs-MCP.git"), expected);
+  assert.equal(canonicalRepoUrl("github:Acme/Docs-MCP"), expected);
+  assert.equal(canonicalRepoUrl("https://www.github.com/Acme/Docs-MCP/"), expected);
+});
+
+test("enrichGlamaTarget adopts official install targets by canonical repository match", async () => {
+  await withTempDir(async (tempDir) => {
+    const cachePath = path.join(tempDir, "registry-cache.json");
+    await writeRegistryCache(cachePath, [{
+      source: "official",
+      server: {
+        name: "acme/docs-mcp",
+        title: "Docs MCP",
+        description: "Official install target",
+        version: "1.0.0",
+        repository: { url: "git+ssh://git@github.com/Acme/Docs-MCP.git?x=1#frag" },
+        remotes: [{ type: "streamable-http", url: "https://docs.example.com/mcp" }],
+      },
+    }]);
+    const glama = normalizeEntry({
+      source: "glama",
+      server: {
+        name: "docs-mcp",
+        version: "1.0.0",
+        repository: { url: "git@github.com:acme/docs-mcp.git" },
+      },
+      _meta: { "dev.toolpin/source": { source: "glama", mode: "discovery" } },
+    });
+
+    const enriched = await enrichGlamaTarget(glama, { cachePath });
+
+    assert.equal(enriched.registrySource, "glama");
+    assert.equal(enriched.resolvedFromRegistry, "official");
+    assert.equal(enriched.installable, true);
+    assert.equal(enriched.raw.remotes?.[0]?.url, "https://docs.example.com/mcp");
+    assert.match(enriched.resolutionNote, /matched from Glama by repo/);
+  });
+});
+
+test("enrichGlamaTarget stays discovery-only on no match or ambiguous repo match", async () => {
+  await withTempDir(async (tempDir) => {
+    const cachePath = path.join(tempDir, "registry-cache.json");
+    await writeRegistryCache(cachePath, [
+      {
+        source: "official",
+        server: {
+          name: "acme/alpha",
+          version: "1.0.0",
+          repository: { url: "https://github.com/acme/monorepo" },
+          remotes: [{ type: "streamable-http", url: "https://alpha.example.com/mcp" }],
+        },
+      },
+      {
+        source: "official",
+        server: {
+          name: "acme/beta",
+          version: "1.0.0",
+          repository: { url: "https://github.com/acme/monorepo.git" },
+          remotes: [{ type: "streamable-http", url: "https://beta.example.com/mcp" }],
+        },
+      },
+    ]);
+    const noMatch = normalizeEntry({
+      source: "glama",
+      server: { name: "other", version: "1.0.0", repository: { url: "https://github.com/acme/other" } },
+      _meta: { "dev.toolpin/source": { source: "glama", mode: "discovery" } },
+    });
+    const ambiguous = normalizeEntry({
+      source: "glama",
+      server: { name: "other", version: "1.0.0", repository: { url: "https://github.com/acme/monorepo" } },
+      _meta: { "dev.toolpin/source": { source: "glama", mode: "discovery" } },
+    });
+
+    const missed = await enrichGlamaTarget(noMatch, { cachePath });
+    const refused = await enrichGlamaTarget(ambiguous, { cachePath });
+
+    assert.equal(missed.installable, false);
+    assert.equal(missed.resolvedFromRegistry, undefined);
+    assert.match(missed.installableReason, /no matching official-registry entry/);
+    assert.equal(refused.installable, false);
+    assert.equal(refused.resolvedFromRegistry, undefined);
+    assert.match(refused.installableReason, /no matching official-registry entry/);
+  });
+});
+
+test("fetchRegistry unlocks custom discovery entries with verifiable package targets", async () => {
+  await withTempDir(async (tempDir) => {
+    const registryConfigPath = path.join(tempDir, "registries.json");
+    await writeFile(registryConfigPath, JSON.stringify({
+      registries: [{
+        id: "directory",
+        type: "http-json",
+        url: "https://example.com/mcp.json",
+        mode: "discovery",
+      }],
+    }), "utf8");
+    const entries = await fetchRegistry({
+      source: "directory",
+      registryConfigPath,
+      limit: 1,
+      maxPages: 1,
+      fetch: async () => jsonResponse(200, {
         servers: [{
-          name: "glama/example",
-          title: "Glama Example",
-          description: "Discovery-only server",
-          repositoryUrl: "https://github.com/example/glama",
+          name: "directory/npm-example",
+          title: "Directory npm Example",
+          description: "Discovery entry with a verifiable npm target",
+          version: "1.0.0",
+          repository: { url: "https://github.com/example/npm-example" },
+          packages: [{
+            registryType: "npm",
+            identifier: "@example/server",
+            version: "1.0.0",
+            transport: { type: "stdio" },
+          }],
         }],
-      });
+      }),
+    });
+
+    const normalized = normalizeEntry(entries[0]);
+    assert.equal(entries[0]._meta["dev.toolpin/source"].mode, "discovery");
+    assert.equal(normalized.installable, true);
+    assert.equal(normalized.installableReason, undefined);
+  });
+});
+
+test("Glama entries with direct package targets still require official re-resolution", async () => {
+  await withTempDir(async (tempDir) => {
+    const registryConfigPath = path.join(tempDir, "registries.json");
+    await updateRegistrySourceEnabled("glama", true, registryConfigPath);
+    const entries = await fetchRegistry({
+      source: "glama",
+      registryConfigPath,
+      limit: 1,
+      maxPages: 1,
+      fetch: async () => jsonResponse(200, {
+        servers: [{
+          name: "glama/npm-example",
+          title: "Glama npm Example",
+          description: "Glama entry with package metadata",
+          version: "1.0.0",
+          repository: { url: "https://github.com/example/npm-example" },
+          packages: [{
+            registryType: "npm",
+            identifier: "@example/server",
+            version: "1.0.0",
+            transport: { type: "stdio" },
+          }],
+        }],
+      }),
+    });
+
+    const normalized = normalizeEntry(entries[0]);
+    assert.equal(normalized.installable, false);
+    assert.match(normalized.installableReason, /official registry re-resolution/);
+  });
+});
+
+test("fetchRegistry unlocks discovery entries with HTTPS remote targets", async () => {
+  await withTempDir(async (tempDir) => {
+    const registryConfigPath = path.join(tempDir, "registries.json");
+    await updateRegistrySourceEnabled("smithery", true, registryConfigPath);
+    const entries = await fetchRegistry({
+      source: "smithery",
+      registryConfigPath,
+      limit: 1,
+      maxPages: 1,
+      fetch: async () => jsonResponse(200, {
+        servers: [{
+          name: "smithery/remote-example",
+          title: "Smithery Remote Example",
+          description: "Discovery entry with an HTTPS remote target",
+          version: "1.0.0",
+          repository: { url: "https://github.com/example/remote-example" },
+          remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+        }],
+      }),
+    });
+
+    assert.equal(normalizeEntry(entries[0]).installable, true);
+  });
+});
+
+test("enrichSmitheryTarget requires opt-in for Smithery-provided hosted targets", async () => {
+  const smithery = normalizeEntry({
+    source: "smithery",
+    server: {
+      name: "smithery/remote-example",
+      title: "Smithery Remote Example",
+      description: "Discovery entry with a hosted target",
+      version: "1.0.0",
+      remotes: [{ type: "streamable-http", url: "https://example.smithery.ai/mcp" }],
     },
+    _meta: { "dev.toolpin/source": { source: "smithery", mode: "discovery" } },
   });
 
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0].source, "glama");
-  assert.equal(entries[0].server.name, "glama/example");
-  assert.equal(entries[0]._meta["dev.toolpin/source"].mode, "discovery");
+  const blocked = await enrichSmitheryTarget(smithery);
+  const allowed = await enrichSmitheryTarget(smithery, { allowHostedDirectoryTargets: true });
+
+  assert.equal(blocked.installable, false);
+  assert.match(blocked.installableReason, /explicit opt-in/);
+  assert.equal(allowed.installable, true);
+  assert.match(allowed.resolutionNote, /hosted by Smithery/);
 });
 
 test("fetchRegistryResult reports PulseMCP auth missing without fetching", async () => {
@@ -269,19 +523,24 @@ test("fetchRegistryResult reports PulseMCP auth missing without fetching", async
   delete process.env.PULSEMCP_TENANT_ID;
   let calls = 0;
   try {
-    const result = await fetchRegistryResult({
-      source: "pulsemcp",
-      fetch: async () => {
-        calls += 1;
-        return jsonResponse(200, { servers: [] });
-      },
-    });
+    await withTempDir(async (tempDir) => {
+      const registryConfigPath = path.join(tempDir, "registries.json");
+      await updateRegistrySourceEnabled("pulsemcp", true, registryConfigPath);
+      const result = await fetchRegistryResult({
+        source: "pulsemcp",
+        registryConfigPath,
+        fetch: async () => {
+          calls += 1;
+          return jsonResponse(200, { servers: [] });
+        },
+      });
 
-    assert.equal(calls, 0);
-    assert.equal(result.status, "auth-missing");
-    assert.equal(result.entries.length, 0);
-    assert.match(result.lastError, /PULSEMCP_API_KEY/);
-    assert.match(result.source.setupHint, /PULSEMCP_API_KEY/);
+      assert.equal(calls, 0);
+      assert.equal(result.status, "auth-missing");
+      assert.equal(result.entries.length, 0);
+      assert.match(result.lastError, /PULSEMCP_API_KEY/);
+      assert.match(result.source.setupHint, /PULSEMCP_API_KEY/);
+    });
   } finally {
     setOptionalEnv("PULSEMCP_API_KEY", previousKey);
     setOptionalEnv("PULSEMCP_TENANT_ID", previousTenant);
@@ -292,26 +551,31 @@ test("fetchRegistryResult sends optional Smithery bearer auth", async () => {
   const previous = process.env.SMITHERY_API_KEY;
   process.env.SMITHERY_API_KEY = "smithery-token";
   try {
-    const result = await fetchRegistryResult({
-      source: "smithery",
-      limit: 1,
-      maxPages: 1,
-      fetch: async (url, init) => {
-        assert.equal(String(url), "https://api.smithery.ai/servers?pageSize=1");
-        assert.equal(init?.headers?.Authorization, "Bearer smithery-token");
-        return jsonResponse(200, {
-          servers: [{
-            name: "smithery/example",
-            version: "1.0.0",
-            repository: { url: "https://github.com/example/smithery" },
-          }],
-        });
-      },
-    });
+    await withTempDir(async (tempDir) => {
+      const registryConfigPath = path.join(tempDir, "registries.json");
+      await updateRegistrySourceEnabled("smithery", true, registryConfigPath);
+      const result = await fetchRegistryResult({
+        source: "smithery",
+        registryConfigPath,
+        limit: 1,
+        maxPages: 1,
+        fetch: async (url, init) => {
+          assert.equal(String(url), "https://api.smithery.ai/servers?pageSize=1");
+          assert.equal(init?.headers?.Authorization, "Bearer smithery-token");
+          return jsonResponse(200, {
+            servers: [{
+              name: "smithery/example",
+              version: "1.0.0",
+              repository: { url: "https://github.com/example/smithery" },
+            }],
+          });
+        },
+      });
 
-    assert.equal(result.status, "discovery-only");
-    assert.equal(result.accepted, 1);
-    assert.equal(result.entries[0].source, "smithery");
+      assert.equal(result.status, "discovery-only");
+      assert.equal(result.accepted, 1);
+      assert.equal(result.entries[0].source, "smithery");
+    });
   } finally {
     setOptionalEnv("SMITHERY_API_KEY", previous);
   }
@@ -345,7 +609,7 @@ test("refreshCache isolates source failures and writes successful partitions", a
       assert.equal(cache.sources.official.entries.length, 1);
       assert.equal(cache.sources.official.status, "ready");
       assert.equal(cache.sources.docker.status, "fetch-error");
-      assert.equal(cache.sources.pulsemcp.status, "auth-missing");
+      assert.equal(cache.sources.pulsemcp, undefined);
     } finally {
       setOptionalEnv("PULSEMCP_API_KEY", previousKey);
       setOptionalEnv("PULSEMCP_TENANT_ID", previousTenant);
@@ -437,4 +701,35 @@ async function withTempDir(fn) {
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function writeRegistryCache(cachePath, entries) {
+  await mkdir(path.dirname(cachePath), { recursive: true });
+  const generatedAt = new Date().toISOString();
+  await writeFile(cachePath, JSON.stringify({
+    schema: "dev.toolpin.registry-cache.v2",
+    generatedAt,
+    ttlMs: 86_400_000,
+    sources: {
+      official: {
+        source: {
+          id: "official",
+          label: "Official MCP Registry",
+          type: "official",
+          mode: "installable",
+          trust: "canonical",
+          enabled: true,
+          authRequired: false,
+        },
+        status: "ready",
+        generatedAt,
+        ttlMs: 86_400_000,
+        entries,
+        accepted: entries.length,
+        skipped: 0,
+        malformed: 0,
+        failed: 0,
+      },
+    },
+  }), "utf8");
 }

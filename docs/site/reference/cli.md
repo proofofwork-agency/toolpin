@@ -19,6 +19,8 @@ for the same cleanup action.
 ```text
 toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
+toolpin registry enable <source-id>
+toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
 toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
@@ -44,8 +46,14 @@ toolpin export-config <server-name> --client <client|all> [--version <server-ver
 `scan` runs advisory description checks against registry metadata and, with
 `--live`, the returned `tools/list` descriptions when the probe succeeds.
 Findings do not make `scan` fail. `verify` checks registry metadata and optional
-live MCP tool metadata. It does not perform byte-level OCI image or MCPB bundle
-verification.
+live MCP tool metadata. For packages, OCI verification requires a valid digest
+pin and best-effort resolves the registry manifest digest when reachable; MCPB
+verification requires a valid `fileSha256` and best-effort recomputes bytes when
+the bundle is available from a code-allowlisted HTTPS artifact host. npm package
+targets are checked against `registry.npmjs.org` packument `dist.integrity` and
+trusted npm tarball bytes. PyPI, NuGet, and Cargo targets are checked for
+declared exact versions and drift only; ToolPin does not verify their artifact
+bytes in this release.
 
 Human-readable `search`, `info`, and `install` output separates trust tier from
 metadata completeness. If the overall score is capped, the output includes a
@@ -126,9 +134,13 @@ required automated proof is missing or failed.
 --project, -p               Shortcut for --scope project.
 --source <id>               Registry source: official, docker, all, or a custom
                             registry id configured in .toolpin/registries.json.
+                            all means every enabled source.
 --live                      Fetch from the registry instead of the local cache.
 --json                      Machine-readable output where listed.
 --version <server-version>  Target a known server version where supported.
+--allow-hosted-directory-targets
+                            Opt in to Smithery-hosted directory targets when
+                            resolving Smithery entries.
 toolpin --version, -v       Print the ToolPin version.
 --help, -h                  Print usage.
 ```

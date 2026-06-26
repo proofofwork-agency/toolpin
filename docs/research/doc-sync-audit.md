@@ -80,7 +80,7 @@ These claims were checked against the code and matched exactly — no fixes requ
 - **Per-client troubleshooting:** Claude global fail-closed, Cursor `.cursor/mcp.json`, Zed fail-closed (both scopes), Roo global fail-closed, Windsurf/Cline/Continue global-only, Codex TOML `[mcp_servers.<name>]` table form + inline/dotted limitation, generic `~/.config/toolpin/` sidecar — all match `src/install.ts` and `src/codexToml.ts`.
 - **Policy:** all 12 fields match `src/policy.ts`; enforcement at `install`/`ci`/`policy check`/TUI all genuine; unknown keys rejected; example JSON validates.
 - **Secrets:** all 7 placeholder patterns present (`<TOKEN>`, `${env:TOKEN}`, `${TOKEN}`, `${{ secrets.TOKEN }}`, `op://`, `vault://`, `doppler://`); read-only + `[REDACTED]` guarantee holds.
-- **CI / digest / signing:** Ed25519, fail-closed-before-registry-resolution, timestamp-insensitive canonical digest, never-mutates — all match code + tests.
+- **CI / digest / signing:** Ed25519, fail-closed-before-registry-resolution, canonical digest that excludes top-level file timestamps but covers entry timestamps, never-mutates — all match code + tests.
 - **Registry:** official/docker/custom sources, `official-compatible` vs `http-json` defaults, `.toolpin/registries.json`, cache fallback — all match.
 - **SARIF 2.1.0** from `scan`/`verify`/`ci`; verify rejects mutable OCI + MCPB without `fileSha256`; `install --verify` persists capability manifest.
 - **Doctor** read-only reconciliation + Codex TOML inline/dotted limitation confirmed.
@@ -92,7 +92,7 @@ These claims were checked against the code and matched exactly — no fixes requ
 
 - **Secrets audit** also keys off `isRequired` (not only `isSecret`) — `capabilities.ts` uses `isSecret || isRequired`. README slightly understates the trigger; behavior is conservative (safer), so left as-is.
 - **`deniedRemoteHosts`** uses Node `URL.host`, which strips default ports (`https://x:443` → `x`). The README's `example.com:443` illustration is therefore not literally matchable; the exact-match/no-suffix claim is otherwise correct.
-- **`cacheHasSource("all")`** only checks for `official`+`docker`, not custom sources — so a cache lacking a configured custom source does not trigger a live fallback under `--source all`. (Named `--source <custom-id>` works correctly.)
+- **Resolved later:** `cacheHasSource("all")` now checks every enabled source, so a cache lacking an enabled custom source triggers a live fallback under `--source all`.
 
 ---
 

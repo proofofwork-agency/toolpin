@@ -4,7 +4,7 @@ import { canonicalJson } from "./canonicalJson.js";
 import { isClientName, type ClientName } from "./config.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import type { InstallPlan } from "./plan.js";
-import { trustTier } from "./trust.js";
+import { hasFreshTrustedArtifactEvidence, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
 import type { RegistrySourceId, TrustTier } from "./types.js";
 
 export interface PolicyConfig {
@@ -132,7 +132,7 @@ export function evaluatePolicy(plan: InstallPlan, policy?: PolicyConfig): Policy
   if (policy.requireToolPinVerifiedEvidence && !hasToolPinVerifiedEvidence(plan)) {
     issues.push({
       code: "toolpin_verified_evidence_required",
-      message: `${plan.name} does not have passed evidence verified by ToolPin`,
+      message: `${plan.name} does not have fresh trusted artifact evidence verified by ToolPin (${plan.trust.verifiedProvenance === true ? trustedArtifactEvidenceProblem(plan.trust.evidence ?? []) : "missing verified provenance"})`,
     });
   }
 
@@ -300,7 +300,7 @@ function isSelectedPackage(plan: InstallPlan, registryType: string): boolean {
 }
 
 function hasToolPinVerifiedEvidence(plan: InstallPlan): boolean {
-  return (plan.trust.evidence ?? []).some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true);
+  return plan.trust.verifiedProvenance === true && hasFreshTrustedArtifactEvidence(plan.trust.evidence ?? []);
 }
 
 function trustTierRank(tier: TrustTier): number {

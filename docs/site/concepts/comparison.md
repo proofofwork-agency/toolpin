@@ -36,7 +36,7 @@ Legend: ✅ native · (✅) partial/indirect · ❌ absent · — N/A.
 | **Client neutrality** | ✅ | — | ❌ (Smithery-locked) | ✅ | (✅) | ✅ | — |
 | **Committed lockfile / reproducibility** | ✅ `mcp-lock.json` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Trust scoring (normalized signals)** | ✅ | ❌ | badge only | ✅ TDQS 1–5 × 6 (transparent) | ❌ allow/deny | (✅) via Cedar | (✅) runtime scanning |
-| **Cryptographic install verification** | (✅) partial install-time integrity gates, no byte recompute yet | ❌ | ❌ | ❌ | (✅) image signing + SBOM | ✅ Sigstore provenance | ✅ runtime |
+| **Cryptographic install verification** | (✅) partial install-time integrity gates: OCI registry digest resolution, trusted-host MCPB byte hashing, and npm SRI are best-effort; broader artifacts are not verified | ❌ | ❌ | ❌ | (✅) image signing + SBOM | ✅ Sigstore provenance | ✅ runtime |
 | **Ed25519 lockfile signing** | ✅ | ❌ | ❌ | ❌ | ❌ | (✅) Cosign (not Ed25519) | ❌ |
 | **Policy / governance** | (✅) local JSON gate | ❌ | (✅) per-token `--policy` | ✅ gateway ACLs | ✅ custom engine + RBAC | ✅ **Cedar** | ✅ runtime guardrails |
 | **Secret management** | (✅) audit only | ❌ | ✅ `agent.pw` vault | ✅ managed OAuth | ✅ credential governance | ✅ encrypted + token exchange | ✅ |

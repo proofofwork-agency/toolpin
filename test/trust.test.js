@@ -12,7 +12,7 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(trusted.overallScore, 69);
   assert.equal(trusted.tier, "conditional");
   assert.equal(trusted.capReason, "automated evidence incomplete");
-  assert.equal(trustCapExplanation(trusted), "automated evidence incomplete: missing ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or verified attestation)");
+  assert.equal(trustCapExplanation(trusted), "automated evidence incomplete: missing ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or npm tarball integrity)");
   assert.ok(trusted.evidence.some((entry) => entry.code === "package_pin" && entry.status === "declared" && entry.verifiedByToolPin === false));
   assert.deepEqual(trusted.badges.filter((badge) => ["source repo", "namespaced"].includes(badge)), ["source repo", "namespaced"]);
 
@@ -150,7 +150,8 @@ test("secrets and missing install target penalties have exact metadata weights",
   assert.ok(noTarget.issues.some((issue) => issue.code === "no_install_target" && issue.severity === "critical"));
 });
 
-test("verified requires passed artifact evidence, not high metadata completeness", () => {
+test("verified requires provenance plus fresh trusted artifact evidence, not high metadata completeness", () => {
+  const verifiedAt = new Date().toISOString();
   assert.deepEqual(classifyTrust(95, [], []), { tier: "conditional", gatedBy: [], gates: [] });
   assert.deepEqual(classifyTrust(95, [], [{ code: "package_pin", status: "passed", message: "exact version" }]), { tier: "conditional", gatedBy: [], gates: [] });
   assert.deepEqual(
@@ -163,30 +164,30 @@ test("verified requires passed artifact evidence, not high metadata completeness
   assert.deepEqual(
     classifyTrust(95, [], [
       { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
-      { code: "mcpb_sha256_verified", status: "passed", message: "bytes hashed", verifiedByToolPin: true },
+      { code: "mcpb_sha256_verified", status: "passed", message: "bytes hashed", verifiedByToolPin: true, trustedAnchor: true, verifiedAt },
     ]),
+    { tier: "conditional", gatedBy: [], gates: [] },
+  );
+  assert.deepEqual(
+    classifyTrust(95, [], [
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "mcpb_sha256_verified", status: "passed", message: "bytes hashed", verifiedByToolPin: true, trustedAnchor: true, verifiedAt },
+    ], { verifiedProvenance: true }),
     { tier: "verified", gatedBy: [], gates: [] },
   );
   assert.deepEqual(
     classifyTrust(95, [], [
       { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
-      { code: "oci_digest_verified", status: "passed", message: "registry manifest digest matched", verifiedByToolPin: true },
-    ]),
+      { code: "oci_digest_verified", status: "passed", message: "registry manifest digest matched", verifiedByToolPin: true, trustedAnchor: true, verifiedAt },
+    ], { verifiedProvenance: true }),
     { tier: "verified", gatedBy: [], gates: [] },
   );
   assert.deepEqual(
     classifyTrust(95, [], [
       { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
-      { code: "mcpb_sha256_verified", status: "passed", message: "MCPB bytes matched fileSha256", verifiedByToolPin: true },
-    ]),
-    { tier: "verified", gatedBy: [], gates: [] },
-  );
-  assert.deepEqual(
-    classifyTrust(95, [], [
-      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
-      { code: "attestation_verified", status: "passed", message: "attestation verified", verifiedByToolPin: true },
-    ]),
-    { tier: "verified", gatedBy: [], gates: [] },
+      { code: "mcpb_sha256_verified", status: "passed", message: "MCPB bytes matched fileSha256", verifiedByToolPin: true, trustedAnchor: false, verifiedAt },
+    ], { verifiedProvenance: true }),
+    { tier: "conditional", gatedBy: [], gates: [] },
   );
 });
 

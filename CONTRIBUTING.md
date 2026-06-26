@@ -4,6 +4,27 @@ Thanks for improving ToolPin. This project is intentionally conservative:
 security-sensitive commands should fail closed, write the minimum config needed,
 and avoid overstating what ToolPin verifies.
 
+## Contributor License Agreement
+
+Before your first pull request can be merged, please sign the
+[Individual Contributor License Agreement](CLA.md). You only sign once, and it
+covers all your past and future contributions.
+
+The CLA is based on the widely-used Apache Individual CLA. It lets you keep your
+copyright while granting the maintainers the administrative rights needed to
+maintain the project and — if a hosted/commercial offering is ever shipped —
+relicense the project as a whole without fragmenting copyright. If you do not
+agree to it, you are still free to fork ToolPin under the Apache License 2.0.
+
+To sign, open a pull request adding one line to
+[`.cla-signatures/CLA_SIGNATORIES.md`](.cla-signatures/CLA_SIGNATORIES.md):
+
+```
+- Jane Doe <jane@example.com>
+```
+
+Use your real name and the primary email address used in your Git commits.
+
 ## Development Setup
 
 Requirements:

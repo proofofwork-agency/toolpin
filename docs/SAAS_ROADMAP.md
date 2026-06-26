@@ -237,7 +237,9 @@ These are useful even if SaaS is never built.
 - Attestations are surfaced as declared metadata; ToolPin does not yet fully
   verify sigstore, SLSA, SBOM, or key identity.
 - OCI and MCPB verification is not yet byte-level recomputation across the full
-  artifact path.
+  artifact path. Today OCI is best-effort registry digest resolution, MCPB byte
+  hashing works only from code-allowlisted HTTPS artifact hosts, and npm SRI is
+  checked against `registry.npmjs.org` tarball bytes.
 - Tool-description pinning covers names and descriptions, but not full input
   schemas or behavioral semantics.
 - There is no public npm release or published action tag yet, so adoption is

@@ -121,15 +121,17 @@ on read but `ci` will reject entries missing `integrity`.
 | `config` | any JSON value | Generated client config fragment. |
 | `notes` | string array | Human-readable install notes. |
 | `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash` and `toolDescriptionScan` appear only after a successful `--verify` live probe of a remote target. |
-| `resolvedAt` | string | Time the entry was resolved. Excluded from the integrity payload. |
-| `lockedAt` | string *(optional)* | Time the entry was written. Excluded from the integrity payload. |
+| `resolvedAt` | string | Time the entry was resolved. Included in per-entry integrity and whole-lock digest calculations. |
+| `lockedAt` | string *(optional)* | Time the entry was written. Included in per-entry integrity and whole-lock digest calculations. |
 | `resolved` | object *(synthesized)* | Registry source, name, and version resolved by ToolPin. |
 | `original` | object *(synthesized)* | Original name, version, and client at lock time. |
 | `locked` | object *(synthesized)* | Snapshot used for drift checks. |
-| `integrity` | string *(optional on read, enforced by `ci`)* | `sha256-...` over timestamp-insensitive entry contents. |
+| `integrity` | string *(optional on read, enforced by `ci`)* | `sha256-...` over the reviewed entry contents, including entry timestamps. |
 
-The whole-lock digest from `toolpin lock digest` excludes timestamps and covers
-the canonical set of locked server/client entries.
+The whole-lock digest from `toolpin lock digest` excludes only top-level file
+metadata timestamps (`generatedAt`, `updatedAt`) and covers the canonical set of
+locked server/client entries, including entry timestamps such as `resolvedAt`
+and `lockedAt`.
 
 ## Trust object
 
@@ -153,14 +155,15 @@ required? }`, where `status` is `passed`, `declared`, `failed`, or
 `unavailable`. Current codes include
 `package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
 `lock_signature`, `oci_digest_verified`, `mcpb_sha256_verified`,
-`attestation_declared`, and `attestation_verified`. Declared pins, hashes, and
+`npm_integrity_verified`, `attestation_declared`, and `attestation_verified`. Declared pins, hashes, and
 attestations are not treated as ToolPin-verified unless a verifier records
 `verifiedByToolPin: true` on a passed evidence entry.
 
 `automated evidence incomplete` means the entry has not satisfied all evidence
 required for `verified`. In practice this usually means an exact package pin
 exists but artifact proof is missing or unavailable: ToolPin could not resolve
-the OCI manifest digest, recompute MCPB bytes, or verify an attestation.
+the OCI manifest digest, recompute MCPB bytes from a trusted HTTPS host, verify
+npm tarball integrity, or verify an attestation.
 
 ## Capability manifest
 
@@ -193,8 +196,10 @@ report is not `ok`) when:
 - a remote live probe is enabled but fails to connect or list tools — code `remote_probe_failed`;
 - no install target (package or remote) is available — code `no_install_target`.
 
-A successful OCI digest pin earns the `digest-pinned` badge; an MCPB package with
-`fileSha256` earns the `fileSha256` badge. Skipping the live probe
+A valid OCI digest pin earns the `digest-pinned` badge and is required before
+ToolPin attempts best-effort registry digest verification. A valid MCPB
+`fileSha256` earns the `fileSha256` badge and is required before ToolPin attempts
+best-effort byte hashing from code-allowlisted HTTPS artifact hosts. Skipping the live probe
 (`--skip-live-verification`) downgrades remote tool-description pinning to a
 `remote_probe_skipped` warning rather than a blocker, leaving the manifest
 metadata-only. A successful live probe earns `tool-description-pinned`.

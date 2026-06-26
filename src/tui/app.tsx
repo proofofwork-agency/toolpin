@@ -8,7 +8,7 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "../i
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
-import { fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache } from "../registry.js";
+import { fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache, updateRegistrySourceEnabled } from "../registry.js";
 import { searchServers } from "../search.js";
 import { testServer, type ServerTestResult } from "../tester.js";
 import type { NormalizedServer } from "../types.js";
@@ -28,7 +28,7 @@ import {
   buildTuiVersionInfo,
   cacheHasSource,
   commandLogForView,
-  filterBySource,
+  filterByEnabledSources,
   installClientChoicesForScope,
   installClientLabel,
   initialInstallVersionIndex,
@@ -83,6 +83,7 @@ export function MpmTui() {
     dataMode: "cache",
     sourceMode: "all",
     browseLayout: "flat",
+    browseVersionMode: "latest",
     resultLimit: DEFAULT_RESULT_LIMIT,
     client: "claude",
     installScope: "project",
@@ -112,9 +113,9 @@ export function MpmTui() {
   }, []);
 
   const allResults = useMemo(() => {
-    const latest = latestOnly(state.servers);
-    return searchServers(latest, state.query || "mcp", MAX_RESULT_LIMIT);
-  }, [state.servers, state.query]);
+    const candidates = state.browseVersionMode === "all" ? state.servers : latestOnly(state.servers);
+    return searchServers(candidates, state.query || "mcp", MAX_RESULT_LIMIT);
+  }, [state.servers, state.query, state.browseVersionMode]);
   const results = useMemo(() => allResults.slice(0, state.resultLimit), [allResults, state.resultLimit]);
   const browseLayout = state.browseLayout === "category" && !hasCategoryMetadata(results) ? "project" : state.browseLayout;
 
@@ -149,7 +150,7 @@ export function MpmTui() {
       const entries = mode === "live"
         ? await fetchRegistry({ maxPages: 4, search: query || undefined, source: sourceMode })
         : await readCache().then(async (cached) => {
-            if (!cacheHasSource(cached, sourceMode)) {
+            if (!cacheHasSource(cached, sourceMode, registrySources)) {
               const fetched = await refreshRegistryCache({ maxPages: 3, search: query || undefined, source: sourceMode });
               return fetched.entries;
             }
@@ -159,13 +160,14 @@ export function MpmTui() {
             return fetched.entries;
       });
       const servers = normalizeEntries(entries);
+      const visibleServers = filterByEnabledSources(servers, sourceMode, registrySources);
       const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       void refreshInstalledRows(servers, lockfile);
       setState((prev) => ({
         ...prev,
         entries,
         registrySources,
-        servers: filterBySource(servers, sourceMode),
+        servers: visibleServers,
         lockfile,
         selected: 0,
         testResult: undefined,
@@ -193,6 +195,7 @@ export function MpmTui() {
       const entries = await readCache().catch(() => fetched.entries);
       const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
       const servers = normalizeEntries(entries);
+      const visibleServers = filterByEnabledSources(servers, source, registrySources);
       const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       const ingestLog = fetched.lastError ? {
         title: "ingest",
@@ -205,7 +208,7 @@ export function MpmTui() {
         ...prev,
         entries,
         registrySources,
-        servers: filterBySource(servers, source),
+        servers: visibleServers,
         lockfile,
         selected: 0,
         testResult: undefined,
@@ -217,6 +220,38 @@ export function MpmTui() {
         sourceMode: source,
         lastAction: `ingested ${fetched.entries.length} ${source} versions`,
         commandLog: ingestLog ?? prev.commandLog,
+      }));
+    } catch (error) {
+      setState((prev) => ({ ...prev, loading: false, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  async function toggleSelectedSource(): Promise<void> {
+    const source = sourceRows(state.registrySources)[state.sourceSelected];
+    if (!source) return;
+    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+    try {
+      await updateRegistrySourceEnabled(source.id, !source.enabled);
+      const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
+      const entries = await readCache().catch(() => state.entries);
+      const servers = normalizeEntries(entries);
+      const visibleServers = filterByEnabledSources(servers, "all", registrySources);
+      setState((prev) => ({
+        ...prev,
+        entries,
+        registrySources,
+        servers: visibleServers,
+        sourceMode: "all",
+        selected: 0,
+        loading: false,
+        error: undefined,
+        lastAction: `${source.enabled ? "disabled" : "enabled"} ${source.id}`,
+        commandLog: {
+          title: "sources",
+          command: `toolpin registry ${source.enabled ? "disable" : "enable"} ${source.id}`,
+          ok: true,
+          lines: [`${source.id} ${source.enabled ? "disabled" : "enabled"}`, "Browse now uses enabled sources."],
+        },
       }));
     } catch (error) {
       setState((prev) => ({ ...prev, loading: false, error: error instanceof Error ? error.message : String(error) }));
@@ -1045,6 +1080,7 @@ export function MpmTui() {
       view: "discover",
       inputMode: "normal",
       sourceMode: "all",
+      browseVersionMode: "latest",
       resultLimit: DEFAULT_RESULT_LIMIT,
       client: "claude",
       installScope: "project",
@@ -1266,8 +1302,7 @@ export function MpmTui() {
     }
     if (key.return) {
       if (state.view === "sources") {
-        const source = sourceRows(state.registrySources)[state.sourceSelected];
-        if (source?.enabled) void loadData(state.dataMode, state.query, source.id);
+        void toggleSelectedSource();
       } else if ((state.view === "discover" || state.view === "details") && selectedServer) {
         switchToView("plan");
       } else if (state.view === "plan" && selectedServer) {
@@ -1288,8 +1323,7 @@ export function MpmTui() {
         break;
       case "r":
         if (state.view === "sources") {
-          const source = sourceRows(state.registrySources)[state.sourceSelected];
-          void refreshCache(source?.id ?? state.sourceMode);
+          void refreshCache("all");
         } else {
           void loadData(state.dataMode);
         }
@@ -1297,6 +1331,17 @@ export function MpmTui() {
       case "R":
         if (state.view === "sources") void refreshCache("all");
         else resetViewDefaults();
+        break;
+      case " ":
+        if (state.view === "sources") void toggleSelectedSource();
+        break;
+      case "b":
+        setState((prev) => ({
+          ...prev,
+          browseVersionMode: prev.browseVersionMode === "latest" ? "all" : "latest",
+          selected: 0,
+          lastAction: `browse ${prev.browseVersionMode === "latest" ? "all cached versions" : "latest servers"}`,
+        }));
         break;
       case "I":
         switchToView("installed");
@@ -1624,6 +1669,7 @@ export function MpmTui() {
               results={results}
               totalMatches={allResults.length}
               totalServers={latestOnly(state.servers).length}
+              totalVersions={state.servers.length}
               selected={selectedIndex}
               height={paneHeight}
               width={leftPaneWidth}

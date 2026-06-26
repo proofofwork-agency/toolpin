@@ -9,15 +9,15 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "./in
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
 import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_SIGNATURE_PATH } from "./constants.js";
-import { enforcePolicy, readPolicyDigest } from "./policy.js";
-import { BUILTIN_REGISTRY_SOURCES, CacheSchemaError, fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, readCacheMetadata, refreshCache } from "./registry.js";
+import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest } from "./policy.js";
+import { CacheSchemaError, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, latestOnly, listRegistrySources, listRegistrySourceStatuses, normalizeEntries, readCache, readCacheMetadata, refreshCache, updateRegistrySourceEnabled } from "./registry.js";
 import { searchServers } from "./search.js";
 import { scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustTier } from "./trust.js";
+import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
@@ -46,6 +46,7 @@ const VALUE_FLAGS = new Set([
 const KNOWN_FLAGS = new Set([
   ...VALUE_FLAGS,
   "--all",
+  "--allow-hosted-directory-targets",
   "--dry-run",
   "--global",
   "-g",
@@ -55,6 +56,7 @@ const KNOWN_FLAGS = new Set([
   "--live",
   "--no-policy",
   "--project",
+  "--require-verified",
   "-p",
   "--sarif",
   "--skip-live-verification",
@@ -238,6 +240,7 @@ async function info(rest: string[]): Promise<void> {
   printField("packages", server.packageTypes.join(", ") || "none");
   printField("remotes", server.remoteTypes.join(", ") || "none");
   printField("registry", server.registrySource);
+  if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
   printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
   printField("evidence", evidenceSummary(trust));
   printCapExplanation(trust);
@@ -249,11 +252,119 @@ async function info(rest: string[]): Promise<void> {
 }
 
 async function audit(rest: string[]): Promise<void> {
+  const values = positional(rest);
+  if (values[0] === "server") {
+    await auditServer(rest.filter((value, index) => index !== 0));
+    return;
+  }
+  if (values[0]) {
+    console.error("Warning: `toolpin audit <server>` is deprecated; use `toolpin audit server <server>` for a one-server trust report.");
+    await auditServer(rest);
+    return;
+  }
+
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
+  const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
+  const scope = scopeFlag(rest, "all");
+  const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "all" as ClientName) : "all";
+  if (scope !== "all" && scope !== "project" && scope !== "global") throw new Error("--scope must be all, project, or global");
+  const findings: Array<{ code: string; severity: "info" | "warning" | "critical"; message: string; key?: string }> = [];
+
+  const [inventory, doctorReport, secretsReport, lockfile, policyConfig] = await Promise.all([
+    listInstalledServers({ scope, client }),
+    doctorLockfile(path, scope).catch((error) => ({ ok: false, checked: 0, issues: [{ key: path, kind: "unreadable" as const, client: "generic" as ClientName, serverName: path, file: path, message: error instanceof Error ? error.message : String(error) }] })),
+    auditSecrets(path, scope).catch((error) => ({ ok: false, checked: 0, findings: [{ kind: "unreadable_config" as const, key: path, client: "generic" as ClientName, serverName: path, file: path, message: error instanceof Error ? error.message : String(error) }] })),
+    readLockfile(path).catch((error) => {
+      findings.push({ code: "lockfile_unreadable", severity: "critical", message: error instanceof Error ? error.message : String(error), key: path });
+      return undefined;
+    }),
+    readPolicy(policyPath).catch((error) => {
+      findings.push({ code: "policy_unreadable", severity: "critical", message: error instanceof Error ? error.message : String(error), key: policyPath });
+      return undefined;
+    }),
+  ]);
+
+  for (const issue of inventory.issues) findings.push({ code: `inventory_${issue.kind}`, severity: "critical", message: issue.message, key: issue.file });
+  for (const issue of doctorReport.issues) findings.push({ code: `doctor_${issue.kind}`, severity: issue.kind === "drift" || issue.kind === "unreadable" ? "critical" : "warning", message: issue.message, key: issue.key });
+  for (const finding of secretsReport.findings) findings.push({ code: `secret_${finding.kind}`, severity: finding.kind === "plaintext_secret" || finding.kind === "secret_prefix" ? "critical" : "warning", message: finding.message, key: finding.key });
+
+  const policyReports = [];
+  const verificationReports = [];
+  if (lockfile) {
+    for (const [key, locked] of Object.entries(lockfile.servers)) {
+      const problem = trustedArtifactEvidenceProblem(locked.trust.evidence ?? []);
+      const hasArtifactEvidence = (locked.trust.evidence ?? []).some((entry) => entry.code === "oci_digest_verified" || entry.code === "mcpb_sha256_verified" || entry.code === "npm_integrity_verified");
+      if (hasArtifactEvidence && problem) findings.push({ code: "verified_evidence_incomplete", severity: "warning", message: `${key}: ${problem}`, key });
+      if (hasFlag(rest, "--require-verified") && (locked.trust.verifiedProvenance !== true || !hasFreshTrustedArtifactEvidence(locked.trust.evidence ?? []))) {
+        findings.push({ code: "require_verified_failed", severity: "critical", message: `${key}: ${locked.trust.verifiedProvenance === true ? problem : "missing verified provenance"}`, key });
+      }
+
+      if (policyConfig) {
+        const policyReport = evaluatePolicy(locked, policyConfig);
+        policyReports.push(policyReport);
+        for (const issue of policyReport.issues) findings.push({ code: `policy_${issue.code}`, severity: "critical", message: issue.message, key: policyReport.key });
+      }
+
+      if (hasFlag(rest, "--verify")) {
+        try {
+          const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
+          const verification = await verifyServer(server, {
+            liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+            timeoutMs: numberFlag(rest, "--timeout", 15000),
+            requireVerified: hasFlag(rest, "--require-verified"),
+          });
+          verificationReports.push(verification);
+          if (!verification.ok) findings.push({ code: "verification_failed", severity: "critical", message: `${key}: verification failed`, key });
+          if (hasFlag(rest, "--require-verified") && verificationOutcome(verification) !== "verified") {
+            findings.push({ code: "require_verified_failed", severity: "critical", message: `${key}: verification is ${verificationOutcome(verification)}`, key });
+          }
+        } catch (error) {
+          findings.push({ code: "verification_unavailable", severity: hasFlag(rest, "--require-verified") ? "critical" : "warning", message: `${key}: ${error instanceof Error ? error.message : String(error)}`, key });
+        }
+      }
+    }
+  }
+
+  const report = {
+    ok: !findings.some((finding) => finding.severity === "critical"),
+    checked: {
+      lockfile: lockfile ? Object.keys(lockfile.servers).length : 0,
+      inventory: inventory.checked,
+      doctor: doctorReport.checked,
+      secrets: secretsReport.checked,
+    },
+    findings,
+    inventory,
+    doctor: doctorReport,
+    secrets: secretsReport,
+    policy: policyConfig ? { ok: policyReports.every((entry) => entry.ok), reports: policyReports } : undefined,
+    verification: hasFlag(rest, "--verify") ? { ok: verificationReports.every((entry) => entry.ok), reports: verificationReports } : undefined,
+  };
+
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printHeader(report.ok ? "Audit OK" : "Audit findings");
+    printField("lockfile", path);
+    printField("checked", `${report.checked.lockfile} locked, ${report.checked.inventory} config file(s)`);
+    for (const finding of findings) printBullet(`${finding.severity.toUpperCase()}: ${finding.code}${finding.key ? ` ${finding.key}` : ""}: ${finding.message}`);
+  }
+  if (!report.ok) process.exitCode = 1;
+}
+
+async function auditServer(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin audit <server-name> [--live]");
+  if (!name) throw new Error("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--live] [--json]");
   const server = await findServer(rest, name);
   const trust = scoreServer(server);
-  console.log(JSON.stringify({ name: server.name, version: server.version, trust }, null, 2));
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ kind: "server_trust_report", name: server.name, version: server.version, trust }, null, 2));
+    return;
+  }
+  printHeader(`Server trust report: ${server.name}@${server.version}`);
+  printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
+  printField("evidence", evidenceSummary(trust));
+  printCapExplanation(trust);
 }
 
 async function scan(rest: string[]): Promise<void> {
@@ -304,12 +415,13 @@ async function scan(rest: string[]): Promise<void> {
 
 async function verify(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]");
+  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
 
   const server = await findServer(rest, name);
   const report = await verifyServer(server, {
     liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
     timeoutMs: numberFlag(rest, "--timeout", 15000),
+    requireVerified: hasFlag(rest, "--require-verified"),
   });
 
   if (hasFlag(rest, "--sarif")) {
@@ -352,8 +464,17 @@ async function versions(rest: string[]): Promise<void> {
 
 async function registry(rest: string[]): Promise<void> {
   const subcommand = rest[0] ?? "list";
+  if (subcommand === "enable" || subcommand === "disable") {
+    const sourceId = rest[1];
+    if (!sourceId) throw new Error("Usage: toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
+    await updateRegistrySourceEnabled(sourceId, subcommand === "enable");
+    printHeader("Registry source updated");
+    printField("source", sourceId);
+    printField("enabled", subcommand === "enable" ? "yes" : "no");
+    return;
+  }
   if (subcommand !== "list") {
-    throw new Error("Usage: toolpin registry list [--json]");
+    throw new Error("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
   }
 
   const sources = await listRegistrySourceStatuses();
@@ -377,7 +498,7 @@ async function registry(rest: string[]): Promise<void> {
     printField("auth", source.authRequired ? "required" : "none");
     if (source.url) printField("url", source.url);
     if (partition) {
-      printField("cached", `${partition.entries.length}`);
+      printField("cached", `${partition.entries.length} versions / ${latestOnly(normalizeEntries(partition.entries)).length} latest servers`);
       printField("last fetched", partition.generatedAt);
       printField("fetched", `accepted ${partition.accepted}, skipped ${partition.skipped}, malformed ${partition.malformed}, failed ${partition.failed}`);
       if (partition.pageInfo) printField("pages", `${partition.pageInfo.fetchedPages}/${partition.pageInfo.maxPages} hasMore=${partition.pageInfo.hasMore}`);
@@ -575,46 +696,65 @@ async function exportConfig(rest: string[]): Promise<void> {
 async function findServer(rest: string[], name: string): Promise<NormalizedServer> {
   const servers = await loadServers(rest, { search: name });
   const requestedVersion = serverVersionFlag(rest);
+  let resolved: NormalizedServer | undefined;
   if (requestedVersion) {
-    const exactVersion = servers.find((server) => server.name === name && server.version === requestedVersion);
-    if (exactVersion) return exactVersion;
+    resolved = servers.find((server) => server.name === name && server.version === requestedVersion);
 
-    const matchedName = latestOnly(servers).find((server) => server.name === name)?.name
-      ?? searchServers(latestOnly(servers), name, 1)[0]?.server.name;
-    const partialVersion = matchedName
-      ? servers.find((server) => server.name === matchedName && server.version === requestedVersion)
-      : undefined;
-    if (partialVersion) return partialVersion;
+    if (!resolved) {
+      const matchedName = latestOnly(servers).find((server) => server.name === name)?.name
+        ?? searchServers(latestOnly(servers), name, 1)[0]?.server.name;
+      resolved = matchedName
+        ? servers.find((server) => server.name === matchedName && server.version === requestedVersion)
+        : undefined;
+    }
 
-    throw new Error(`No server version ${requestedVersion} found for ${name}. Run \`toolpin versions ${name}\` to list known versions.`);
+    if (!resolved) {
+      throw new Error(`No server version ${requestedVersion} found for ${name}. Run \`toolpin versions ${name}\` to list known versions.`);
+    }
+  } else {
+    resolved = latestOnly(servers).find((server) => server.name === name)
+      ?? searchServers(latestOnly(servers), name, 1)[0]?.server;
   }
 
-  const exact = latestOnly(servers).find((server) => server.name === name);
-  if (exact) return exact;
+  if (!resolved) {
+    throw new Error(`No server found for ${name}. Try \`toolpin ingest\` or pass --live.`);
+  }
 
-  const partial = searchServers(latestOnly(servers), name, 1)[0]?.server;
-  if (partial) return partial;
-
-  throw new Error(`No server found for ${name}. Try \`toolpin ingest\` or pass --live.`);
+  return resolveServerTargets(rest, resolved);
 }
 
 async function findExactServer(rest: string[], name: string, source: RegistrySourceId | "all"): Promise<NormalizedServer> {
   const servers = await loadServers(rest, { search: name, source });
   const exact = latestOnly(servers).find((server) => server.name === name);
-  if (exact) return exact;
+  if (exact) return resolveServerTargets(rest, exact);
   throw new Error(`No exact server found for ${name} in ${source}. Try \`toolpin ingest\` or pass --live.`);
+}
+
+async function resolveServerTargets(rest: string[], server: NormalizedServer): Promise<NormalizedServer> {
+  return enrichGlamaTarget(await enrichSmitheryTarget(server, {
+    allowHostedDirectoryTargets: hasFlag(rest, "--allow-hosted-directory-targets"),
+  }));
 }
 
 async function loadServers(rest: string[], liveOptions: { search?: string; source?: RegistrySourceId | "all" } = {}): Promise<NormalizedServer[]> {
   let entries: RegistryEntry[];
   const source = liveOptions.source ?? sourceFlag(rest, "all");
+  const registrySources = await listRegistrySources();
+  const knownSources = new Set(registrySources.map((entry) => entry.id));
+  const enabledSources = new Set(registrySources.filter((entry) => entry.enabled).map((entry) => entry.id));
+  if (source !== "all" && !knownSources.has(source)) {
+    throw new Error(`Unknown registry source: ${source}. Add it to .toolpin/registries.json or run \`toolpin registry list\`.`);
+  }
+  if (source !== "all" && !enabledSources.has(source)) {
+    throw new Error(`Registry source ${source} is disabled. Run \`toolpin registry enable ${source}\` to enable it.`);
+  }
 
   if (hasFlag(rest, "--live")) {
     entries = await fetchRegistry({ maxPages: 3, search: liveOptions.search, source });
   } else {
     try {
       entries = await readCache();
-      if (!cacheHasSource(entries, source)) {
+      if (!cacheHasSource(entries, source, enabledSources)) {
         entries = await fetchRegistry({ maxPages: 3, search: liveOptions.search, source });
       }
     } catch (error) {
@@ -624,7 +764,9 @@ async function loadServers(rest: string[], liveOptions: { search?: string; sourc
   }
 
   const servers = normalizeEntries(entries);
-  return source === "all" ? servers : servers.filter((server) => server.registrySource === source);
+  return source === "all"
+    ? servers.filter((server) => enabledSources.has(server.registrySource))
+    : servers.filter((server) => server.registrySource === source);
 }
 
 async function install(rest: string[]): Promise<void> {
@@ -636,6 +778,7 @@ async function install(rest: string[]): Promise<void> {
   const scope = scopeFlag(rest, "project") as InstallScope;
   const updateLock = hasFlag(rest, "--update-lock");
   const verifyBeforeInstall = hasFlag(rest, "--verify");
+  const requireVerified = hasFlag(rest, "--require-verified");
   const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
@@ -649,6 +792,7 @@ async function install(rest: string[]): Promise<void> {
     const report = await verifyServer(server, {
       liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
       timeoutMs: numberFlag(rest, "--timeout", 15000),
+      requireVerified,
     });
     if (!report.ok) {
       throw new Error([
@@ -660,7 +804,7 @@ async function install(rest: string[]): Promise<void> {
     verifiedCapabilityManifest = report.capabilityManifest;
   }
   const clients = client === "all" ? clientsForScope(scope) : [client];
-  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest, scope }));
+  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest, verificationReport, scope }));
   if (!hasFlag(rest, "--no-policy")) {
     const violations = [];
     for (const plan of plans) {
@@ -696,11 +840,12 @@ async function install(rest: string[]): Promise<void> {
   printHeader("Install");
   printField("server", `${server.name}@${server.version}`, OK_COLOR);
   printField("registry", server.registrySource, CYAN_COLOR);
-  const installTrust = scoreServer(server);
+  if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
+  const installTrust = plans[0]?.trust ?? scoreServer(server);
   printField("trust", `${trustTier(installTrust)} / ${installTrust.score}% complete / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
   printField("evidence", evidenceSummary(installTrust));
   printCapExplanation(installTrust);
-  printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? OK_COLOR : MUTED_COLOR);
+  printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? (verificationOutcome(verificationReport) === "verified" ? OK_COLOR : WARN_COLOR) : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
@@ -773,6 +918,7 @@ async function adoptInstalled(rest: string[]): Promise<void> {
     servers,
     lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
     verify: hasFlag(rest, "--verify"),
+    requireVerified: hasFlag(rest, "--require-verified"),
     timeoutMs: numberFlag(rest, "--timeout", 15000),
     policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
@@ -798,6 +944,7 @@ async function updateInstalled(rest: string[]): Promise<void> {
       servers,
       lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
       verify: hasFlag(rest, "--verify"),
+      requireVerified: hasFlag(rest, "--require-verified"),
       timeoutMs: numberFlag(rest, "--timeout", 15000),
       policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
       enforcePolicy: !hasFlag(rest, "--no-policy"),
@@ -823,6 +970,7 @@ async function updateInstalled(rest: string[]): Promise<void> {
     version: stringFlag(rest, "--version", ""),
     lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
     verify: hasFlag(rest, "--verify"),
+    requireVerified: hasFlag(rest, "--require-verified"),
     timeoutMs: numberFlag(rest, "--timeout", 15000),
     policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
@@ -918,6 +1066,7 @@ async function ci(rest: string[]): Promise<void> {
   const signaturePath = stringFlag(rest, "--signature", "");
   const publicKeyPath = stringFlag(rest, "--public-key", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
+  const requireVerified = hasFlag(rest, "--require-verified");
   const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   const enforcePolicies = !hasFlag(rest, "--no-policy");
   const sarif = hasFlag(rest, "--sarif");
@@ -958,13 +1107,15 @@ async function ci(rest: string[]): Promise<void> {
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
     let verifiedCapabilityManifest: CapabilityManifest | undefined;
+    let verification: VerificationReport | undefined;
     if (hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]) && lockedHasLivePins(locked)) {
       throw new Error(`${locked.name} has live capability pins in ${path}; --skip-live-verification is not allowed for pinned CI entries.`);
     }
     if (verifyBeforeUse) {
-      const verification = await verifyServer(server, {
+      verification = await verifyServer(server, {
         liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
         timeoutMs: numberFlag(rest, "--timeout", 15000),
+        requireVerified,
       });
       if (!verification.ok) {
         throw new Error([
@@ -974,7 +1125,7 @@ async function ci(rest: string[]): Promise<void> {
       }
       verifiedCapabilityManifest = verification.capabilityManifest;
     }
-    const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest, scope: locked.scope ?? "project" });
+    const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest, verificationReport: verification, scope: locked.scope ?? "project" });
     if (enforcePolicies) {
       const policy = await enforcePolicy(plan, policyPath);
       if (!policy.ok) {
@@ -1115,7 +1266,7 @@ async function doctor(rest: string[]): Promise<void> {
 }
 
 function ciHelp(): void {
-  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
 }
 
 function doctorHelp(): void {
@@ -1129,6 +1280,19 @@ function commandHelp(command: string): void {
       return;
     case "ci":
       ciHelp();
+      return;
+    case "registry":
+    case "sources":
+      console.log("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
+      return;
+    case "audit":
+      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source official|docker|all] [--live] [--json]");
+      return;
+    case "scan":
+      console.log("Usage: toolpin scan <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
+      return;
+    case "verify":
+      console.log("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
       return;
     case "doctor":
       doctorHelp();
@@ -1207,12 +1371,13 @@ Quick start
 Discovery
   toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
   toolpin registry list [--json]
+  toolpin registry enable <source-id>
+  toolpin registry disable <source-id>
   toolpin sources [--json]
   toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
   toolpin info <server> [--version <server-version>] [--json] [--live]
-  toolpin audit <server> [--version <server-version>] [--live]
-  toolpin scan <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000]
-  toolpin verify <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]
+  toolpin scan <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000]  # description scan
+  toolpin verify <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]
   toolpin versions <server> [--live] [--limit 10] [--json]
   toolpin test <server> [--version <server-version>] [--live] [--timeout 15000] [--json]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
@@ -1220,7 +1385,7 @@ Discovery
 Install and config
   toolpin list|installed [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
   toolpin plan <server> --client|-c <client> [--version <server-version>] [--live]
-  toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy]
   toolpin adopt <installed> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
   toolpin update <server> --client|-c <client> --scope|-s project|global [--version <server-version>] [--dry-run] [--json]
   toolpin update --all [--scope|-s all|project|global] [--client|-c <client|all>] [--dry-run] [--json]
@@ -1229,7 +1394,9 @@ Install and config
   toolpin export-config <server> --client|-c <client|all> [--version <server-version>] [--live]
 
 Lock and governance
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+  toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--require-verified] [--json]
+  toolpin audit server <server> [--version <server-version>] [--live] [--json]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
@@ -1247,10 +1414,11 @@ Trust output
   cap explains why an otherwise strong score was limited
 
 Common options
-  --source official|docker|all|id    choose registry source
+  --source official|docker|all|id    choose registry source; all means enabled sources
   --live                            fetch instead of cache
   --json                            machine-readable output where supported
   --sarif                           SARIF 2.1.0 output where supported
+  --allow-hosted-directory-targets  opt in to hosted Smithery directory targets
   toolpin --version, -v             print ToolPin version
   --version <server-version>        select a known server version for server commands
   --scope, -s project|global        project folder vs current-user config
@@ -1443,10 +1611,6 @@ function clientFlag(values: string[], fallback: ClientName): ClientSelection {
 function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): RegistrySourceId | "all" {
   const value = stringFlag(values, "--source", fallback);
   if (/^[a-zA-Z0-9._/-]+$/.test(value)) {
-    const builtIn = BUILTIN_REGISTRY_SOURCES.find((source) => source.id === value);
-    if (builtIn && !builtIn.enabled) {
-      throw new Error(`--source ${value} is a planned source for v0.1.0 and is not enabled yet. Run \`toolpin registry list\` to see available sources.`);
-    }
     return value as RegistrySourceId | "all";
   }
   throw new Error("--source must be all or a registry source id");
@@ -1470,9 +1634,9 @@ function scopeFlag(values: string[], fallback: InventoryScope): InventoryScope {
   throw new Error("--scope/-s must be all, project, or global");
 }
 
-function cacheHasSource(entries: RegistryEntry[], source: RegistrySourceId | "all"): boolean {
+function cacheHasSource(entries: RegistryEntry[], source: RegistrySourceId | "all", enabledSources = new Set<RegistrySourceId>()): boolean {
   const sources = new Set(normalizeEntries(entries).map((server) => server.registrySource));
-  return source === "all" ? sources.has("official") && sources.has("docker") : sources.has(source);
+  return source === "all" ? [...enabledSources].every((enabled) => sources.has(enabled)) : sources.has(source);
 }
 
 function positional(values: string[]): string[] {
@@ -1498,7 +1662,14 @@ function truncate(value: string, maxLength: number): string {
 
 function verificationStatus(verifyRequested: boolean, report?: VerificationReport): string {
   if (!verifyRequested) return "skipped";
-  return report?.ok ? "passed" : "failed";
+  return verificationOutcome(report);
+}
+
+function verificationOutcome(report?: VerificationReport): "verified" | "incomplete" | "failed" {
+  if (!report || !report.ok) return "failed";
+  const hasPin = report.evidence.some((entry) => (entry.status === "passed" || entry.status === "declared") && ["package_pin", "digest_present", "file_hash_present"].includes(entry.code));
+  if (report.verifiedProvenance === true && hasPin && hasFreshTrustedArtifactEvidence(report.evidence)) return "verified";
+  return "incomplete";
 }
 
 function trustTierColor(tier: ReturnType<typeof trustTier>): string {
@@ -1513,9 +1684,15 @@ function colorize(value: string, color?: string): string {
 }
 
 function printVerificationReport(report: VerificationReport): void {
-  printHeader(`${report.ok ? "Verification OK" : "Verification failed"}: ${report.serverName}@${report.serverVersion}`);
+  printHeader(`Verification ${verificationOutcome(report)}: ${report.serverName}@${report.serverVersion}`);
   if (report.badges.length) printField("badges", report.badges.join(", "));
   printField("evidence", evidenceSummary(report));
+  for (const entry of report.evidence) {
+    if (entry.verificationMethod) {
+      const anchor = entry.trustAnchor ? ` via ${entry.trustAnchor}` : "";
+      printField("method", `${entry.code}: ${entry.verificationMethod}${anchor}`);
+    }
+  }
   printField("packages", report.capabilityManifest.packageTypes.join(", ") || "none");
   printField("transport", report.capabilityManifest.transports.join(", ") || "none");
   if (report.capabilityManifest.remoteHosts.length) printField("hosts", report.capabilityManifest.remoteHosts.join(", "));

@@ -152,7 +152,8 @@ To make CI skip policy enforcement explicitly:
     no-policy: "true"
 ```
 
-To re-run verification before comparing locked plans:
+To re-run verification before comparing locked plans, use the stricter CI
+posture:
 
 ```yaml
 - uses: proofofwork-agency/toolpin@v0.1.0
@@ -164,7 +165,9 @@ To re-run verification before comparing locked plans:
 
 `verify: "true"` can require network access and server credentials for live MCP
 probes. Use `skip-live-verification: "true"` when you want package/metadata
-verification without live `tools/list` probing.
+verification without live `tools/list` probing. Treat that as a conscious
+downgrade: it skips capability hashing and CI rejects it for entries that
+already have live capability pins.
 
 ## What Fails the Build
 

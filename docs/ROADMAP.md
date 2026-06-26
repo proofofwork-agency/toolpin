@@ -146,7 +146,7 @@ surface, then verification/CI modules.
 - **Secret brokering**: real `op://`, `vault://`, or `doppler://` resolution remains design-gated. Install-time resolution is rejected because it writes plaintext to disk; spawn-time resolution requires a ToolPin launcher/runtime model.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
 - **Local policy hardening**: `.toolpin/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.
-- **Whole-lock digest pins**: `toolpin lock digest` and `toolpin ci --expect-digest` provide a timestamp-insensitive set-level lockfile pin for CI systems holding the expected digest out-of-band. This is not signing or provenance.
+- **Whole-lock digest pins**: `toolpin lock digest` and `toolpin ci --expect-digest` provide a canonical set-level lockfile pin for CI systems holding the expected digest out-of-band. The digest excludes top-level file timestamps but includes per-entry timestamps. This is not signing or provenance.
 - **User-supplied-key lock signatures**: `toolpin lock sign`, `toolpin lock verify-signature`, and `toolpin ci --signature ... --public-key ...` provide detached Ed25519 signatures over the canonical whole-lock digest. ToolPin does not generate or store keys; security depends on the private key and public trust root being managed outside the repo/lockfile trust path.
 
 ### v0.3 design gates

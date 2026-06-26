@@ -53,9 +53,10 @@ tool already gives your team all four in one workflow, use it.
 
 ## Limits to understand
 
-ToolPin recomputes MCPB SHA-256 when bytes are available from a file or HTTP URL
-and resolves OCI manifest digests when registries are reachable. Unavailable
-bytes are reported as `unavailable`, not treated as verified.
+ToolPin recomputes MCPB SHA-256 only from code-allowlisted HTTPS artifact hosts,
+verifies npm tarballs against `registry.npmjs.org` SRI, and resolves OCI
+manifest digests when registries are reachable. Unavailable bytes are reported
+as `unavailable`, not treated as verified.
 It checks whether declared pins are present and whether the reviewed lockfile
 still matches the resolved install plan. It is not a blanket runtime validator;
 optional live checks can capture tool-description hashes when the server is

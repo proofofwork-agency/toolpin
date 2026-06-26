@@ -50,13 +50,13 @@ throw `Invalid policy schema ... unknown policy key <name>` before evaluation.
 | `denyRemoteEndpoints` | boolean | omitted | When true, any selected remote endpoint host denies the plan (`remote_endpoint_denied`). |
 | `denyRequiredSecrets` | boolean | omitted | When true, any required secret input in the capability manifest denies the plan (`required_secrets_denied`). |
 | `requireDigestPinnedOci` | boolean | omitted | Must be a boolean. When true and the selected target is an `oci` package, its identifier must contain `@sha256:`, otherwise denied (`oci_digest_required`). |
-| `requireMcpbSha256` | boolean | omitted | Must be a boolean. When true and the selected target is an `mcpb` package, it must declare a non-empty `fileSha256`, otherwise denied (`mcpb_sha256_required`). |
+| `requireMcpbSha256` | boolean | omitted | Must be a boolean. When true and the selected target is an `mcpb` package, it must declare a valid 64-character hex `fileSha256`, otherwise denied (`mcpb_sha256_required`). |
 
 `requireDigestPinnedOci` and `requireMcpbSha256` only inspect the pins already
 declared in the install plan / capability manifest. Use
 `requireToolPinVerifiedEvidence` when policy should require evidence from a
 ToolPin verifier, such as `verify` recomputing MCPB SHA-256 or resolving an OCI
-manifest digest.
+manifest digest, or npm SRI verification.
 
 The policy file is a local JSON gate, not the future Cedar/OPA enterprise policy
 engine. `--no-policy` is an explicit local bypass.

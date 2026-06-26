@@ -58,7 +58,24 @@ test("listInstalledServers reports clean machines, invalid scopes, and unreadabl
     const unreadable = await listInstalledServers({ scope: "project", client: "claude" });
     assert.equal(unreadable.ok, false);
     assert.equal(unreadable.issues[0].kind, "unreadable");
-    assert.match(unreadable.issues[0].message, /JSON/);
+    assert.match(unreadable.issues[0].message, /claude MCP config is invalid JSON/);
+    assert.match(unreadable.issues[0].message, /mcpServers/);
+  });
+});
+
+test("listInstalledServers reports empty JSON client configs with a clean fix hint", async () => {
+  await withTempHomeAndCwd(async () => {
+    const file = path.join(process.env.HOME, "Library", "Application Support", "Code", "User", "mcp.json");
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, "", "utf8");
+
+    const unreadable = await listInstalledServers({ scope: "global", client: "vscode" });
+
+    assert.equal(unreadable.ok, false);
+    assert.equal(unreadable.issues[0].kind, "unreadable");
+    assert.equal(unreadable.issues[0].file, file);
+    assert.match(unreadable.issues[0].message, /vscode MCP config is empty/);
+    assert.match(unreadable.issues[0].message, /"servers" object/);
   });
 });
 

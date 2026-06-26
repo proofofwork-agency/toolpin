@@ -51,6 +51,23 @@ export function ChromeHeader({ state, resultCount, selectedServer, width }: { st
 export function PromptBar({ state, width }: { state: TuiState; width: number }) {
   const active = state.inputMode === "search";
   const commandActive = state.inputMode === "command";
+  const editing = active || commandActive;
+  const [cursorVisible, setCursorVisible] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!editing) {
+      setCursorVisible(false);
+      return undefined;
+    }
+    setCursorVisible(true);
+    const interval = setInterval(() => setCursorVisible((visible) => !visible), 520);
+    return () => clearInterval(interval);
+  }, [editing]);
+
+  const cursor = editing ? (
+    <Text color={cursorVisible ? BLUE : SURFACE}>▌</Text>
+  ) : null;
+
   return (
     <Box marginX={2} marginBottom={1} backgroundColor={SURFACE} paddingX={1} paddingY={1}>
       <Box justifyContent="space-between" width={Math.max(1, width - 6)}>
@@ -60,11 +77,13 @@ export function PromptBar({ state, width }: { state: TuiState; width: number }) 
               <Text color={MUTED}>Command </Text>
               <Text color={CHROME}>toolpin </Text>
               <Text color="white">{state.commandQuery || "command"}</Text>
+              {cursor}
             </>
           ) : (
             <>
               <Text color={MUTED}>Search: </Text>
               <Text color="white">{state.query || "Search MCP servers"}</Text>
+              {cursor}
             </>
           )}
         </Text>
@@ -107,6 +126,7 @@ export function OptionList({
   results,
   totalMatches,
   totalServers,
+  totalVersions,
   selected,
   height,
   width,
@@ -117,6 +137,7 @@ export function OptionList({
   results: SearchResult[];
   totalMatches: number;
   totalServers: number;
+  totalVersions: number;
   selected: number;
   height: number;
   width: number;
@@ -167,7 +188,7 @@ export function OptionList({
       })}
       {results.length > 0 ? (
         <Text color={CHROME} wrap="truncate">
-          {"  "}selected {selected + 1} of {results.length} shown / {totalMatches} matches / {totalServers} cached servers
+          {"  "}selected {selected + 1} of {results.length} shown / {totalMatches} matches / {totalServers} latest servers / {totalVersions} cached versions
           <Text color={MUTED}>  layout:{browseLayout}</Text>
           {results.length < totalMatches ? <Text color={MUTED}>  press m for more</Text> : null}
         </Text>
@@ -264,7 +285,7 @@ export function SourcesView({
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
       <ModalTitle title="sources" file="registry list" />
       <Text color={MUTED} wrap="truncate">
-        Usable registry sources first; disabled directory integrations are known, not connected. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
+        Enabled registry sources feed browse/search. Disabled directories are known, not connected. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
       </Text>
       <Spacer />
       <Text wrap="truncate">
@@ -272,7 +293,7 @@ export function SourcesView({
         <Text color={CHROME}>  </Text>
         <Text color={MUTED}>{connected.length} usable / {sources.length} known</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>j/k select, Enter browse, r refresh source, R refresh all</Text>
+        <Text color={MUTED}>j/k select, Enter/space toggle, r refresh enabled</Text>
       </Text>
       <Divider width={contentWidth} />
       {visible.map((source, index) => (
@@ -281,7 +302,7 @@ export function SourcesView({
           source={source}
           count={counts.get(source.id) ?? 0}
           dataMode={dataMode}
-          active={activeSource === source.id || (activeSource === "all" && source.enabled && source.mode === "installable")}
+          active={activeSource === source.id || (activeSource === "all" && source.enabled)}
           selected={index === selectedSource}
           width={contentWidth}
         />
@@ -503,7 +524,6 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         />
         <TrustScoreRow label="overall" score={overallScore} cells={trustBarCells} suffix="gated trust score" width={trustRowWidth} />
         <TrustScoreRow label="metadata" score={metadataScore} cells={trustBarCells} suffix="profile completeness" width={trustRowWidth} />
-        {capExplanation ? <Text color={WARN} wrap="wrap">cap         {truncate(capExplanation, width - 12)}</Text> : null}
         {dimensions.map((dimension) => (
           <TrustScoreRow
             key={dimension.label}
@@ -514,6 +534,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
             width={trustRowWidth}
           />
         ))}
+        {capExplanation ? <Text color={WARN} wrap="wrap">cap note    {truncate(capExplanation, width - 13)}</Text> : null}
         {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
@@ -737,7 +758,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
           <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus artifact proof; conditional means useful metadata exists but proof is incomplete." />
-          <HelpNote width={lineWidth} label="caps" text="A cap explains why the overall score was limited, such as missing OCI digest/MCPB file hash/verified attestation." />
+          <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and explain why the overall score was limited." />
           <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>

@@ -36,12 +36,12 @@ Direction) into one authoritative reference. It is intentionally honest about ga
 
 | Threat | Defense | Limit |
 |---|---|---|
-| **Mutable OCI tags (rug-pull by tag swap)** | `verify.ts:91-101` and `policy.requireDigestPinnedOci` reject any OCI identifier without `@sha256:` as `critical: mutable_oci_tag`. | Presence check only — does not fetch and recompute the digest. A fabricated digest substring passes. |
-| **MCPB bundles without integrity** | `verify.ts:104-113` rejects MCPB packages missing a truthy `fileSha256`. | Presence only — `"x"` passes; bytes are not downloaded and matched. |
+| **Mutable OCI tags (rug-pull by tag swap)** | `verify.ts` and `policy.requireDigestPinnedOci` reject OCI identifiers without a valid `@sha256:<64 hex>` digest as `critical: mutable_oci_tag`; `verify` best-effort resolves the registry manifest digest when reachable. | ToolPin does not fetch and recompute OCI image bytes. Unreachable registries produce explicit `unavailable` evidence, not a verified result. |
+| **MCPB bundles without integrity** | `verify.ts` and `policy.requireMcpbSha256` reject MCPB packages missing a valid 64-character hex `fileSha256`; `verify` recomputes SHA-256 only when bytes are available from a code-allowlisted HTTPS artifact host. | Local paths, `file://`, HTTP, untrusted hosts, and unavailable bytes produce explicit `unavailable` evidence, not a verified result. |
 | **Insecure remotes** | `trust.ts:149-178` scores non-HTTPS or unparseable remote URLs as `critical: insecure_remote` / `invalid_remote_url`. | None — fail-closed. |
 | **Missing install targets** | `trust.ts:33-40` scores servers with no packages and no remotes `critical: no_install_target`. | None. |
 | **Tool-description rug-pulls (after verified install)** | When installed with `--verify`, the live `tools/list` descriptions are hashed (`capabilities.ts:31-45`) and the hash is compared on reinstall. The normalized `toolDescriptionHash` is included in per-entry integrity and the signed whole-lock digest when present. | Only enforced when **both** locked and current manifests carry a hash. A non-`--verify` reinstall can still skip live `tools/list` comparison. The hash covers `{name, description}`, not input schemas. |
-| **Lockfile tampering** | Per-entry `integrity = sha256-…` over a timestamp-insensitive payload; `diffInstallPlans` rejects integrity mismatch. Whole-lock digest via `toolpin lock digest`; detached Ed25519 signature via `toolpin lock sign`. | The signature is only as strong as the out-of-band key management. If `public.pem` is committed, an attacker with commit access can rotate both `public.pem` and `mcp-lock.sig` together. |
+| **Lockfile tampering** | Per-entry `integrity = sha256-…` over reviewed entry contents, including entry timestamps; `diffInstallPlans` rejects integrity mismatch. Whole-lock digest via `toolpin lock digest` excludes only top-level file timestamps; detached Ed25519 signature via `toolpin lock sign`. | The signature is only as strong as the out-of-band key management. If `public.pem` is committed, an attacker with commit access can rotate both `public.pem` and `mcp-lock.sig` together. |
 | **Install drift across team/CI** | `install` refuses when version, target, trust-score decrease, config, or capability manifest differ from the locked entry. `toolpin ci` re-resolves every entry and rejects drift without mutating the lock. | Trust-score *increases* are not flagged. Trust *object* changes (e.g. a newly added badge) fire a generic "lock integrity changed" message. |
 | **Plaintext secrets in committed client config** | `toolpin secrets audit` is read-only, redacts all values to `[REDACTED]`, flags declared-secret fields containing non-placeholder values and string values matching known token prefixes (`ghp_`, `sk-`, `AKIA…`, `xox…`, `AIza…`, `BEGIN … PRIVATE KEY`). `.gitignore` also excludes common local secret/key filenames. | Advisory only — no install/CI gate consumes it. `.gitignore` is not a security boundary and does not protect already-tracked files. Secret-pattern coverage is intentionally incomplete and should not be treated as DLP. |
 | **Policy violations at install** | `.toolpin/policy.json` enforces `minTrustScore`, source/client/server/package-type/transport/remote-host deny rules, `requireDigestPinnedOci`, `requireMcpbSha256`. Unknown keys are rejected. | `--no-policy` is a one-flag bypass. The policy file itself is unsigned and lives in-repo. `deniedRemoteHosts` is exact-string match — denying `evil.com` does not catch `api.evil.com`. Only the *selected* target is inspected, not all declared packages. |
@@ -74,8 +74,12 @@ flagged here so users do not infer stronger guarantees than the code provides.
   (`<TOKEN>`, `${env:TOKEN}`, `op://`, `vault://`, `doppler://`) and never
   resolves them. Runtime brokering is a design-gated future feature
   (`docs/secret-brokering.md`).
-- **Not full byte-level verification.** No download-and-recompute for OCI or
-  MCPB; no cosign signature verification; no Referrers API walk.
+- **Not full supply-chain verification.** OCI verification is registry-digest
+  resolution, not image byte recomputation. MCPB byte hashing is limited to
+  code-allowlisted HTTPS artifact hosts. npm verification checks
+  `registry.npmjs.org` `dist.integrity` against trusted npm tarball bytes.
+  There is no cosign signature verification, Referrers API walk,
+  PyPI/NuGet/Cargo artifact integrity, or provenance attestation verification.
 - **Not defense against cross-server tool shadowing.** Once a malicious
   server runs alongside a trusted one, ToolPin cannot prevent it rewriting
   the trusted server's tool behavior. This is a runtime concern.
@@ -99,7 +103,8 @@ Three boundaries matter:
 
 1. **Registry → ToolPin.** Trust is *unverified metadata* until ToolPin scores
    it and checks automated evidence. `verified` requires a pinned target plus
-   artifact proof; ToolPin does not re-fetch artifacts and recompute bytes.
+   ToolPin-verified evidence such as reachable OCI registry digest resolution,
+   MCPB byte hashing, or npm tarball integrity.
 2. **ToolPin → lockfile.** Integrity is cryptographically sound *within* the
    lockfile. The lockfile's own trustworthiness depends on branch protection
    + signature key management.
@@ -109,13 +114,16 @@ Three boundaries matter:
 ## 6. Recommended security posture for users
 
 - **Commit `mcp-lock.json`.** It is the reproducibility and review artifact.
-- **Run `toolpin ci --live` in CI** on every PR that touches the lockfile.
+- **Run `toolpin ci --live --verify` in CI** on every PR that touches the
+  lockfile when CI has the network and credentials needed for live capability
+  drift checks.
 - **Pin the digest out-of-band**: `toolpin lock digest` → store the expected
   digest in CI secrets (not in the repo) → `toolpin ci --expect-digest …`.
 - **Sign and verify**: generate an Ed25519 keypair outside the repo; commit
   only `public.pem`; run `toolpin ci --signature mcp-lock.sig --public-key public.pem`.
 - **Install with `--verify`** to capture tool-description hashes; understand
-  that a later non-`--verify` reinstall silently drops them.
+  that `--skip-live-verification` is a downgrade and CI rejects it for entries
+  that already have live capability pins.
 - **Treat `.toolpin/policy.json` as code**: require PR review, branch
   protection, and ideally bind it into the signature payload.
 - **Use `--live` in CI when you need registry drift detection**; without it,
@@ -132,7 +140,7 @@ Mapped to standards (see `docs/research/` for full citations):
 | Build provenance | none | SLSA L2/L3 provenance attestation verification |
 | Step-level chain | none | in-toto / DSSE attestation envelopes |
 | Bill of materials | none | CycloneDX (ECMA-424) / SPDX (ISO 5962) SBOM emission per locked server |
-| MCPB/OCI content | presence of hash only | byte-level verification + cosign signature on OCI via Referrers API |
+| MCPB/OCI/npm content | valid pin checks plus best-effort OCI registry digest resolution, trusted-host MCPB byte hashing, and npm SRI verification | broader artifact integrity + cosign signature on OCI via Referrers API |
 | Policy | local JSON gate | Cedar (preferred for provability) or OPA/Rego |
 | Tool descriptions | hash of `{name, description}` | ETDI-style enveloped/signed tool descriptions including input schemas |
 

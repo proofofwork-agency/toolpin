@@ -1,6 +1,6 @@
 {
   "name": "toolpin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "license": "Apache-2.0",
   "keywords": [
@@ -45,7 +45,8 @@
     "docs:start": "docusaurus start website",
     "registry:check": "node scripts/check-curated-registry.mjs",
     "test": "npm run build && node --test",
-    "release:check": "npm test && npm run registry:check && node scripts/check-publish-target.mjs && npm pack --dry-run",
+    "docs:check": "node scripts/check-doc-consistency.mjs",
+    "release:check": "npm test && npm run docs:check && npm run registry:check && node scripts/check-publish-target.mjs && npm pack --dry-run",
     "prepare": "npm run build",
     "prepublishOnly": "npm test",
     "start": "node dist/cli.js",

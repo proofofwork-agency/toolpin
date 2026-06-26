@@ -7,6 +7,8 @@ const STRONG_PACKAGE_TYPES = new Set(["oci", "mcpb"]);
 const SUPPORTED_PACKAGE_TYPES = new Set(["npm", "pypi", "nuget", "cargo", "oci", "mcpb"]);
 const BLOCKED_TRUST_CODES = new Set(["no_install_target", "insecure_remote", "invalid_remote_url"]);
 const UNVERIFIED_TRUST_CODES = new Set(["mutable_oci_tag", "missing_mcpb_hash"]);
+const TRUSTED_ARTIFACT_EVIDENCE_CODES = new Set(["oci_digest_verified", "mcpb_sha256_verified", "npm_integrity_verified"]);
+const VERIFIED_EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface TrustPillars {
   provenance: number;
@@ -83,7 +85,7 @@ export function scoreServer(server: NormalizedServer): TrustReport {
 
   const metadataCompleteness = clamp(score);
   const uniqueEvidence = dedupeEvidence(evidence);
-  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "official" || server.registrySource === "docker"));
+  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
   const pillars = trustPillars(server, metadataCompleteness, issues, integritySignals, verifiedProvenance);
   const gated = gateTrust(metadataCompleteness, issues, uniqueEvidence, pillars, verifiedProvenance);
   return {
@@ -95,6 +97,7 @@ export function scoreServer(server: NormalizedServer): TrustReport {
     vetoes: gated.vetoes,
     gates: gated.gates,
     gatedBy: gated.gatedBy,
+    verifiedProvenance,
     pillars,
     evidence: uniqueEvidence,
     badges: [...new Set(badges)],
@@ -102,7 +105,12 @@ export function scoreServer(server: NormalizedServer): TrustReport {
   };
 }
 
-export function classifyTrust(score: number, issues: TrustIssue[], evidence: TrustEvidence[] = []): { tier: TrustTier; gatedBy: string[]; gates: TrustGate[] } {
+export function classifyTrust(
+  score: number,
+  issues: TrustIssue[],
+  evidence: TrustEvidence[] = [],
+  options: { verifiedProvenance?: boolean; now?: Date } = {},
+): { tier: TrustTier; gatedBy: string[]; gates: TrustGate[] } {
   const gates = criticalGates(issues);
   const criticalCodes = gates.map((gate) => gate.code);
   const failedEvidence = evidence.filter((entry) => entry.status === "failed");
@@ -120,13 +128,34 @@ export function classifyTrust(score: number, issues: TrustIssue[], evidence: Tru
   }
   if (gates.length) return { tier: "unverified", gatedBy: criticalCodes, gates };
   if (failedEvidence.length) return { tier: "unverified", gatedBy: failedEvidence.map((entry) => entry.code), gates };
-  if (hasUsablePinEvidence(evidence) && hasPassedArtifactEvidence(evidence)) return { tier: "verified", gatedBy: [], gates };
+  if (options.verifiedProvenance === true && hasUsablePinEvidence(evidence) && hasFreshTrustedArtifactEvidence(evidence, options.now)) return { tier: "verified", gatedBy: [], gates };
   if (score >= 40 || hasUsablePinEvidence(evidence)) return { tier: "conditional", gatedBy: [], gates };
   return { tier: "unverified", gatedBy: [], gates };
 }
 
 export function trustTier(report: Pick<TrustReport, "score" | "issues" | "tier" | "evidence">): TrustTier {
   return report.tier ?? classifyTrust(report.score, report.issues, report.evidence).tier;
+}
+
+export function regateTrustReport(report: TrustReport): TrustReport {
+  const verifiedProvenance = report.verifiedProvenance === true;
+  const pillars = report.pillars ?? {
+    provenance: verifiedProvenance ? 80 : 20,
+    integrity: hasFreshTrustedArtifactEvidence(report.evidence ?? []) ? 85 : 50,
+    reputation: 60,
+    metadataCompleteness: report.metadataCompleteness ?? report.score,
+  };
+  const gated = gateTrust(report.score, report.issues, report.evidence ?? [], pillars, verifiedProvenance);
+  return {
+    ...report,
+    overallScore: gated.overallScore,
+    tier: gated.tier,
+    capReason: gated.capReason,
+    vetoes: gated.vetoes,
+    gates: gated.gates,
+    gatedBy: gated.gatedBy,
+    pillars,
+  };
 }
 
 export function evidenceSummary(report: Pick<TrustReport, "evidence">): string {
@@ -161,11 +190,13 @@ export function trustCapExplanation(report: Pick<TrustReport, "capReason" | "evi
   if (report.capReason === "automated evidence incomplete") {
     const evidence = report.evidence ?? [];
     const hasPin = hasUsablePinEvidence(evidence);
-    const hasArtifact = hasPassedArtifactEvidence(evidence);
+    const hasArtifact = hasFreshTrustedArtifactEvidence(evidence);
+    const hasStaleArtifact = evidence.some((entry) => isTrustedArtifactEvidence(entry) && entry.verifiedAt && !isFreshVerifiedAt(entry.verifiedAt));
+    const hasUntrustedArtifact = evidence.some((entry) => TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code) && entry.status === "passed" && entry.verifiedByToolPin === true && entry.trustedAnchor !== true);
     const declaredAttestation = evidence.some((entry) => entry.code === "attestation_declared");
     const missing = [
       hasPin ? "" : "exact package pin",
-      hasArtifact ? "" : "ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or verified attestation)",
+      hasArtifact ? "" : artifactMissingReason(hasStaleArtifact, hasUntrustedArtifact),
     ].filter(Boolean);
     const base = missing.length
       ? `automated evidence incomplete: missing ${missing.join(" and ")}`
@@ -211,7 +242,7 @@ function gateTrust(
   pillars: TrustPillars,
   verifiedProvenance: boolean,
 ): { overallScore: number; tier: TrustTier; capReason?: string; vetoes: TrustGate[]; gates: TrustGate[]; gatedBy: string[] } {
-  const classified = classifyTrust(score, issues, evidence);
+  const classified = classifyTrust(score, issues, evidence, { verifiedProvenance });
   const vetoes = classified.gates.filter((gate) => gate.tier === "blocked");
   const unverifiedGates = classified.gates.filter((gate) => gate.tier === "unverified");
   let overallScore = Math.round(pillars.provenance * 0.25 + pillars.integrity * 0.30 + pillars.reputation * 0.15 + pillars.metadataCompleteness * 0.30);
@@ -378,8 +409,37 @@ function hasUsablePinEvidence(evidence: TrustEvidence[]): boolean {
   return evidence.some((entry) => (entry.status === "passed" || entry.status === "declared") && ["package_pin", "digest_present", "file_hash_present"].includes(entry.code));
 }
 
-function hasPassedArtifactEvidence(evidence: TrustEvidence[]): boolean {
-  return evidence.some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true && ["oci_digest_verified", "mcpb_sha256_verified", "attestation_verified"].includes(entry.code));
+export function hasFreshTrustedArtifactEvidence(evidence: TrustEvidence[], now = new Date()): boolean {
+  return evidence.some((entry) => isTrustedArtifactEvidence(entry) && isFreshVerifiedAt(entry.verifiedAt, now));
+}
+
+export function trustedArtifactEvidenceProblem(evidence: TrustEvidence[], now = new Date()): string | undefined {
+  const candidates = evidence.filter((entry) => TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code));
+  if (!candidates.length) return "missing trusted artifact evidence";
+  if (candidates.some((entry) => entry.status === "failed" && entry.required)) return "required artifact evidence failed";
+  if (candidates.some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true && entry.trustedAnchor !== true)) return "artifact evidence used an untrusted anchor";
+  if (candidates.some((entry) => isTrustedArtifactEvidence(entry) && !isFreshVerifiedAt(entry.verifiedAt, now))) return "trusted artifact evidence is stale";
+  return "missing trusted artifact evidence";
+}
+
+function isTrustedArtifactEvidence(entry: TrustEvidence): boolean {
+  return entry.status === "passed"
+    && entry.verifiedByToolPin === true
+    && entry.trustedAnchor === true
+    && TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code);
+}
+
+function isFreshVerifiedAt(value: string | undefined, now = new Date()): boolean {
+  if (!value) return false;
+  const verifiedAt = Date.parse(value);
+  if (!Number.isFinite(verifiedAt)) return false;
+  return now.getTime() - verifiedAt <= VERIFIED_EVIDENCE_MAX_AGE_MS && verifiedAt <= now.getTime() + 60_000;
+}
+
+function artifactMissingReason(stale: boolean, untrusted: boolean): string {
+  if (stale) return "fresh ToolPin-verified artifact proof";
+  if (untrusted) return "trusted-anchor artifact proof";
+  return "ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or npm tarball integrity)";
 }
 
 function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {

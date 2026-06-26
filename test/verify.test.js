@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +7,8 @@ import test from "node:test";
 import { hashToolDescriptions } from "../dist/capabilities.js";
 import { scoreServer } from "../dist/trust.js";
 import { verifyServer } from "../dist/verify.js";
+
+const publicLookup = async () => [{ address: "93.184.216.34" }];
 
 test("verifyServer accepts digest-pinned OCI packages", async () => {
   const report = await verifyServer(packageServer("oci", { identifier: `ghcr.io/example/server@sha256:${"a".repeat(64)}` }));
@@ -16,6 +18,14 @@ test("verifyServer accepts digest-pinned OCI packages", async () => {
   assert.ok(report.badges.includes("digest-pinned"));
   assert.ok(report.evidence.some((entry) => entry.code === "digest_present" && entry.status === "declared"));
   assert.ok(report.evidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "unavailable"));
+});
+
+test("verifyServer --requireVerified fails on unavailable trusted evidence", async () => {
+  const report = await verifyServer(packageServer("oci", { identifier: `evil.attacker.com/example/server@sha256:${"a".repeat(64)}` }), { requireVerified: true });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.code === "verified_required"));
+  assert.ok(report.evidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "unavailable" && entry.trustedAnchor === false));
 });
 
 test("verifyServer rejects malformed OCI digest pins", async () => {
@@ -52,6 +62,59 @@ test("verifyServer accepts MCPB packages with fileSha256", async () => {
   assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable"));
 });
 
+test("verifyServer verifies trusted HTTPS MCPB bytes against fileSha256", async () => {
+  const bytes = Buffer.from("trusted mcpb bytes");
+  const fileSha256 = createHash("sha256").update(bytes).digest("hex");
+  const identifier = "https://registry.modelcontextprotocol.io/artifacts/server.mcpb";
+  const report = await verifyServer(packageServer("mcpb", { identifier, fileSha256 }), {
+    lookup: publicLookup,
+    fetch: fetchMap({ [identifier]: new Response(bytes) }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.badges.includes("mcpb-sha256-verified"));
+  assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "passed" && entry.trustedAnchor === true && entry.verifiedAt));
+});
+
+test("verifyServer fails trusted HTTPS MCPB hash mismatches", async () => {
+  const identifier = "https://registry.modelcontextprotocol.io/artifacts/server.mcpb";
+  const report = await verifyServer(packageServer("mcpb", { identifier, fileSha256: "0".repeat(64) }), {
+    lookup: publicLookup,
+    fetch: fetchMap({ [identifier]: new Response("different bytes") }),
+  });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "mcpb_sha256_mismatch"));
+  assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "failed" && entry.required === true));
+});
+
+test("verifyServer refuses untrusted and HTTP MCPB artifact URLs", async () => {
+  const untrusted = await verifyServer(packageServer("mcpb", {
+    identifier: "https://downloads.example.test/server.mcpb",
+    fileSha256: "a".repeat(64),
+  }));
+  const insecure = await verifyServer(packageServer("mcpb", {
+    identifier: "http://registry.modelcontextprotocol.io/server.mcpb",
+    fileSha256: "a".repeat(64),
+  }));
+
+  assert.equal(untrusted.ok, true);
+  assert.ok(untrusted.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable" && entry.trustedAnchor === false && /trusted anchor/.test(entry.failureReason)));
+  assert.equal(insecure.ok, true);
+  assert.ok(insecure.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable" && entry.trustedAnchor === false && /not HTTPS/.test(entry.failureReason)));
+});
+
+test("verifyServer treats oversized trusted MCPB responses as unavailable", async () => {
+  const identifier = "https://registry.modelcontextprotocol.io/artifacts/server.mcpb";
+  const report = await verifyServer(packageServer("mcpb", { identifier, fileSha256: "a".repeat(64) }), {
+    lookup: publicLookup,
+    fetch: fetchMap({ [identifier]: oversizedResponse(64 * 1024 * 1024 + 1) }),
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable" && /byte limit/.test(entry.failureReason)));
+});
+
 test("verifyServer rejects malformed MCPB fileSha256", async () => {
   const report = await verifyServer(packageServer("mcpb", { identifier: "example-server.mcpb", fileSha256: "x" }));
 
@@ -60,7 +123,7 @@ test("verifyServer rejects malformed MCPB fileSha256", async () => {
   assert.ok(report.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "failed"));
 });
 
-test("verifyServer verifies MCPB fileSha256 against local bytes", async () => {
+test("verifyServer does not verify MCPB fileSha256 against registry-supplied local paths", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-mcpb-"));
   try {
     const artifact = path.join(tempDir, "server.mcpb");
@@ -70,14 +133,14 @@ test("verifyServer verifies MCPB fileSha256 against local bytes", async () => {
     const report = await verifyServer(packageServer("mcpb", { identifier: artifact, fileSha256 }));
 
     assert.equal(report.ok, true);
-    assert.ok(report.badges.includes("mcpb-sha256-verified"));
-    assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "passed" && entry.verifiedByToolPin === true));
+    assert.equal(report.badges.includes("mcpb-sha256-verified"), false);
+    assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable" && entry.trustedAnchor === false));
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("verifyServer rejects MCPB fileSha256 mismatches against local bytes", async () => {
+test("verifyServer does not treat local MCPB hash mismatches as default registry verification", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-mcpb-"));
   try {
     const artifact = path.join(tempDir, "server.mcpb");
@@ -85,35 +148,41 @@ test("verifyServer rejects MCPB fileSha256 mismatches against local bytes", asyn
 
     const report = await verifyServer(packageServer("mcpb", { identifier: artifact, fileSha256: "0".repeat(64) }));
 
-    assert.equal(report.ok, false);
-    assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "mcpb_sha256_mismatch"));
-    assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "failed" && entry.required === true));
+    assert.equal(report.ok, true);
+    assert.equal(report.issues.some((issue) => issue.severity === "critical" && issue.code === "mcpb_sha256_mismatch"), false);
+    assert.ok(report.evidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "unavailable" && entry.trustedAnchor === false));
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("verifyServer verifies OCI digest when registry manifest digest is reachable", async () => {
+test("verifyServer refuses untrusted localhost OCI registries as trusted proof", async () => {
   const digest = `sha256:${"a".repeat(64)}`;
-  const server = createServer((request, response) => {
-    assert.equal(request.method, "HEAD");
-    response.writeHead(200, { "Docker-Content-Digest": digest });
-    response.end();
+  const identifier = `127.0.0.1:5000/example/server@${digest}`;
+
+  const report = await verifyServer(packageServer("oci", { identifier }));
+
+  assert.equal(report.ok, true);
+  assert.equal(report.badges.includes("oci-digest-verified"), false);
+  assert.ok(report.evidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "unavailable" && entry.trustedAnchor === false));
+});
+
+test("verifyServer fails when trusted OCI registry digest mismatches", async () => {
+  const expected = `sha256:${"a".repeat(64)}`;
+  const actual = `sha256:${"b".repeat(64)}`;
+  const identifier = `ghcr.io/example/server@${expected}`;
+  const report = await verifyServer(packageServer("oci", { identifier }), {
+    lookup: publicLookup,
+    fetch: fetchMap({
+      [`https://ghcr.io/v2/example/server/manifests/${encodeURIComponent(expected)}`]: new Response(null, {
+        headers: { "docker-content-digest": actual },
+      }),
+    }),
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  try {
-    const address = server.address();
-    assert.ok(address && typeof address === "object");
-    const identifier = `127.0.0.1:${address.port}/example/server@${digest}`;
 
-    const report = await verifyServer(packageServer("oci", { identifier }));
-
-    assert.equal(report.ok, true);
-    assert.ok(report.badges.includes("oci-digest-verified"));
-    assert.ok(report.evidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "passed" && entry.verifiedByToolPin === true));
-  } finally {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  }
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "oci_digest_mismatch"));
+  assert.ok(report.evidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "failed" && entry.required === true));
 });
 
 test("remote probe skip is warning-only", async () => {
@@ -227,6 +296,37 @@ function remoteServer() {
       description: "Synthetic remote server",
       version: "1.0.0",
       remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+    },
+  };
+}
+
+function fetchMap(responses) {
+  return async (url) => {
+    const key = String(url);
+    const response = responses[key];
+    if (!response) throw new Error(`Unexpected fetch ${key}`);
+    return typeof response.clone === "function" ? response.clone() : response;
+  };
+}
+
+function oversizedResponse(byteLength) {
+  let sent = false;
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers: new Headers(),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (sent) return { done: true };
+            sent = true;
+            return { done: false, value: new Uint8Array(byteLength) };
+          },
+          async cancel() {},
+        };
+      },
     },
   };
 }

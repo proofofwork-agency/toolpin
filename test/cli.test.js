@@ -11,7 +11,7 @@ import { buildInstallPlan, readLockfile, writeLockfile } from "../dist/plan.js";
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("dist", "cli.js");
 
-test("CLI lists directory sources as discovery-only instead of disabled", async () => {
+test("CLI lists built-in directory sources as disabled by default", async () => {
   await withTempCwd(async () => {
     const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "registry", "list", "--json"]);
     const parsed = JSON.parse(stdout);
@@ -19,7 +19,8 @@ test("CLI lists directory sources as discovery-only instead of disabled", async 
 
     assert.equal(stderr, "");
     assert.equal(smithery.mode, "discovery");
-    assert.equal(smithery.status, "discovery-only");
+    assert.equal(smithery.enabled, false);
+    assert.equal(smithery.status, "disabled");
     assert.equal(smithery.adapter, "smithery");
   });
 });

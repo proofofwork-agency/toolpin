@@ -10,6 +10,7 @@ export type DataMode = "cache" | "live";
 export type SourceMode = RegistrySourceId | "all";
 export type ClientSelection = ClientName | "all";
 export type BrowseLayout = "flat" | "project" | "category";
+export type BrowseVersionMode = "latest" | "all";
 export type TuiCommandId =
   | "ingest"
   | "installed"
@@ -61,6 +62,7 @@ export interface TuiState {
   dataMode: DataMode;
   sourceMode: SourceMode;
   browseLayout: BrowseLayout;
+  browseVersionMode: BrowseVersionMode;
   resultLimit: number;
   client: ClientSelection;
   installScope: InstallScope;

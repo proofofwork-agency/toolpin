@@ -97,7 +97,7 @@ async function readInstalledServerNames(file: string, client: ClientName): Promi
     if (client === "codex") return { kind: "ok", serverNames: listCodexServerNames(raw) };
     if (client === "continue") return { kind: "ok", serverNames: listContinueServerNames(raw) };
 
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = parseClientJsonConfig(raw, client);
     const section = asRecord(parsed)[clientConfigRootKey(client)];
     return { kind: "ok", serverNames: Object.keys(asRecord(section)).sort() };
   } catch (error) {
@@ -105,6 +105,18 @@ async function readInstalledServerNames(file: string, client: ClientName): Promi
       kind: "unreadable",
       message: error instanceof Error ? error.message : String(error),
     };
+  }
+}
+
+function parseClientJsonConfig(raw: string, client: ClientName): unknown {
+  if (!raw.trim()) {
+    throw new Error(`${client} MCP config is empty; expected JSON with a "${clientConfigRootKey(client)}" object.`);
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${client} MCP config is invalid JSON; expected a JSON object with "${clientConfigRootKey(client)}". Parser detail: ${detail}`);
   }
 }
 

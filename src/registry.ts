@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { NormalizedServer, RegistryAdapterKind, RegistryCacheFileV2, RegistryCachePartition, RegistryEntry, RegistryFetchPageInfo, RegistryFetchResult, RegistryListResponse, RegistryPackage, RegistryRemote, RegistryRepository, RegistryServer, RegistrySourceId, RegistrySourceInfo, RegistrySourceMode, RegistrySourceType, SourceStatus } from "./types.js";
+import { safeFetchJson } from "./safeFetch.js";
 import { compareVersionish } from "./versions.js";
 
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
@@ -50,7 +51,7 @@ export const BUILTIN_REGISTRY_SOURCES: RegistrySourceInfo[] = [
     adapter: "pulsemcp",
     mode: "discovery",
     trust: "directory",
-    enabled: true,
+    enabled: false,
     authRequired: true,
     url: PULSEMCP_SERVERS_URL,
     status: "auth-missing",
@@ -64,12 +65,12 @@ export const BUILTIN_REGISTRY_SOURCES: RegistrySourceInfo[] = [
     adapter: "smithery",
     mode: "discovery",
     trust: "directory",
-    enabled: true,
+    enabled: false,
     authRequired: false,
     url: SMITHERY_SERVERS_URL,
     status: "discovery-only",
     setupHint: "Optionally set SMITHERY_API_KEY for higher Smithery rate limits.",
-    description: "Smithery directory discovery source. Install targets remain disabled until release metadata can be verified by digest.",
+    description: "Smithery directory discovery source. Hosted deployment targets are installable only with explicit opt-in (--allow-hosted-directory-targets) and are subject to Smithery terms; otherwise entries stay discovery-only.",
   },
   {
     id: "glama",
@@ -78,11 +79,11 @@ export const BUILTIN_REGISTRY_SOURCES: RegistrySourceInfo[] = [
     adapter: "glama",
     mode: "discovery",
     trust: "directory",
-    enabled: true,
+    enabled: false,
     authRequired: false,
     url: GLAMA_SERVERS_URL,
     status: "discovery-only",
-    description: "Glama public MCP directory discovery source. Install targets remain disabled until verified metadata is exposed.",
+    description: "Glama public MCP directory discovery source. Glama exposes repository metadata only; servers stay discovery-only until they surface a verifiable install target (install via the official registry instead).",
   },
 ];
 
@@ -95,6 +96,11 @@ export interface RegistryAdapter {
 
 export interface RegistryConfig {
   registries: ConfiguredRegistrySource[];
+  sources?: Record<string, SourcePreference>;
+}
+
+export interface SourcePreference {
+  enabled?: boolean;
 }
 
 export interface ConfiguredRegistrySource {
@@ -192,7 +198,7 @@ export async function fetchRegistryResult(options: FetchOptions = {}): Promise<R
     throw new Error(`Unknown registry source: ${source}. Add it to .toolpin/registries.json or run \`toolpin registry list\`.`);
   }
   if (!adapter.info.enabled) {
-    return emptyResult({ ...adapter.info, status: "disabled" }, "disabled");
+    throw new Error(`Registry source ${source} is disabled. Run \`toolpin registry enable ${source}\` to enable it.`);
   }
   return adapter.fetch(options);
 }
@@ -208,7 +214,7 @@ export async function listRegistrySourceStatuses(options: { registryConfigPath?:
     const partition = cache?.sources[source.id];
     return {
       ...source,
-      status: partition?.status ?? source.status ?? sourceStatus(source),
+      status: source.enabled ? partition?.status ?? source.status ?? sourceStatus(source) : "disabled",
       setupHint: source.setupHint,
     };
   });
@@ -219,7 +225,7 @@ export async function readRegistryConfig(configPath = DEFAULT_REGISTRY_CONFIG_PA
   try {
     raw = await readFile(configPath, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { registries: [] };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { registries: [], sources: {} };
     throw error;
   }
 
@@ -235,14 +241,37 @@ export async function readRegistryConfig(configPath = DEFAULT_REGISTRY_CONFIG_PA
   return parsed;
 }
 
+export async function updateRegistrySourceEnabled(sourceId: string, enabled: boolean, configPath = DEFAULT_REGISTRY_CONFIG_PATH): Promise<RegistryConfig> {
+  const config = await readRegistryConfig(configPath);
+  const known = await listRegistrySources({ registryConfigPath: configPath });
+  if (!known.some((source) => source.id === sourceId)) {
+    throw new Error(`Unknown registry source: ${sourceId}. Run \`toolpin registry list\` to see available sources.`);
+  }
+  const next: RegistryConfig = {
+    registries: config.registries,
+    sources: {
+      ...(config.sources ?? {}),
+      [sourceId]: {
+        ...(config.sources?.[sourceId] ?? {}),
+        enabled,
+      },
+    },
+  };
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return next;
+}
+
 async function registryAdapters(configPath?: string): Promise<RegistryAdapter[]> {
   const config = await readRegistryConfig(configPath);
-  const builtins: RegistryAdapter[] = BUILTIN_REGISTRY_SOURCES.map((info) => ({
+  const builtins: RegistryAdapter[] = BUILTIN_REGISTRY_SOURCES.map((baseInfo) => {
+    const info = applySourcePreference(baseInfo, config.sources?.[baseInfo.id]);
+    return {
     info,
     fetch: info.id === "official"
       ? (options) => fetchOfficialRegistry({ ...options, sourceInfo: info })
       : info.id === "docker"
-        ? fetchDockerRegistry
+        ? (options) => fetchDockerRegistry({ ...options, sourceInfo: info })
         : info.id === "glama"
           ? (options) => fetchGlamaRegistry(info, options)
           : info.id === "smithery"
@@ -250,10 +279,20 @@ async function registryAdapters(configPath?: string): Promise<RegistryAdapter[]>
             : info.id === "pulsemcp"
               ? (options) => fetchPulseMcpRegistry(info, options)
               : async () => emptyResult(info, sourceStatus(info)),
-  }));
+    };
+  });
 
   const custom = config.registries.map(configuredRegistryAdapter);
   return mergeAdapters([...builtins, ...custom]);
+}
+
+function applySourcePreference(source: RegistrySourceInfo, preference: SourcePreference | undefined): RegistrySourceInfo {
+  const enabled = preference?.enabled ?? source.enabled;
+  return {
+    ...source,
+    enabled,
+    status: enabled ? source.status : "disabled",
+  };
 }
 
 function configuredRegistryAdapter(config: ConfiguredRegistrySource): RegistryAdapter {
@@ -330,8 +369,8 @@ async function fetchOfficialRegistry(options: FetchOptions & { sourceInfo?: Regi
   });
 }
 
-async function fetchDockerRegistry(options: FetchOptions = {}): Promise<RegistryFetchResult> {
-  const sourceInfo = BUILTIN_REGISTRY_SOURCES.find((source) => source.id === "docker")!;
+async function fetchDockerRegistry(options: FetchOptions & { sourceInfo?: RegistrySourceInfo } = {}): Promise<RegistryFetchResult> {
+  const sourceInfo = options.sourceInfo ?? BUILTIN_REGISTRY_SOURCES.find((source) => source.id === "docker")!;
   const limit = Math.min(options.limit ?? 100, 500);
   const response = await fetchWithRetry(DOCKER_TREE_URL, { headers: githubHeaders() }, options, "Docker registry request");
   if (!response.ok) {
@@ -930,7 +969,9 @@ export function normalizeEntry(entry: RegistryEntry): NormalizedServer {
   const registrySource = entry.source ?? detectSource(entry);
   const registryMode = sourceMeta.mode === "discovery" ? "discovery" : "installable";
   const hasInstallTarget = packages.length > 0 || remotes.length > 0;
-  const installable = registryMode === "installable" && hasInstallTarget;
+  const hasVerifiableTarget = hasVerifiableInstallTarget(server);
+  const glamaNeedsOfficialResolution = registrySource === "glama" && registryMode === "discovery";
+  const installable = hasInstallTarget && (registryMode === "installable" || (hasVerifiableTarget && !glamaNeedsOfficialResolution));
 
   return {
     registrySource,
@@ -944,7 +985,9 @@ export function normalizeEntry(entry: RegistryEntry): NormalizedServer {
     installableReason: installable
       ? undefined
       : registryMode === "discovery"
-        ? "registry source is discovery-only"
+        ? glamaNeedsOfficialResolution
+          ? "Glama entries require official registry re-resolution before install"
+          : "registry entry has no verifiable package or HTTPS remote target"
         : "registry entry has no package or remote install target",
     repositoryUrl: server.repository?.url,
     packageTypes,
@@ -999,8 +1042,37 @@ function hasSecrets(server: { packages?: unknown[]; remotes?: unknown[] }): bool
   );
 }
 
+function hasVerifiableInstallTarget(server: RegistryServer): boolean {
+  return (server.packages ?? []).some(isVerifiablePackageTarget)
+    || (server.remotes ?? []).some((remote) => isHttpsUrl(remote.url));
+}
+
+function isVerifiablePackageTarget(pkg: RegistryPackage): boolean {
+  if (pkg.registryType === "oci") return /@sha256:[a-fA-F0-9]{64}$/.test(pkg.identifier);
+  if (pkg.registryType === "mcpb") return isValidSha256Hex(pkg.fileSha256) && isHttpsUrl(pkg.identifier);
+  if (pkg.registryType === "npm") return Boolean(pkg.version && !isFloatingVersion(pkg.version));
+  return false;
+}
+
+function isHttpsUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isValidSha256Hex(value: unknown): value is string {
+  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
+}
+
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
+}
+
+function isFloatingVersion(version: string): boolean {
+  return ["latest", "*"].includes(version.trim().toLowerCase()) || /[~^x*]/i.test(version);
 }
 
 function isCacheFile(value: unknown): value is { generatedAt: string; ttlMs?: number; entries: RegistryEntry[] } {
@@ -1046,6 +1118,13 @@ function isRegistryConfig(value: unknown): value is RegistryConfig {
   return (
     isRecord(value) &&
     Array.isArray(value.registries) &&
+    (value.sources === undefined || (
+      isRecord(value.sources) &&
+      Object.values(value.sources).every((entry) => (
+        isRecord(entry) &&
+        (entry.enabled === undefined || typeof entry.enabled === "boolean")
+      ))
+    )) &&
     value.registries.every((entry) => (
       isRecord(entry) &&
       typeof entry.id === "string" &&
@@ -1141,7 +1220,7 @@ function directoryItemToEntry(item: unknown, sourceInfo: RegistrySourceInfo): { 
   const maybeOfficial = parseRegistryEntry(item);
   if (maybeOfficial.entry) return maybeOfficial;
 
-  const name = stringValue(item.name ?? item.slug ?? item.id ?? item.packageName ?? item.qualifiedName);
+  const name = firstNonEmptyString(item.name, item.qualifiedName, item.packageName, item.slug, item.id);
   if (!name) return { reason: "directory entry has no name, slug, id, packageName, or qualifiedName" };
   const repositoryUrl = repositoryUrlFromDirectoryItem(item);
   const server: RegistryServer = {
@@ -1390,6 +1469,174 @@ function clampInteger(value: number, min: number, max: number): number {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export async function enrichSmitheryTarget(
+  server: NormalizedServer,
+  options: { allowHostedDirectoryTargets?: boolean } = {},
+): Promise<NormalizedServer> {
+  if (server.registrySource !== "smithery") return server;
+  if (!options.allowHostedDirectoryTargets) {
+    return {
+      ...server,
+      installable: false,
+      installableReason:
+        "Smithery hosted targets require explicit opt-in (--allow-hosted-directory-targets); subject to Smithery terms",
+    };
+  }
+  if ((server.raw.remotes ?? []).length > 0 || (server.raw.packages ?? []).length > 0) {
+    return {
+      ...server,
+      resolutionNote: "hosted by Smithery; subject to Smithery terms",
+    };
+  }
+  const qualifiedName = server.name;
+  if (!qualifiedName) return server;
+  const headers: Record<string, string> = {};
+  if (process.env.SMITHERY_API_KEY) headers.Authorization = `Bearer ${process.env.SMITHERY_API_KEY}`;
+  let detail: { deploymentUrl?: unknown; connections?: unknown };
+  try {
+    detail = await safeFetchJson<{ deploymentUrl?: unknown; connections?: unknown }>(
+      `${SMITHERY_SERVERS_URL}/${encodeURIComponent(qualifiedName)}`,
+      { timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS, headers },
+    );
+  } catch {
+    return server;
+  }
+  const deploymentUrl = firstNonEmptyString(
+    detail.deploymentUrl,
+    ...(Array.isArray(detail.connections) ? detail.connections : []).map((connection) =>
+      isRecord(connection) ? connection.deploymentUrl : undefined,
+    ),
+  );
+  if (!deploymentUrl || !isHttpsUrl(deploymentUrl)) return server;
+  const remote: RegistryRemote = { type: "streamable-http", url: deploymentUrl };
+  const remotes = [...(server.raw.remotes ?? []), remote];
+  const packages = server.raw.packages ?? [];
+  const remoteTypes = Array.from(new Set([...server.remoteTypes, "streamable-http"]));
+  const transports = Array.from(new Set([...server.transports, "streamable-http"]));
+  return {
+    ...server,
+    raw: { ...server.raw, remotes },
+    packageTypes: server.packageTypes,
+    remoteTypes,
+    transports,
+    installable: true,
+    installableReason: undefined,
+    resolutionNote: "hosted by Smithery; subject to Smithery terms",
+  };
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const candidate = stringValue(value);
+    if (candidate) return candidate;
+  }
+  return undefined;
+}
+
+export function canonicalRepoUrl(input: unknown): string | undefined {
+  const trimmed = typeof input === "string" ? input.trim() : "";
+  if (!trimmed) return undefined;
+  let s = trimmed
+    .replace(/^(git\+|svn\+|hg\+|bzr\+)/i, "")
+    .replace(/^github:/i, "https://github.com/")
+    .replace(/^git@([^:/#]+):/i, "https://$1/")
+    .replace(/^ssh:\/\/git@/i, "https://")
+    .replace(/^(ssh|git):\/\//i, "https://");
+  let host: string;
+  let pathName: string;
+  try {
+    const url = new URL(s);
+    host = url.hostname.toLowerCase().replace(/^www\./, "");
+    pathName = url.pathname;
+  } catch {
+    const fallback = s.replace(/[?#].*$/, "").replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
+    return fallback.includes("/") ? fallback : undefined;
+  }
+  pathName = pathName.replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
+  const canonical = host + pathName;
+  return canonical === host || !pathName || pathName === "/" ? undefined : canonical;
+}
+
+export async function enrichGlamaTarget(server: NormalizedServer, options: { cachePath?: string } = {}): Promise<NormalizedServer> {
+  if (server.registrySource !== "glama") return server;
+  if ((server.raw.packages ?? []).length > 0 || (server.raw.remotes ?? []).length > 0) return server;
+  const glamaRepo = server.repositoryUrl;
+  if (!glamaRepo) return server;
+
+  const match = await findOfficialMatch({ repoUrl: glamaRepo, name: server.name, cachePath: options.cachePath });
+  if (!match) {
+    return {
+      ...server,
+      installableReason: "no matching official-registry entry; install via the publisher's repo",
+    };
+  }
+
+  const packages = match.server.packages ?? [];
+  const remotes = match.server.remotes ?? [];
+  if (packages.length === 0 && remotes.length === 0) return server;
+
+  const packageTypes = unique(packages.map((pkg) => pkg.registryType).filter(Boolean));
+  const remoteTypes = unique(remotes.map((remote) => remote.type).filter(Boolean));
+  const transports = unique([...server.transports, ...packageTypes, ...remoteTypes]);
+  return {
+    ...server,
+    raw: {
+      ...server.raw,
+      packages: packages.length ? packages : undefined,
+      remotes: remotes.length ? remotes : undefined,
+    },
+    packageTypes,
+    remoteTypes,
+    transports,
+    installable: true,
+    installableReason: undefined,
+    resolvedFromRegistry: "official",
+    resolutionNote: match.matchedByName
+      ? "installed via official registry (matched from Glama by repo + name)"
+      : "installed via official registry (matched from Glama by repo)",
+  };
+}
+
+interface OfficialMatch {
+  server: RegistryServer;
+  matchedByName: boolean;
+}
+
+async function findOfficialMatch(options: { repoUrl: string; name: string; cachePath?: string }): Promise<OfficialMatch | undefined> {
+  const canonical = canonicalRepoUrl(options.repoUrl);
+  if (!canonical) return undefined;
+  const candidates = await loadOfficialCandidates({ cachePath: options.cachePath });
+  const sameRepo = candidates.filter((entry) => canonicalRepoUrl(entry.server.repository?.url) === canonical);
+  if (sameRepo.length === 0) return undefined;
+  if (sameRepo.length === 1) return { server: sameRepo[0].server, matchedByName: false };
+  const byName = sameRepo.filter((entry) => namesMatch(entry.server.name, options.name));
+  if (byName.length === 1) return { server: byName[0].server, matchedByName: true };
+  return undefined;
+}
+
+async function loadOfficialCandidates(options: { cachePath?: string } = {}): Promise<RegistryEntry[]> {
+  try {
+    const cache = await readCacheMetadata(options.cachePath ?? DEFAULT_CACHE_PATH, { allowStaleCache: true });
+    const partition = cache.sources?.["official"];
+    if (partition?.entries?.length) return partition.entries;
+  } catch {
+    // fall through to a live fetch
+  }
+  try {
+    const entries = await fetchRegistry({ maxPages: DEFAULT_OFFICIAL_MAX_PAGES });
+    return entries.filter((entry) => (entry.source ?? "official") === "official");
+  } catch {
+    return [];
+  }
+}
+
+function namesMatch(officialName: string, glamaName: string): boolean {
+  const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const officialLeaf = normalizeName(officialName.split("/").pop() ?? officialName);
+  const slug = normalizeName(glamaName);
+  return officialLeaf.length > 1 && slug.length > 1 && (officialLeaf === slug || officialLeaf.includes(slug) || slug.includes(officialLeaf));
 }
 
 function numberValue(value: unknown): number | undefined {

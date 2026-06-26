@@ -73,14 +73,15 @@ signal there.
 | `digest_present` | `declared` / `failed` | OCI identifier includes `@sha256:`. This means the pin is present; `oci_digest_verified` records registry verification. |
 | `file_hash_present` | `declared` / `failed` | MCPB package declares `fileSha256`. This means the hash is present; `mcpb_sha256_verified` records byte hashing. |
 | `oci_digest_verified` | `passed` / `failed` / `unavailable` | ToolPin resolved the OCI manifest digest through the registry API, or could not. |
-| `mcpb_sha256_verified` | `passed` / `failed` / `unavailable` | ToolPin read MCPB bytes from a local file or HTTP URL and recomputed SHA-256, or could not. |
-| `lock_integrity` | `passed` | New lock entries include a timestamp-insensitive integrity digest over the reviewed install plan. |
+| `mcpb_sha256_verified` | `passed` / `failed` / `unavailable` | ToolPin read MCPB bytes from a code-allowlisted HTTPS artifact host and recomputed SHA-256, or could not. |
+| `npm_integrity_verified` | `passed` / `failed` / `unavailable` | ToolPin fetched the npm packument from `registry.npmjs.org`, required exact version `dist.integrity`, fetched a trusted npm tarball, and compared SHA-512 SRI. |
+| `lock_integrity` | `passed` | New lock entries include an integrity digest over the reviewed install plan, including entry timestamps. |
 | `tool_description_hash` | `passed` / `failed` / `unavailable` | Live remote `tools/list` descriptions were hashed, failed, or were skipped. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
 Tiering is conservative:
 
-- `verified`: no critical issues, a pinned install target, and passed evidence with `verifiedByToolPin: true`, such as `oci_digest_verified`, `mcpb_sha256_verified`, or future verified attestations.
+- `verified`: no critical issues, a pinned install target, and passed evidence with `verifiedByToolPin: true`, such as `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or future verified attestations.
 - `conditional`: usable metadata or pinning exists, but artifact proof is incomplete or unavailable.
 - `unverified`: weak or failed optional evidence, mutable OCI tags, missing MCPB hashes, or other non-blocking critical trust gaps.
 - `blocked`: unsafe or uninstallable cases such as no install target, insecure remote URLs, invalid remote URLs, or failed required evidence checks.
@@ -99,7 +100,7 @@ Common cap reasons:
 
 | Cap reason | Meaning |
 |---|---|
-| `automated evidence incomplete` | Metadata and package pinning may look good, but ToolPin has not verified artifact bytes/provenance: an OCI `@sha256:` or MCPB `fileSha256` may be declared without a successful `oci_digest_verified`, `mcpb_sha256_verified`, or future verified attestation. Declared attestations alone do not count. |
+| `automated evidence incomplete` | Metadata and package pinning may look good, but ToolPin has not verified artifact bytes/provenance: an OCI `@sha256:`, MCPB `fileSha256`, or npm exact version may be declared without a successful `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or future verified attestation. Declared attestations alone do not count. |
 | `no verified provenance` | The entry is not from an official/Docker source with a repository URL, so provenance is not strong enough for a higher cap. |
 | `mutable_oci_tag` | The OCI target uses a mutable tag instead of a digest. |
 | `missing_mcpb_hash` | The MCPB target does not declare `fileSha256`. |
@@ -132,7 +133,8 @@ descriptions from `tools/list` and store that hash in the lockfile.
 ToolPin does not:
 
 - Download OCI images and recompute the image digest.
-- Download MCPB bundles and recompute `fileSha256`.
+- Guarantee MCPB byte verification when the bundle is unavailable from a
+  code-allowlisted HTTPS artifact host.
 - Prove publisher identity with sigstore or provenance attestations.
 - Detect prompt injection reliably.
 - Sandbox a server after it starts.

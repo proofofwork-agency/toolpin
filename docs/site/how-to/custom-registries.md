@@ -19,9 +19,9 @@ ToolPin ships with these source IDs:
 |---|---:|---|
 | `official` | installable | Official MCP Registry metadata. |
 | `docker` | installable | Docker MCP Catalog metadata. |
-| `pulse` | auth-gated discovery | Known directory source; visible for source accounting and cached partitions when credentials are configured. |
-| `smithery` | discovery-only | Known marketplace/hosted connector source; visible for discovery until normalized install metadata exists. |
-| `glama` | discovery-only | Known broad directory/gateway source; useful for browse/search, not installable metadata by itself. |
+| `pulse` | disabled directory | PulseMCP directory source; auth-gated and opt-in. |
+| `smithery` | disabled directory | Known marketplace/hosted connector source; hosted targets require `--allow-hosted-directory-targets`. |
+| `glama` | disabled directory | Known broad directory/gateway source; installable only when re-resolved through a matching Official MCP Registry entry. |
 
 Use built-ins directly:
 
@@ -29,6 +29,32 @@ Use built-ins directly:
 toolpin ingest --source official
 toolpin ingest --source docker
 toolpin search github --source all --live
+```
+
+`official` and `docker` are enabled by default. Directory sources are known but
+disabled by default, so they do not inflate Browse or `--source all` until you
+turn them on:
+
+```sh
+toolpin registry list
+toolpin registry enable glama
+toolpin registry disable glama
+```
+
+Those commands write top-level source preferences in `.toolpin/registries.json`:
+
+```json
+{
+  "sources": {
+    "glama": {
+      "enabled": true
+    },
+    "smithery": {
+      "enabled": false
+    }
+  },
+  "registries": []
+}
 ```
 
 ## ToolPin Curated Registry
@@ -162,17 +188,19 @@ MCP Registry compatible yet:
 }
 ```
 
-Discovery entries can appear in search and info views. ToolPin refuses to
-install them until they normalize into a source explicitly marked
-`installable`.
+Discovery entries can appear in search and info views when their source is
+enabled. ToolPin refuses to install them until they normalize into a source
+explicitly marked `installable`, or an adapter can safely re-resolve them to an
+installable registry entry.
 
 This is the right mode for large public lists, marketplace exports, gateway
 connector inventories, and data that may contain hosted-only, stale, duplicate,
 or missing-source entries.
 
 That distinction is intentional. A directory such as Glama may list many useful
-servers, but ToolPin still needs a lockable package or remote target before it
-can review, install, lock, and enforce the server.
+servers, but ToolPin still needs a matching official entry with a lockable
+package or remote target before it can review, install, lock, and enforce the
+server.
 
 ## Future Adapter Packages
 

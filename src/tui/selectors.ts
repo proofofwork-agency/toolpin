@@ -2,7 +2,7 @@ import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js"
 import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
 import { normalizeEntries } from "../registry.js";
-import type { NormalizedServer, RegistryEntry } from "../types.js";
+import type { NormalizedServer, RegistryEntry, RegistrySourceInfo } from "../types.js";
 import { compareVersionStatus, knownVersions } from "../versions.js";
 import { CLIENTS, VIEWS } from "./constants.js";
 import { asObject, safeJson, shortPath, unique } from "./format.js";
@@ -149,7 +149,16 @@ export function filterBySource(servers: NormalizedServer[], source: SourceMode):
   return source === "all" ? servers : servers.filter((server) => server.registrySource === source);
 }
 
-export function cacheHasSource(entries: RegistryEntry[], source: SourceMode): boolean {
+export function filterByEnabledSources(servers: NormalizedServer[], source: SourceMode, sources: RegistrySourceInfo[]): NormalizedServer[] {
+  const enabled = new Set(sources.filter((entry) => entry.enabled).map((entry) => entry.id));
+  return filterBySource(servers, source).filter((server) => source === "all" ? enabled.has(server.registrySource) : true);
+}
+
+export function cacheHasSource(entries: RegistryEntry[], source: SourceMode, registrySources: RegistrySourceInfo[] = []): boolean {
   const sources = new Set(normalizeEntries(entries).map((server) => server.registrySource));
-  return source === "all" ? sources.has("official") && sources.has("docker") : sources.has(source);
+  if (source !== "all") return sources.has(source);
+  const enabledSources = registrySources.length
+    ? registrySources.filter((entry) => entry.enabled).map((entry) => entry.id)
+    : ["official", "docker"];
+  return enabledSources.every((enabled) => sources.has(enabled));
 }

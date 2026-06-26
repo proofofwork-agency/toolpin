@@ -85,6 +85,8 @@ export interface NormalizedServer {
   isLatest: boolean;
   installable: boolean;
   installableReason?: string;
+  resolvedFromRegistry?: RegistrySourceId;
+  resolutionNote?: string;
   repositoryUrl?: string;
   packageTypes: string[];
   remoteTypes: string[];
@@ -182,6 +184,8 @@ export interface TrustEvidence {
   claim?: string;
   verificationMethod?: string;
   verifiedByToolPin?: boolean;
+  trustedAnchor?: boolean;
+  trustAnchor?: string;
   verifiedAt?: string;
   failureReason?: string;
   required?: boolean;
@@ -193,6 +197,7 @@ export interface TrustReport {
   metadataCompleteness?: number;
   tier?: TrustTier;
   capReason?: string;
+  verifiedProvenance?: boolean;
   vetoes?: TrustGate[];
   gates?: TrustGate[];
   pillars?: {

@@ -41,9 +41,18 @@ test("evaluatePolicy enforces tier and ToolPin-verified evidence requirements", 
   });
   const verifiedPlan = buildInstallPlan(packageServer(), "claude");
   verifiedPlan.trust.tier = "verified";
+  verifiedPlan.trust.verifiedProvenance = true;
   verifiedPlan.trust.evidence = [
     ...(verifiedPlan.trust.evidence ?? []),
-    { code: "mcpb_sha256_verified", status: "passed", message: "bytes match", verifiedByToolPin: true },
+    {
+      code: "mcpb_sha256_verified",
+      status: "passed",
+      message: "bytes match",
+      verifiedByToolPin: true,
+      trustedAnchor: true,
+      trustAnchor: "trusted-mcpb",
+      verifiedAt: new Date().toISOString(),
+    },
   ];
   const verified = evaluatePolicy(verifiedPlan, {
     minTrustTier: "verified",

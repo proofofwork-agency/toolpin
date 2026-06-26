@@ -4,7 +4,8 @@ import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.j
 import { canonicalJson } from "./canonicalJson.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import type { InstallScope } from "./install.js";
-import { classifyTrust, scoreServer, trustTier } from "./trust.js";
+import { regateTrustReport, scoreServer, trustTier } from "./trust.js";
+import type { VerificationReport } from "./verify.js";
 import type { CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue, TrustReport, TrustTier } from "./types.js";
 
 export const LOCKFILE_VERSION = 2;
@@ -53,7 +54,7 @@ export interface LockVerification {
   locked?: InstallPlan;
 }
 
-export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest; scope?: InstallScope } = {}): InstallPlan {
+export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest; scope?: InstallScope; verificationReport?: VerificationReport } = {}): InstallPlan {
   if (server.installable === false) {
     throw new Error(`Cannot install ${server.name}@${server.version}: ${server.installableReason ?? "registry entry is discovery-only"}.`);
   }
@@ -81,13 +82,14 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName, o
 
   const resolvedAt = new Date().toISOString();
   const capabilityManifest = options.capabilityManifest ?? deriveCapabilityManifest(server, { generatedAt: resolvedAt });
+  const trust = options.verificationReport ? mergeVerificationTrust(scoreServer(server), options.verificationReport) : scoreServer(server);
   const plan: InstallPlan = {
     name: server.name,
     version: server.version,
     client,
     scope: options.scope ?? "project",
     selectedTarget: target,
-    trust: scoreServer(server),
+    trust,
     config: exported.config,
     notes: exported.notes,
     capabilityManifest,
@@ -110,6 +112,37 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName, o
     },
   };
   return { ...plan, integrity: computePlanIntegrity(plan) };
+}
+
+function mergeVerificationTrust(base: TrustReport, report: VerificationReport): TrustReport {
+  const evidence = dedupeTrustEvidence([...(base.evidence ?? []), ...report.evidence]);
+  const issues = dedupeTrustIssues([...base.issues, ...report.issues]);
+  const badges = [...new Set([...base.badges, ...report.badges])];
+  return regateTrustReport({
+    ...base,
+    evidence,
+    issues,
+    badges,
+    verifiedProvenance: report.verifiedProvenance === true,
+  });
+}
+
+function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
+  const byKey = new Map<string, TrustEvidence>();
+  for (const entry of evidence) {
+    const key = `${entry.code}:${entry.status}:${entry.message}`;
+    if (!byKey.has(key)) byKey.set(key, entry);
+  }
+  return [...byKey.values()];
+}
+
+function dedupeTrustIssues(issues: TrustIssue[]): TrustIssue[] {
+  const byKey = new Map<string, TrustIssue>();
+  for (const issue of issues) {
+    const key = `${issue.severity}:${issue.code}:${issue.message}`;
+    if (!byKey.has(key)) byKey.set(key, issue);
+  }
+  return [...byKey.values()];
 }
 
 export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", key = lockKey(plan.name, plan.client)): Promise<Lockfile> {
@@ -280,6 +313,7 @@ function parseTrust(value: unknown, key: string): TrustReport {
   if (value.overallScore !== undefined && (typeof value.overallScore !== "number" || !Number.isFinite(value.overallScore))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.overallScore`);
   if (value.metadataCompleteness !== undefined && (typeof value.metadataCompleteness !== "number" || !Number.isFinite(value.metadataCompleteness))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.metadataCompleteness`);
   if (value.capReason !== undefined && typeof value.capReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.capReason`);
+  if (value.verifiedProvenance !== undefined && typeof value.verifiedProvenance !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.verifiedProvenance`);
   if (value.gates !== undefined && (!Array.isArray(value.gates) || !value.gates.every(isTrustGate))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.gates`);
   if (value.vetoes !== undefined && (!Array.isArray(value.vetoes) || !value.vetoes.every(isTrustGate))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.vetoes`);
   if (value.pillars !== undefined && !isTrustPillars(value.pillars)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.pillars`);
@@ -290,6 +324,7 @@ function parseTrust(value: unknown, key: string): TrustReport {
     ...(typeof value.metadataCompleteness === "number" ? { metadataCompleteness: value.metadataCompleteness } : {}),
     ...(value.tier ? { tier: value.tier } : {}),
     ...(typeof value.capReason === "string" ? { capReason: value.capReason } : {}),
+    ...(typeof value.verifiedProvenance === "boolean" ? { verifiedProvenance: value.verifiedProvenance } : {}),
     ...(Array.isArray(value.gates) ? { gates: value.gates } : {}),
     ...(Array.isArray(value.vetoes) ? { vetoes: value.vetoes } : {}),
     ...(isTrustPillars(value.pillars) ? { pillars: value.pillars } : {}),
@@ -344,6 +379,8 @@ function parseTrustEvidence(value: unknown, key: string, index: number): TrustEv
   if (value.claim !== undefined && typeof value.claim !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].claim`);
   if (value.verificationMethod !== undefined && typeof value.verificationMethod !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verificationMethod`);
   if (value.verifiedByToolPin !== undefined && typeof value.verifiedByToolPin !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verifiedByToolPin`);
+  if (value.trustedAnchor !== undefined && typeof value.trustedAnchor !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].trustedAnchor`);
+  if (value.trustAnchor !== undefined && typeof value.trustAnchor !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].trustAnchor`);
   if (value.verifiedAt !== undefined && typeof value.verifiedAt !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verifiedAt`);
   if (value.failureReason !== undefined && typeof value.failureReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].failureReason`);
   return {
@@ -354,6 +391,8 @@ function parseTrustEvidence(value: unknown, key: string, index: number): TrustEv
     ...(typeof value.claim === "string" ? { claim: value.claim } : {}),
     ...(typeof value.verificationMethod === "string" ? { verificationMethod: value.verificationMethod } : {}),
     ...(typeof value.verifiedByToolPin === "boolean" ? { verifiedByToolPin: value.verifiedByToolPin } : {}),
+    ...(typeof value.trustedAnchor === "boolean" ? { trustedAnchor: value.trustedAnchor } : {}),
+    ...(typeof value.trustAnchor === "string" ? { trustAnchor: value.trustAnchor } : {}),
     ...(typeof value.verifiedAt === "string" ? { verifiedAt: value.verifiedAt } : {}),
     ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     ...(typeof value.required === "boolean" ? { required: value.required } : {}),
@@ -443,22 +482,10 @@ function withLockIntegrityEvidence(report: TrustReport): TrustReport {
     },
   ];
   const uniqueEvidence = dedupeTrustEvidence(evidence);
-  const gated = classifyTrust(report.score, report.issues, uniqueEvidence);
-  return {
+  return regateTrustReport({
     ...report,
-    tier: gated.tier,
-    gatedBy: gated.gatedBy,
     evidence: uniqueEvidence,
-  };
-}
-
-function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
+  });
 }
 
 function integrityPayload(plan: InstallPlan): unknown {

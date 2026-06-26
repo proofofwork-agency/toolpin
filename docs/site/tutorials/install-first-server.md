@@ -64,7 +64,11 @@ This writes project-scope client config and updates `mcp-lock.json`.
 on by default for remote targets (skip it with `--skip-live-verification`). When
 that probe succeeds, ToolPin stores a normalized tool-description hash in the
 lockfile. Package targets get registry pin checks instead (OCI digest or MCPB
-`fileSha256`); ToolPin never downloads and verifies OCI image or MCPB bundle bytes.
+`fileSha256`): OCI registry digest resolution and MCPB byte hashing are
+best-effort when the registry or trusted HTTPS bundle bytes are reachable. npm
+targets are checked against `registry.npmjs.org` `dist.integrity`; PyPI, NuGet,
+and Cargo targets are checked for exact declared versions and drift, not
+artifact integrity.
 
 Because `mcp-lock.json` now pins this server/client, a later `toolpin install`
 without `--update-lock` refuses if the version, selected target, generated client

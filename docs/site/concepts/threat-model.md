@@ -22,7 +22,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 | Threat | ToolPin defense | Limit |
 |---|---|---|
 | Mutable OCI tags | Trust and policy checks can require selected OCI identifiers to include `@sha256:`. | Presence check only; ToolPin does not fetch and recompute image bytes. |
-| MCPB bundles without declared integrity | Trust and policy checks can require `fileSha256`; `verify` recomputes SHA-256 when bytes are available from file or HTTP. | Unavailable bytes are explicit `unavailable` evidence, not a verified result. |
+| MCPB bundles without declared integrity | Trust and policy checks can require `fileSha256`; `verify` recomputes SHA-256 only when bytes are available from a code-allowlisted HTTPS artifact host. | Local paths, `file://`, HTTP, untrusted hosts, and unavailable bytes are explicit `unavailable` evidence, not a verified result. |
 | Incomplete automated evidence | Trust tiers and cap reasons show when metadata is strong but artifact proof is missing. | A cap is a review signal, not runtime containment. |
 | Insecure remotes | Non-HTTPS or invalid remote URLs are critical trust issues. | Runtime behavior after install is outside ToolPin. |
 | Lockfile tampering | Per-entry integrity, whole-lock digest pins, and detached Ed25519 signatures can detect changes. | Signatures depend on out-of-band key management and branch protection. |
@@ -42,10 +42,16 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 ## Recommended posture
 
 - Commit `mcp-lock.json`.
-- Run `toolpin ci --live` on pull requests.
+- Run `toolpin ci --live --verify` on pull requests when CI has the network and
+  credentials needed for live capability drift checks.
+- Run `toolpin ci --signature mcp-lock.sig --public-key public.pem --policy
+  .toolpin/policy.json` when you use signed lockfiles and policy validation.
 - Store `toolpin lock digest` output outside the pull request path when using
   `--expect-digest`.
 - Keep Ed25519 private keys outside the repository when signing lockfiles.
 - Review `.toolpin/policy.json` changes like application code.
+- Treat `--skip-live-verification` as a conscious downgrade: it skips live
+  `tools/list` hashing and cannot be used for CI entries that already have live
+  capability pins.
 - Use runtime controls from clients, gateways, containers, and secret managers
   for defenses ToolPin does not provide.

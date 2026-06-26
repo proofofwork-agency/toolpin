@@ -49,6 +49,7 @@ export interface InstalledLifecycleOptions {
   lockfilePath?: string;
   version?: string;
   verify?: boolean;
+  requireVerified?: boolean;
   timeoutMs?: number;
   policyPath?: string;
   enforcePolicy?: boolean;
@@ -342,6 +343,7 @@ async function buildCheckedPlan(
     verification = await verifyServer(server, {
       liveRemoteProbe: true,
       timeoutMs: options.timeoutMs ?? 15000,
+      requireVerified: options.requireVerified === true,
     });
     if (!verification.ok) {
       throw new Error([
@@ -352,7 +354,7 @@ async function buildCheckedPlan(
     capabilityManifest = verification.capabilityManifest;
   }
 
-  const plan = buildInstallPlan(server, client, { capabilityManifest, scope });
+  const plan = buildInstallPlan(server, client, { capabilityManifest, verificationReport: verification, scope });
   if (options.enforcePolicy !== false) {
     const report = await enforcePolicy(plan, options.policyPath ?? ".toolpin/policy.json");
     if (!report.ok) {
