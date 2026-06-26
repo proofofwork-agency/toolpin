@@ -158,6 +158,8 @@ export function MpmTui() {
         servers: filterBySource(servers, sourceMode),
         lockfile,
         selected: 0,
+        testResult: undefined,
+        commandLog: undefined,
         versionSelections: pruneVersionSelections(prev.versionSelections, servers),
         resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
@@ -189,6 +191,8 @@ export function MpmTui() {
         servers: filterBySource(servers, state.sourceMode),
         lockfile,
         selected: 0,
+        testResult: undefined,
+        commandLog: undefined,
         versionSelections: pruneVersionSelections(prev.versionSelections, servers),
         resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
@@ -1113,20 +1117,22 @@ export function MpmTui() {
           selected: 0,
           view: "discover",
           pendingRemove: undefined,
+          testResult: undefined,
+          commandLog: undefined,
         }));
         return;
       }
       if (key.return) {
-        setState((prev) => ({ ...prev, inputMode: "normal", selected: 0, view: "discover", pendingRemove: undefined }));
+        setState((prev) => ({ ...prev, inputMode: "normal", selected: 0, view: "discover", pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
         if (state.dataMode === "live") void loadData("live", state.query);
         return;
       }
       if (key.backspace || key.delete) {
-        setState((prev) => ({ ...prev, query: prev.query.slice(0, -1), selected: 0, pendingRemove: undefined }));
+        setState((prev) => ({ ...prev, query: prev.query.slice(0, -1), selected: 0, pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        setState((prev) => ({ ...prev, query: prev.query + input, selected: 0, pendingRemove: undefined }));
+        setState((prev) => ({ ...prev, query: prev.query + input, selected: 0, pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
       }
       return;
     }
@@ -1175,11 +1181,11 @@ export function MpmTui() {
       return;
     }
     if (key.upArrow || input === "k") {
-      setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined }));
+      setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
       return;
     }
     if (key.downArrow || input === "j") {
-      setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1), pendingRemove: undefined }));
+      setState((prev) => ({ ...prev, selected: Math.min(Math.max(0, results.length - 1), prev.selected + 1), pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
       return;
     }
     if (key.return) {
@@ -1222,6 +1228,8 @@ export function MpmTui() {
             browseLayout: nextBrowseLayout(prev.browseLayout, hasCategoryMetadata(results)),
             selected: 0,
             pendingRemove: undefined,
+            testResult: undefined,
+            commandLog: undefined,
           }));
         }
         break;
@@ -1332,7 +1340,7 @@ export function MpmTui() {
       if (state.view === "installed") {
         dispatchInstalled({ type: "select", selected: hit.index });
       } else {
-        setState((prev) => ({ ...prev, selected: hit.index, pendingRemove: undefined }));
+        setState((prev) => ({ ...prev, selected: hit.index, pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
       }
       return true;
     }
@@ -1365,6 +1373,7 @@ export function MpmTui() {
         ...prev.versionSelections,
         [selectedResult.server.name]: nextVersion,
       },
+      testResult: undefined,
       commandLog: {
         title: "versions",
         command: commandLineFor("info", prev, selectedServer),

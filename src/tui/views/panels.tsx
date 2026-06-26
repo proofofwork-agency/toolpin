@@ -6,6 +6,7 @@ import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, SearchResult } from "../../types.js";
+import { scoreServer } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
 import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } from "../constants.js";
@@ -296,7 +297,7 @@ export function SelectedServerPanel({
 function DetailsView({ result, server: selectedServer, width, testResult, testing, versionInfo }: { result?: SearchResult; server?: NormalizedServer; width: number; testResult?: ServerTestResult; testing: boolean; versionInfo?: TuiVersionInfo }) {
   if (!result) return <EmptyPanel title="Overview" />;
   const server = selectedServer ?? result.server;
-  const trust = result.trust;
+  const trust = scoreServer(server);
   const risk = riskTone(trust.score);
   const deltas = scoreBreakdown(trust);
   return (
@@ -332,11 +333,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         <Text color={MUTED} wrap="truncate">
           breakdown  {deltas.map((delta) => delta.label).join("  ")}
         </Text>
-        {trust.issues.slice(0, 4).map((issue) => (
-          <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
-            {issue.severity}: {truncate(issue.message, width - 12)}
-          </Text>
-        ))}
+        <IssueRows issues={trust.issues} width={width} />
       </Box>
       <Divider width={width} />
       <Spacer />
@@ -391,11 +388,7 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
         <PlanMetric key={targetClient} label={targetClient} value={configTargetLabel(targetClient, installScope)} width={width} />
       ))}
       {server.requiresSecrets ? <PlanMetric label="secrets" value="required before runtime/test can succeed" width={width} valueColor={WARN} /> : null}
-      {plan.trust.issues.slice(0, 4).map((issue) => (
-        <Text key={issue.code} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
-          {issue.severity}: {truncate(issue.message, width - 12)}
-        </Text>
-      ))}
+      <IssueRows issues={plan.trust.issues} width={width} />
     </Box>
   );
 }
@@ -456,20 +449,51 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Global", "q", "Quit ToolPin."],
   ];
   const lineWidth = Math.max(24, width - 8);
-  const visibleLines = Math.max(1, height - 4);
+  const showExplanations = height >= 16;
+  const shortcutRows = showExplanations
+    ? Math.max(2, Math.min(lines.length, height - 17))
+    : Math.max(1, height - 4);
+  const visibleShortcuts = lines.slice(0, shortcutRows);
+  const hiddenShortcutCount = Math.max(0, lines.length - visibleShortcuts.length);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
-      <ModalTitle title="help" file="shortcuts" />
+      <ModalTitle title="help" file="shortcuts + trust" />
       <Text color={MUTED} wrap="truncate">Keyboard shortcuts and what each action changes.</Text>
       <Spacer />
-      {lines.slice(0, visibleLines).map(([section, keys, description]) => (
+      <Text bold color={BLUE}>shortcuts</Text>
+      {visibleShortcuts.map(([section, keys, description]) => (
         <Text key={`${section}:${keys}`} wrap="truncate">
           <Text color={MUTED}>{section.padEnd(10)}</Text>
           <Text bold color={OK}>{keys.padEnd(10)}</Text>
           <Text color="white">{truncate(description, lineWidth - 20)}</Text>
         </Text>
       ))}
+      {hiddenShortcutCount > 0 ? <Text color={CHROME}>{" ".repeat(10)}{hiddenShortcutCount} more shortcut(s) hidden on this terminal height.</Text> : null}
+      {showExplanations ? (
+        <>
+          <Divider width={width} />
+          <Text bold color={BLUE}>scoring</Text>
+          <HelpNote width={lineWidth} label="score" text="0-100 advisory trust score for review priority, not a security guarantee or install blocker." />
+          <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
+          <HelpNote width={lineWidth} label="colors" text="Green is high confidence, yellow needs review, red means critical mutable or risky package evidence." />
+          <Spacer />
+          <Text bold color={BLUE}>locking</Text>
+          <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, trust data, and integrity digest." />
+          <HelpNote width={lineWidth} label="install" text="Install writes client config and the matching lock entry after policy and drift checks pass." />
+          <HelpNote width={lineWidth} label="doctor/ci" text="Doctor and CI compare client config with mcp-lock.json so config drift, digest drift, and signature failures are visible." />
+          <HelpNote width={lineWidth} label="adopt/update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
+        </>
+      ) : null}
     </Box>
+  );
+}
+
+function HelpNote({ label, text, width }: { label: string; text: string; width: number }) {
+  return (
+    <Text wrap="truncate">
+      <Text color={MUTED}>{label.padEnd(10)}</Text>
+      <Text color="white">{truncate(text, width - 10)}</Text>
+    </Text>
   );
 }
 
@@ -871,6 +895,26 @@ function Divider({ width }: { width: number }) {
     <Box marginTop={1}>
       <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
     </Box>
+  );
+}
+
+function IssueRows({ issues, width, rows = 4 }: { issues: Array<{ severity: "info" | "warning" | "critical"; code: string; message: string }>; width: number; rows?: number }) {
+  const visible = issues.slice(0, rows);
+  const blank = " ".repeat(Math.max(1, width - 4));
+  return (
+    <>
+      {Array.from({ length: rows }, (_, index) => {
+        const issue = visible[index];
+        if (!issue) {
+          return <Text key={`issue-empty-${index}`}>{blank}</Text>;
+        }
+        return (
+          <Text key={`${issue.code}-${index}`} color={issue.severity === "critical" ? ERR : issue.severity === "warning" ? WARN : MUTED} wrap="truncate">
+            {issue.severity}: {truncate(issue.message, width - 12)}
+          </Text>
+        );
+      })}
+    </>
   );
 }
 
