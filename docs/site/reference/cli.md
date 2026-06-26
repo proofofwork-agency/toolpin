@@ -8,6 +8,8 @@ The main binary is `toolpin`. `tpn` is the short alias for the same CLI.
 
 ```text
 toolpin version | --version | -v        Print the ToolPin version.
+toolpin upgrade [--target latest|<version>] [--package-manager npm|pnpm|yarn|bun] [--dry-run] [--json]
+tpn upgrade                              Upgrade the globally installed ToolPin npm package.
 toolpin help | --help | -h              Print top-level usage.
 ```
 
@@ -24,7 +26,8 @@ toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
 toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
-toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
+toolpin audit server <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json]
 toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```

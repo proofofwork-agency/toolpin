@@ -1,10 +1,12 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
 import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
-import { normalizeEntries } from "../registry.js";
-import type { NormalizedServer, RegistryEntry, RegistrySourceInfo } from "../types.js";
+import { latestOnly, normalizeEntries } from "../registry.js";
+import { searchServers } from "../search.js";
+import type { FetchOptions } from "../registry.js";
+import type { NormalizedServer, RegistryEntry, RegistrySourceInfo, SearchResult, SourceStatus } from "../types.js";
 import { compareVersionStatus, knownVersions } from "../versions.js";
-import { CLIENTS, VIEWS } from "./constants.js";
+import { CLIENTS, RESULT_LIMIT_STEP, VIEWS } from "./constants.js";
 import { asObject, safeJson, shortPath, unique } from "./format.js";
 import type { ClientSelection, CommandLog, SourceMode, TuiState, TuiVersionInfo, View } from "./types.js";
 
@@ -154,11 +156,36 @@ export function filterByEnabledSources(servers: NormalizedServer[], source: Sour
   return filterBySource(servers, source).filter((server) => source === "all" ? enabled.has(server.registrySource) : true);
 }
 
-export function cacheHasSource(entries: RegistryEntry[], source: SourceMode, registrySources: RegistrySourceInfo[] = []): boolean {
-  const sources = new Set(normalizeEntries(entries).map((server) => server.registrySource));
-  if (source !== "all") return sources.has(source);
+const CACHE_COVERED_EMPTY_STATUSES = new Set<SourceStatus>(["auth-missing", "stale", "fetch-error", "disabled"]);
+
+export function cacheCoverage(entries: RegistryEntry[], source: SourceMode, registrySources: RegistrySourceInfo[] = []): { covered: boolean; missing: string[] } {
+  const entrySources = new Set(normalizeEntries(entries).map((server) => server.registrySource));
+  const sourcesById = new Map(registrySources.map((entry) => [entry.id, entry]));
   const enabledSources = registrySources.length
     ? registrySources.filter((entry) => entry.enabled).map((entry) => entry.id)
     : ["official", "docker"];
-  return enabledSources.every((enabled) => sources.has(enabled));
+  const expected = source === "all" ? enabledSources : [source];
+  const missing = expected.filter((sourceId) => {
+    if (entrySources.has(sourceId)) return false;
+    const sourceInfo = sourcesById.get(sourceId);
+    return !(sourceInfo?.cacheEntries === 0 && sourceInfo.status && CACHE_COVERED_EMPTY_STATUSES.has(sourceInfo.status));
+  });
+  return { covered: missing.length === 0, missing };
+}
+
+export function cacheHasSource(entries: RegistryEntry[], source: SourceMode, registrySources: RegistrySourceInfo[] = []): boolean {
+  return cacheCoverage(entries, source, registrySources).covered;
+}
+
+export function browseSearchResults(servers: NormalizedServer[], query: string, browseVersionMode: "latest" | "all"): SearchResult[] {
+  const candidates = browseVersionMode === "all" ? servers : latestOnly(servers);
+  return searchServers(candidates, query || "mcp", candidates.length);
+}
+
+export function nextResultLimit(currentLimit: number, totalMatches: number): number {
+  return Math.min(Math.max(totalMatches, currentLimit), currentLimit + RESULT_LIMIT_STEP);
+}
+
+export function persistentRefreshOptions(source: SourceMode): Pick<FetchOptions, "source" | "limit" | "maxPages"> {
+  return { source, limit: 500, maxPages: 25 };
 }

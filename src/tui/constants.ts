@@ -39,4 +39,3 @@ export const MENU_ROW = 6;
 export const LIST_ROW_START = 8;
 export const DEFAULT_RESULT_LIMIT = 50;
 export const RESULT_LIMIT_STEP = 50;
-export const MAX_RESULT_LIMIT = 500;

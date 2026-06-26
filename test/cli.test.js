@@ -190,6 +190,39 @@ test("CLI tui --help prints usage without requiring a TTY", async () => {
   assert.equal(stderr, "");
 });
 
+test("CLI upgrade help and dry-run expose the package-manager command", async () => {
+  const help = await execFileAsync(process.execPath, [CLI, "upgrade", "--help"]);
+  assert.match(help.stdout, /^Usage: toolpin upgrade/);
+  assert.equal(help.stderr, "");
+
+  const dry = await execFileAsync(process.execPath, [CLI, "upgrade", "--dry-run", "--target", "latest", "--package-manager", "npm"]);
+  assert.match(dry.stdout, /ToolPin Upgrade/);
+  assert.match(dry.stdout, /command\s+npm install -g toolpin@latest/);
+  assert.match(dry.stdout, /dry run; no changes made/);
+  assert.equal(dry.stderr, "");
+});
+
+test("CLI upgrade dry-run supports JSON and package-manager selection", async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    CLI,
+    "upgrade",
+    "--dry-run",
+    "--json",
+    "--target",
+    "3.9.2",
+    "--package-manager",
+    "pnpm",
+  ]);
+  const parsed = JSON.parse(stdout);
+
+  assert.equal(stderr, "");
+  assert.equal(parsed.package, "toolpin");
+  assert.equal(parsed.target, "3.9.2");
+  assert.equal(parsed.packageManager, "pnpm");
+  assert.deepEqual(parsed.command.slice(-3), ["add", "-g", "toolpin@3.9.2"]);
+  assert.equal(parsed.dryRun, true);
+});
+
 test("CLI tui fails cleanly when stdio is not a TTY", async () => {
   await assert.rejects(
     () => execFileAsync(process.execPath, [CLI, "tui"]),

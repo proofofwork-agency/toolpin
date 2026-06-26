@@ -21,7 +21,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 
 | Threat | ToolPin defense | Limit |
 |---|---|---|
-| Mutable OCI tags | Trust and policy checks can require selected OCI identifiers to include `@sha256:`. | Presence check only; ToolPin does not fetch and recompute image bytes. |
+| Mutable OCI tags | Trust and policy checks can require selected OCI identifiers to include `@sha256:`; `verify` resolves the registry manifest digest against a code-owned registry allowlist. | Manifest-digest resolution (not a full image byte recompute); non-allowlisted hosts are rejected as `unavailable`. |
 | MCPB bundles without declared integrity | Trust and policy checks can require `fileSha256`; `verify` recomputes SHA-256 only when bytes are available from a code-allowlisted HTTPS artifact host. | Local paths, `file://`, HTTP, untrusted hosts, and unavailable bytes are explicit `unavailable` evidence, not a verified result. |
 | Incomplete automated evidence | Trust tiers and cap reasons show when metadata is strong but artifact proof is missing. | A cap is a review signal, not runtime containment. |
 | Insecure remotes | Non-HTTPS or invalid remote URLs are critical trust issues. | Runtime behavior after install is outside ToolPin. |
@@ -34,7 +34,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 
 - Runtime sandboxing or network mediation.
 - Reliable prompt-injection detection.
-- Byte-level OCI or MCPB artifact verification.
+- Full OCI image byte recomputation and broad artifact verification. (MCPB SHA-256 byte hashing from code-allowlisted HTTPS hosts and npm tarball SHA-512 SRI are in scope.)
 - Sigstore, transparency logs, SLSA provenance, or SBOM verification.
 - Preventing a malicious running server from exposing misleading tools.
 - Secret brokering at runtime.

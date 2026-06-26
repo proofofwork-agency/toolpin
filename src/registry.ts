@@ -216,6 +216,8 @@ export async function listRegistrySourceStatuses(options: { registryConfigPath?:
       ...source,
       status: source.enabled ? partition?.status ?? source.status ?? sourceStatus(source) : "disabled",
       setupHint: source.setupHint,
+      cacheEntries: partition?.entries.length,
+      cachePageInfo: partition?.pageInfo,
     };
   });
 }

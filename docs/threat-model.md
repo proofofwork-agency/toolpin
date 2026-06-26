@@ -2,9 +2,9 @@
 
 > What ToolPin defends against, what it deliberately does not, and where each
 > defense begins and ends. Audience: security reviewers, enterprise
-> evaluators, and contributors. Status: scoped to v0.1.0 — future capabilities
+> evaluators, and contributors. Status: scoped to v0.2.0 — future capabilities
 > (sigstore, Cedar, runtime brokering) are noted as roadmap, not claims.
-> Last reviewed: 2026-06-25.
+> Last reviewed: 2026-06-26.
 
 This document consolidates the security scope statements scattered across the
 README (Quick Start, Commands, "What Exists Now", Secret Hygiene, and Product

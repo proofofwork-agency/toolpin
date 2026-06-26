@@ -9,7 +9,9 @@ export { commandLineFor, commandRequiresServer, shellQuote } from "./tui/command
 export { installedId, installedViewReducer, loadInstalledServerStates } from "./tui/installedState.js";
 export { buildTuiHitZones, computeMenuLayout, hitTestTui, listWindowStart } from "./tui/layout.js";
 export {
+  browseSearchResults,
   buildTuiVersionInfo,
+  cacheCoverage,
   cacheHasSource,
   commandLogBelongsToView,
   commandLogForView,
@@ -20,8 +22,10 @@ export {
   installClientChoicesForScope,
   installClientLabel,
   nextClient,
+  nextResultLimit,
   nextSource,
   nextView,
+  persistentRefreshOptions,
   pruneVersionSelections,
   scopeLabel,
   selectedClients,
@@ -29,6 +33,7 @@ export {
   selectedServerVersion,
   switchView,
 } from "./tui/selectors.js";
+export { InstallWizard, OptionList, RegistryLoadingPanel, sourceCountLabel } from "./tui/views/panels.js";
 
 export function runTui(): void {
   render(<MpmTui />, { alternateScreen: Boolean(process.stdout.isTTY) });

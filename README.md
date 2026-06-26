@@ -112,6 +112,7 @@ After the npm package is published, the same flow becomes:
 npm install -g toolpin
 toolpin --version
 tpn -v
+tpn upgrade --dry-run
 toolpin search github --source all --limit 5 --live
 ```
 
@@ -133,15 +134,16 @@ toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
 toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
-toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
+toolpin audit server <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json]
 toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
-toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--require-verified]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--timeout 15000] [--json]
 toolpin list|ls|installed [--scope|-s all|project|global] [--client|-c <client>|all] [--json]
 toolpin plan <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--live]
-toolpin install <server-name> [--client|-c <client>|all] [--version <server-version>] [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin install <server-name> [--client|-c <client>|all] [--version <server-version>] [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--require-verified] [--policy .toolpin/policy.json] [--no-policy]
 toolpin adopt <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client|-c <client> [--version <server-version>] [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope|-s all|project|global] [--client|-c <client>|all] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
@@ -149,7 +151,7 @@ toolpin policy check <server-name> [--client|-c <client>|all] [--version <server
 toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
 toolpin remove <server-name> [--client|-c <client>|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
 toolpin uninstall <server-name> [--client|-c <client>|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--require-verified] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
 toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
 toolpin lock <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
@@ -158,6 +160,8 @@ toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin export-config <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin tui
+toolpin upgrade [--target latest|<version>] [--package-manager npm|pnpm|yarn|bun] [--dry-run] [--json]
+tpn upgrade
 toolpin --version | -v
 toolpin --help | -h
 ```
@@ -165,6 +169,8 @@ toolpin --help | -h
 `tpn` is registered as the short binary alias for the same CLI, and `ls` is an
 alias for `list`. Common install/config shortcuts are also supported: `-c` for
 `--client`, `-s` for `--scope`, `-g` for `--global`, and `-p` for `--project`.
+Use `tpn upgrade` or `toolpin upgrade` to update the globally installed npm
+package; `--dry-run` prints the package-manager command first.
 For `plan`, `install`, `policy check`, `lock`, and `export-config`, `--client`
 is optional and defaults to `generic`; `test-installed` rejects `--client all`.
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
@@ -204,7 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.1.0
+      - uses: proofofwork-agency/toolpin@v0.2.0
         with:
           live: "true"
           file: mcp-lock.json
@@ -216,7 +222,7 @@ action source via `$GITHUB_ACTION_PATH`, then runs `toolpin ci`.
 After npm publish, you can opt into npm installation with `toolpin-version`:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.2.0
   with:
     toolpin-version: latest
     live: "true"
@@ -483,7 +489,9 @@ unverified. Common cases:
   root keys, and transport shapes.
 - [docs/how-to/catch-drift-in-ci.md](docs/how-to/catch-drift-in-ci.md) — digest
   and signature options for CI.
-- [docs/comparison.md](docs/comparison.md) — ToolPin vs. the MCP ecosystem.
+- [docs/comparison.md](docs/site/concepts/comparison.md) — ToolPin vs. the MCP ecosystem.
+- [DISCLAIMER.md](DISCLAIMER.md) — no warranty; you assume all risk.
+- [CLA.md](CLA.md) — contributor license agreement.
 - [docs/ROADMAP.md](docs/ROADMAP.md) and
   [docs/secret-brokering.md](docs/secret-brokering.md) — direction and design
   gates.

@@ -116,6 +116,8 @@ export interface RegistrySourceInfo {
   url?: string;
   status?: SourceStatus;
   setupHint?: string;
+  cacheEntries?: number;
+  cachePageInfo?: RegistryFetchPageInfo;
 }
 
 export interface RegistryFetchPageInfo {

@@ -8,16 +8,13 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "../i
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
-import { fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache, updateRegistrySourceEnabled } from "../registry.js";
-import { searchServers } from "../search.js";
+import { dedupeRegistryEntries, fetchRegistryResult, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache, updateRegistrySourceEnabled } from "../registry.js";
 import { testServer, type ServerTestResult } from "../tester.js";
-import type { NormalizedServer } from "../types.js";
+import type { NormalizedServer, RegistryFetchResult, RegistrySourceInfo } from "../types.js";
 import { commandLineFor, commandRequiresServer } from "./command.js";
 import {
   DEFAULT_RESULT_LIMIT,
   ERR,
-  MAX_RESULT_LIMIT,
-  RESULT_LIMIT_STEP,
   SERVER_VIEWS,
   TUI_COMMANDS,
 } from "./constants.js";
@@ -26,14 +23,17 @@ import { clamp, safeFileName, truncate, unique } from "./format.js";
 import { buildTuiHitZones, hitTestTui } from "./layout.js";
 import {
   buildTuiVersionInfo,
-  cacheHasSource,
+  browseSearchResults,
+  cacheCoverage,
   commandLogForView,
   filterByEnabledSources,
   installClientChoicesForScope,
   installClientLabel,
   initialInstallVersionIndex,
+  nextResultLimit,
   nextClient,
   nextSource,
+  persistentRefreshOptions,
   pruneVersionSelections,
   scopeLabel,
   selectedClients,
@@ -112,10 +112,7 @@ export function MpmTui() {
     };
   }, []);
 
-  const allResults = useMemo(() => {
-    const candidates = state.browseVersionMode === "all" ? state.servers : latestOnly(state.servers);
-    return searchServers(candidates, state.query || "mcp", MAX_RESULT_LIMIT);
-  }, [state.servers, state.query, state.browseVersionMode]);
+  const allResults = useMemo(() => browseSearchResults(state.servers, state.query, state.browseVersionMode), [state.servers, state.query, state.browseVersionMode]);
   const results = useMemo(() => allResults.slice(0, state.resultLimit), [allResults, state.resultLimit]);
   const browseLayout = state.browseLayout === "category" && !hasCategoryMetadata(results) ? "project" : state.browseLayout;
 
@@ -147,26 +144,40 @@ export function MpmTui() {
     setState((prev) => ({ ...prev, loading: true, error: undefined, dataMode: mode }));
     try {
       const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
+      let nextRegistrySources = registrySources;
+      let nextCommandLog = undefined as TuiState["commandLog"];
       const entries = mode === "live"
-        ? await fetchRegistry({ maxPages: 4, search: query || undefined, source: sourceMode })
-        : await readCache().then(async (cached) => {
-            if (!cacheHasSource(cached, sourceMode, registrySources)) {
-              const fetched = await refreshRegistryCache({ maxPages: 3, search: query || undefined, source: sourceMode });
-              return fetched.entries;
+        ? await fetchRegistryResult({ maxPages: 4, search: query || undefined, source: sourceMode }).then((fetched) => {
+            nextRegistrySources = registrySourcesWithFetchResult(registrySources, fetched);
+            return dedupeRegistryEntries(fetched.entries);
+          })
+        : await readCache().then((cached) => {
+            const coverage = cacheCoverage(cached, sourceMode, registrySources);
+            if (!coverage.covered) {
+              nextCommandLog = {
+                title: "ingest",
+                command: "toolpin ingest",
+                ok: false,
+                lines: [
+                  `cache coverage incomplete for ${coverage.missing.join(", ")}`,
+                  "Press r to refresh enabled sources into .toolpin/registry-cache.json.",
+                ],
+              };
             }
             return cached;
           }).catch(async () => {
-            const fetched = await refreshRegistryCache({ maxPages: 3, search: query || undefined, source: sourceMode });
+            const fetched = await refreshRegistryCache({ maxPages: 3, source: sourceMode });
+            nextRegistrySources = registrySourcesWithFetchResult(registrySources, fetched);
             return fetched.entries;
       });
       const servers = normalizeEntries(entries);
-      const visibleServers = filterByEnabledSources(servers, sourceMode, registrySources);
+      const visibleServers = filterByEnabledSources(servers, sourceMode, nextRegistrySources);
       const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       void refreshInstalledRows(servers, lockfile);
       setState((prev) => ({
         ...prev,
         entries,
-        registrySources,
+        registrySources: nextRegistrySources,
         servers: visibleServers,
         lockfile,
         selected: 0,
@@ -178,6 +189,7 @@ export function MpmTui() {
         dataMode: mode,
         sourceMode,
         lastAction: mode === "live" ? `loaded live ${sourceMode}` : `loaded cache ${sourceMode}`,
+        commandLog: nextCommandLog ?? prev.commandLog,
       }));
     } catch (error) {
       setState((prev) => ({
@@ -191,7 +203,7 @@ export function MpmTui() {
   async function refreshCache(source = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
-      const fetched = await refreshRegistryCache({ maxPages: 6, search: state.query || undefined, source });
+      const fetched = await refreshRegistryCache(persistentRefreshOptions(source));
       const entries = await readCache().catch(() => fetched.entries);
       const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
       const servers = normalizeEntries(entries);
@@ -1052,7 +1064,8 @@ export function MpmTui() {
 
   function showMoreResults(): void {
     setState((prev) => {
-      const nextLimit = Math.min(MAX_RESULT_LIMIT, prev.resultLimit + RESULT_LIMIT_STEP);
+      const nextLimit = nextResultLimit(prev.resultLimit, allResults.length);
+      const atAllMatches = prev.resultLimit >= allResults.length;
       return {
         ...prev,
         resultLimit: nextLimit,
@@ -1061,11 +1074,11 @@ export function MpmTui() {
           command: "toolpin tui",
           ok: true,
           lines: [
-            nextLimit === prev.resultLimit ? `already showing the maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
+            atAllMatches ? `already showing all ${allResults.length} matches` : `showing ${Math.min(nextLimit, allResults.length)} / ${allResults.length} matches`,
             "Use / to edit the search, g to change source, r to refresh listings.",
           ],
         },
-        lastAction: nextLimit === prev.resultLimit ? `showing maximum ${MAX_RESULT_LIMIT} matches` : `showing up to ${nextLimit} matches`,
+        lastAction: atAllMatches ? `showing all ${allResults.length} matches` : `showing ${Math.min(nextLimit, allResults.length)} matches`,
       };
     });
   }
@@ -1322,11 +1335,7 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, inputMode: "command", commandQuery: "", commandSelected: 0 }));
         break;
       case "r":
-        if (state.view === "sources") {
-          void refreshCache("all");
-        } else {
-          void loadData(state.dataMode);
-        }
+        void refreshCache(state.view === "sources" ? "all" : state.sourceMode);
         break;
       case "R":
         if (state.view === "sources") void refreshCache("all");
@@ -1613,7 +1622,13 @@ export function MpmTui() {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <ChromeHeader state={state} resultCount={state.view === "installed" ? installed.rows.length : results.length} selectedServer={selectedServer} width={width} />
+      <ChromeHeader
+        state={state}
+        resultCount={state.view === "installed" ? installed.rows.length : results.length}
+        totalMatches={state.view === "installed" ? installed.rows.length : allResults.length}
+        selectedServer={selectedServer}
+        width={width}
+      />
       <PromptBar state={state} width={width} />
       <ModeLine active={state.view} selectedServer={selectedServer} width={width} />
       <Box flexDirection="column" flexGrow={1}>
@@ -1674,6 +1689,7 @@ export function MpmTui() {
               height={paneHeight}
               width={leftPaneWidth}
               query={state.query}
+              loading={state.loading && state.servers.length === 0}
               browseLayout={browseLayout}
               dimmed={state.view !== "discover"}
             />
@@ -1715,6 +1731,25 @@ function sourceRows(sources: TuiState["registrySources"]): TuiState["registrySou
     || (left.mode === right.mode ? 0 : left.mode === "installable" ? -1 : 1)
     || left.label.localeCompare(right.label)
   ));
+}
+
+function registrySourcesWithFetchResult(
+  sources: RegistrySourceInfo[],
+  result: RegistryFetchResult & { results?: RegistryFetchResult[] },
+): RegistrySourceInfo[] {
+  const results = result.results ?? [result];
+  const bySource = new Map(results.map((entry) => [entry.source.id, entry]));
+  return sources.map((source) => {
+    const fetched = bySource.get(source.id);
+    if (!fetched) return source;
+    return {
+      ...source,
+      status: fetched.status,
+      setupHint: fetched.source.setupHint ?? source.setupHint,
+      cacheEntries: fetched.entries.length,
+      cachePageInfo: fetched.pageInfo,
+    };
+  });
 }
 
 function sourceTrustRank(trust: TuiState["registrySources"][number]["trust"]): number {

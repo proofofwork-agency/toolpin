@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import React from "react";
+import { renderToString } from "ink";
 import {
+  browseSearchResults,
   buildTuiVersionInfo,
+  cacheCoverage,
   commandLineFor,
   commandLogForView,
   configTargetLabel,
   formatVersionChoices,
   initialInstallVersionIndex,
   installClientChoicesForScope,
+  InstallWizard,
+  nextResultLimit,
+  OptionList,
+  persistentRefreshOptions,
   selectedClientsForScope,
+  sourceCountLabel,
 } from "../dist/tui.js";
 
 test("TUI command-line rendering quotes values and keeps active source/live flags", () => {
@@ -111,15 +120,181 @@ test("TUI config target labels use resolved install targets and preserve unsuppo
   assert.equal(configTargetLabel("windsurf", "project"), "Project Windsurf/Cascade MCP config path is not documented; use --scope global.");
 });
 
+test("TUI cache coverage accepts zero-entry cache partitions for unavailable enabled sources", () => {
+  for (const status of ["auth-missing", "stale", "fetch-error", "disabled"]) {
+    const coverage = cacheCoverage(
+      [
+        entryFixture("official"),
+        entryFixture("docker"),
+        entryFixture("smithery"),
+      ],
+      "all",
+      [
+        sourceFixture("official", { cacheEntries: 1 }),
+        sourceFixture("docker", { cacheEntries: 1 }),
+        sourceFixture("smithery", { cacheEntries: 1 }),
+        sourceFixture("pulsemcp", { status, cacheEntries: 0 }),
+      ],
+    );
+
+    assert.deepEqual(coverage, { covered: true, missing: [] }, status);
+  }
+
+  const missingPartition = cacheCoverage(
+    [entryFixture("official"), entryFixture("docker"), entryFixture("smithery")],
+    "all",
+    [
+      sourceFixture("official", { cacheEntries: 1 }),
+      sourceFixture("docker", { cacheEntries: 1 }),
+      sourceFixture("smithery", { cacheEntries: 1 }),
+      sourceFixture("pulsemcp", { status: "auth-missing" }),
+    ],
+  );
+  assert.deepEqual(missingPartition, { covered: false, missing: ["pulsemcp"] });
+});
+
+test("TUI persistent refresh is source-wide and uses broad cache settings", () => {
+  const options = persistentRefreshOptions("all");
+
+  assert.deepEqual(options, { source: "all", limit: 500, maxPages: 25 });
+  assert.equal("search" in options, false);
+});
+
+test("TUI browse ranking reaches beyond 500 matches while initially showing 50", () => {
+  const servers = Array.from({ length: 625 }, (_, index) => serverFixture({
+    name: `example/matching-${index}`,
+    title: `Matching Server ${index}`,
+    isLatest: true,
+  }));
+  const results = browseSearchResults(servers, "matching", "latest");
+  let shown = 50;
+
+  assert.equal(results.length, 625);
+  assert.equal(shown, 50);
+  while (shown < results.length) shown = nextResultLimit(shown, results.length);
+  assert.equal(shown, 625);
+});
+
+test("TUI source count labels mark partial cached and loaded sources", () => {
+  const source = sourceFixture("official", {
+    cachePageInfo: { fetchedPages: 3, maxPages: 25, hasMore: true },
+  });
+
+  assert.equal(sourceCountLabel(source, 300, "cache"), "300+ cached");
+  assert.equal(sourceCountLabel(source, 400, "live"), "400+ loaded");
+  assert.equal(sourceCountLabel(sourceFixture("docker"), 328, "cache"), "328 cached");
+});
+
+test("TUI empty browse state renders loader only while initial registry data is loading", () => {
+  const loading = renderToString(React.createElement(OptionList, {
+    results: [],
+    totalMatches: 0,
+    totalServers: 0,
+    totalVersions: 0,
+    selected: 0,
+    height: 12,
+    width: 80,
+    query: "",
+    loading: true,
+    browseLayout: "flat",
+  }));
+  const empty = renderToString(React.createElement(OptionList, {
+    results: [],
+    totalMatches: 0,
+    totalServers: 0,
+    totalVersions: 0,
+    selected: 0,
+    height: 12,
+    width: 80,
+    query: "",
+    loading: false,
+    browseLayout: "flat",
+  }));
+
+  assert.match(loading, /ToolPin sync/);
+  assert.match(loading, /registry/);
+  assert.doesNotMatch(loading, /No servers found/);
+  assert.match(empty, /No servers found/);
+});
+
+test("TUI install wizard uses step counts before install and activity bar only while installing", () => {
+  const flow = installFlowFixture({ step: "client", scope: "project" });
+  const choosing = renderToString(React.createElement(InstallWizard, {
+    flow,
+    width: 80,
+    height: 16,
+  }));
+  const installing = renderToString(React.createElement(InstallWizard, {
+    flow: { ...flow, step: "installing", selected: 0 },
+    width: 80,
+    height: 16,
+  }));
+  const complete = renderToString(React.createElement(InstallWizard, {
+    flow: { ...flow, step: "complete", selected: 0 },
+    width: 80,
+    height: 16,
+  }));
+
+  assert.match(choosing, /Choose client/);
+  assert.match(choosing, /Step 2 of 2/);
+  assert.doesNotMatch(choosing, /100%|progress|installing/);
+  assert.match(installing, /Writing config and mcp-lock\.json/);
+  assert.match(installing, /installing/);
+  assert.doesNotMatch(installing, /Step \d of \d|100%|progress 100%/);
+  assert.match(complete, /Install complete/);
+  assert.doesNotMatch(complete, /100%|progress/);
+});
+
+function entryFixture(source) {
+  return {
+    source,
+    server: {
+      name: `example/${source}`,
+      title: `${source} server`,
+      version: "1.0.0",
+      packages: [{ registryType: "npm", identifier: `@example/${source}`, version: "1.0.0" }],
+    },
+  };
+}
+
+function sourceFixture(id, overrides = {}) {
+  return {
+    id,
+    label: id,
+    type: id,
+    mode: id === "official" || id === "docker" ? "installable" : "discovery",
+    trust: id === "official" ? "canonical" : id === "docker" ? "curated" : "directory",
+    enabled: true,
+    authRequired: id === "pulsemcp",
+    description: `${id} source`,
+    status: id === "official" || id === "docker" ? "ready" : "discovery-only",
+    ...overrides,
+  };
+}
+
+function installFlowFixture(overrides = {}) {
+  return {
+    step: "scope",
+    server: serverFixture({ name: "example/installable", title: "Installable Server", isLatest: true }),
+    versions: [serverFixture({ name: "example/installable", title: "Installable Server", isLatest: true })],
+    scope: undefined,
+    preferredClient: "claude",
+    selected: 0,
+    ...overrides,
+  };
+}
+
 function serverFixture(overrides = {}) {
   const version = overrides.version ?? "1.0.0";
   return {
     registrySource: "official",
+    registryMode: "installable",
     name: "example/server",
     title: "Example Server",
     description: "Example server",
     version,
     isLatest: false,
+    installable: true,
     packageTypes: ["npm"],
     remoteTypes: [],
     transports: ["stdio"],

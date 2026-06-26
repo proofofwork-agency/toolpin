@@ -45,26 +45,30 @@ test("directory sources are disabled by default and can be enabled in source pre
 });
 
 test("fetchRegistry all skips disabled directory sources and explicit disabled source fails", async () => {
-  const calls = [];
-  const entries = await fetchRegistry({
-    source: "all",
-    limit: 1,
-    maxPages: 1,
-    fetch: async (url) => {
-      const href = String(url);
-      calls.push(href);
-      if (href.includes("registry.modelcontextprotocol.io")) return jsonResponse(200, { servers: [registryEntry()] });
-      if (href.includes("api.github.com/repos/docker/mcp-registry")) return jsonResponse(200, { tree: [] });
-      throw new Error(`Unexpected disabled source fetch ${href}`);
-    },
-  });
+  await withTempDir(async (tempDir) => {
+    const registryConfigPath = path.join(tempDir, "registries.json");
+    const calls = [];
+    const entries = await fetchRegistry({
+      source: "all",
+      registryConfigPath,
+      limit: 1,
+      maxPages: 1,
+      fetch: async (url) => {
+        const href = String(url);
+        calls.push(href);
+        if (href.includes("registry.modelcontextprotocol.io")) return jsonResponse(200, { servers: [registryEntry()] });
+        if (href.includes("api.github.com/repos/docker/mcp-registry")) return jsonResponse(200, { tree: [] });
+        throw new Error(`Unexpected disabled source fetch ${href}`);
+      },
+    });
 
-  assert.equal(entries.length, 1);
-  assert.ok(calls.some((url) => url.includes("registry.modelcontextprotocol.io")));
-  assert.ok(calls.some((url) => url.includes("api.github.com/repos/docker/mcp-registry")));
-  assert.equal(calls.some((url) => url.includes("glama.ai")), false);
-  assert.equal(calls.some((url) => url.includes("smithery.ai")), false);
-  await assert.rejects(() => fetchRegistry({ source: "glama", fetch: async () => jsonResponse(200, { servers: [] }) }), /glama is disabled/);
+    assert.equal(entries.length, 1);
+    assert.ok(calls.some((url) => url.includes("registry.modelcontextprotocol.io")));
+    assert.ok(calls.some((url) => url.includes("api.github.com/repos/docker/mcp-registry")));
+    assert.equal(calls.some((url) => url.includes("glama.ai")), false);
+    assert.equal(calls.some((url) => url.includes("smithery.ai")), false);
+    await assert.rejects(() => fetchRegistry({ source: "glama", registryConfigPath, fetch: async () => jsonResponse(200, { servers: [] }) }), /glama is disabled/);
+  });
 });
 
 test("fetchRegistry honors Retry-After over fallback backoff for 429", async () => {
@@ -589,9 +593,11 @@ test("refreshCache isolates source failures and writes successful partitions", a
     delete process.env.PULSEMCP_TENANT_ID;
     try {
       const cachePath = path.join(tempDir, "registry-cache.json");
+      const registryConfigPath = path.join(tempDir, "registries.json");
       const result = await refreshCache({
         source: "all",
         cachePath,
+        registryConfigPath,
         limit: 1,
         maxPages: 1,
         retryBackoffMs: 0,

@@ -8,7 +8,8 @@ triaged.
 
 | Version | Supported |
 |---|---|
-| `0.1.x` | Yes |
+| `0.2.x` | Yes (current) |
+| `0.1.x` | Limited |
 | `< 0.1.0` | No |
 
 Pre-1.0 releases may change lockfile, policy, and CLI behavior. Security fixes

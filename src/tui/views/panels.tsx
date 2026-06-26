@@ -17,10 +17,10 @@ import { commandLogForView, configTargetLabel, formatVersionChoices, installClie
 import type { BrowseLayout, ClientSelection, CommandLog, InputMode, InstallFlow, TuiState, TuiVersionInfo, View } from "../types.js";
 import { trustBarCells, trustDimensions, trustRiskTone, trustTierScore } from "../ui/trust.js";
 
-export function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
+export function ChromeHeader({ state, resultCount, totalMatches, selectedServer, width }: { state: TuiState; resultCount: number; totalMatches: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
   const statusColor = state.installing || state.testing || state.loading ? WARN : state.error ? ERR : OK;
-  const right = `${status} | client:${state.client} | source:${state.sourceMode} | shown:${resultCount}`;
+  const right = `${status} | client:${state.client} | source:${state.sourceMode} | shown:${resultCount}/${totalMatches} matches`;
   const leftWidth = Math.max(18, width - right.length - 7);
   return (
     <Box paddingX={2} marginTop={1} marginBottom={1} justifyContent="space-between">
@@ -42,7 +42,7 @@ export function ChromeHeader({ state, resultCount, selectedServer, width }: { st
         <Text color={state.dataMode === "live" ? WARN : OK}>{state.sourceMode}</Text>
         <Text color={CHROME}> | </Text>
         <Text color={CHROME}>shown:</Text>
-        <Text color={MUTED}>{resultCount}</Text>
+        <Text color={MUTED}>{resultCount} / {totalMatches} matches</Text>
       </Text>
     </Box>
   );
@@ -131,6 +131,7 @@ export function OptionList({
   height,
   width,
   query,
+  loading,
   browseLayout,
   dimmed,
 }: {
@@ -142,6 +143,7 @@ export function OptionList({
   height: number;
   width: number;
   query: string;
+  loading?: boolean;
   browseLayout: BrowseLayout;
   dimmed?: boolean;
 }) {
@@ -155,7 +157,9 @@ export function OptionList({
 
   return (
     <Box flexDirection="column" paddingX={3} height={height}>
-      {results.length === 0 ? (
+      {results.length === 0 && loading ? (
+        <RegistryLoadingPanel height={height} />
+      ) : results.length === 0 ? (
         <Box flexDirection="column" paddingTop={1}>
           <Text bold color="white">No servers found</Text>
           <Text color={MUTED} wrap="wrap">
@@ -193,6 +197,36 @@ export function OptionList({
           {results.length < totalMatches ? <Text color={MUTED}>  press m for more</Text> : null}
         </Text>
       ) : null}
+    </Box>
+  );
+}
+
+export function RegistryLoadingPanel({ height }: { height: number }) {
+  const frames = ["[-]", "[\\]", "[|]", "[/]"];
+  const [frame, setFrame] = React.useState(0);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => setFrame((current) => (current + 1) % frames.length), 140);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <Box height={height} alignItems="center" justifyContent="center" flexDirection="column">
+      <Box flexDirection="column" backgroundColor={SURFACE} paddingX={1}>
+        <Text color={CHROME}>+---------------+</Text>
+        <Text>
+          <Text color={CHROME}>|  </Text>
+          <Text bold color={ACCENT}>ToolPin sync</Text>
+          <Text color={CHROME}>  |</Text>
+        </Text>
+        <Text>
+          <Text color={CHROME}>|   </Text>
+          <Text color={OK}>{frames[frame]}</Text>
+          <Text color={MUTED}> registry</Text>
+          <Text color={CHROME}> |</Text>
+        </Text>
+        <Text color={CHROME}>+---------------+</Text>
+      </Box>
     </Box>
   );
 }
@@ -321,7 +355,6 @@ function SourceRow({ source, count, dataMode, active, selected, width }: { sourc
   const statusColor = status === "ready" ? OK : status === "auth-missing" || status === "fetch-error" || status === "stale" ? ERR : status === "discovery-only" ? WARN : CHROME;
   const auth = source.authRequired ? "auth required" : "no auth";
   const modeColor = source.mode === "installable" ? OK : WARN;
-  const countLabel = dataMode === "live" ? "loaded" : "cached";
   const titleWidth = Math.max(16, Math.min(34, Math.floor(width * 0.26)));
   const meta = `${source.trust} / ${source.mode} / ${source.type ?? "custom"} / ${auth}`;
   const rowColor = selected ? BLUE : active ? OK : CHROME;
@@ -337,7 +370,7 @@ function SourceRow({ source, count, dataMode, active, selected, width }: { sourc
         <Text color={CHROME}> </Text>
         <Text color={modeColor}>{source.mode}</Text>
         <Text color={CHROME}> </Text>
-        <Text color={MUTED}>{count} {countLabel}</Text>
+        <Text color={MUTED}>{sourceCountLabel(source, count, dataMode)}</Text>
       </Text>
       <Text color={MUTED} wrap="truncate">
         <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
@@ -345,6 +378,11 @@ function SourceRow({ source, count, dataMode, active, selected, width }: { sourc
       </Text>
     </Box>
   );
+}
+
+export function sourceCountLabel(source: RegistrySourceInfo, count: number, dataMode: "cache" | "live"): string {
+  const label = dataMode === "live" ? "loaded" : "cached";
+  return `${count}${source.cachePageInfo?.hasMore ? "+" : ""} ${label}`;
 }
 
 function SourceLegend({ width, compact }: { width: number; compact: boolean }) {
@@ -703,8 +741,9 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "/", "Edit the search text. Press Esc while searching to clear it."],
     ["Browse", "j/k", "Move through the current server list."],
     ["Browse", "f", "Change list layout: flat, grouped by project, or grouped by category when categories exist."],
-    ["Browse", "m / +", "Show more results, up to the maximum cached set."],
-    ["Browse", "r", "Refresh the current registry data."],
+    ["Browse", "m / +", "Show 50 more matches until every loaded or cached match is visible."],
+    ["Browse", "r", "Refresh enabled registry sources into .toolpin/registry-cache.json."],
+    ["Browse", "l", "Toggle live session loading without writing the registry cache."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
     ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
     ["Sources", "S", "Show installable vs discovery-only sources, auth status, cache/live counts, and the source legend."],
@@ -839,9 +878,9 @@ export function CommandPalette({
 
 export function InstallWizard({ flow, width, height }: { flow: InstallFlow; width: number; height: number }) {
   const contentWidth = Math.max(24, width - 6);
-  const progress = installProgress(flow);
   const versionStepEnabled = flow.versions.length > 1;
   const totalSteps = versionStepEnabled ? 3 : 2;
+  const stepIndex = installStepIndex(flow, versionStepEnabled);
   const versionOptions = flow.versions.map((server, index) => ({
     id: server.version,
     label: server.version,
@@ -859,11 +898,11 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
   const options = flow.step === "version" ? versionOptions : flow.step === "scope" ? scopeOptions : clientOptions;
   const scopeText = flow.scope === "global" ? "global/user" : "folder/project";
   const stepLabel = flow.step === "version"
-    ? `Step 1 of ${totalSteps}: choose version`
+    ? "Choose version"
     : flow.step === "scope"
-    ? `Step ${versionStepEnabled ? 2 : 1} of ${totalSteps}: choose where to install`
+    ? "Choose where to install"
     : flow.step === "client"
-      ? `Step ${versionStepEnabled ? 3 : 2} of ${totalSteps}: choose client (${scopeText})`
+      ? `Choose client (${scopeText})`
       : flow.step === "complete"
         ? "Install complete"
         : flow.step === "failed"
@@ -877,12 +916,18 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height}>
       <ModalTitle title="install" file={flow.server.name} />
       <Text color={MUTED} wrap="truncate">{stepLabel}</Text>
+      {stepIndex ? <Text color={CHROME} wrap="truncate">Step {stepIndex} of {totalSteps}</Text> : null}
       {flow.step === "version" || flow.step === "scope" || flow.step === "client" ? (
         <Text color={OK} wrap="truncate">Select an option, then press Enter to continue.</Text>
       ) : null}
       <Spacer />
       {flow.step === "installing" ? (
-        <Text color={MUTED}>Writing config and mcp-lock.json...</Text>
+        <Box flexDirection="column">
+          <Text color={MUTED}>Writing config and mcp-lock.json...</Text>
+          <Box marginTop={1}>
+            <InstallActivityBar width={contentWidth} />
+          </Box>
+        </Box>
       ) : flow.step === "complete" ? (
         <Text color={MUTED}>Press Enter or Esc to close.</Text>
       ) : flow.step === "failed" ? (
@@ -898,37 +943,35 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
           );
         })}
       <Box flexGrow={1} />
-      <Box marginTop={1} marginBottom={1}>
-        <ProgressBar percent={progress} width={contentWidth} tone={flow.step === "failed" ? ERR : progress === 100 ? OK : ACCENT} />
-      </Box>
-      <Text color={CHROME} wrap="truncate">  j/k or arrows move  Enter continue  Esc cancel</Text>
+      {flow.step === "version" || flow.step === "scope" || flow.step === "client" ? (
+        <Text color={CHROME} wrap="truncate">  j/k or arrows move  Enter continue  Esc cancel</Text>
+      ) : flow.step === "installing" ? (
+        <Text color={CHROME} wrap="truncate">  Installing. Keep this session open.</Text>
+      ) : (
+        <Text color={CHROME} wrap="truncate">  Enter close  Esc close</Text>
+      )}
     </Box>
   );
 }
 
-function installProgress(flow: InstallFlow): number {
-  const hasVersionStep = flow.versions.length > 1;
-  if (flow.step === "version") return 0;
-  if (flow.step === "scope") return hasVersionStep ? 33 : 0;
-  if (flow.step === "client") return hasVersionStep ? 66 : 50;
-  if (flow.step === "installing") return 75;
-  if (flow.step === "complete") return 100;
-  return 100;
+function installStepIndex(flow: InstallFlow, hasVersionStep: boolean): number | undefined {
+  if (flow.step === "version") return 1;
+  if (flow.step === "scope") return hasVersionStep ? 2 : 1;
+  if (flow.step === "client") return hasVersionStep ? 3 : 2;
+  return undefined;
 }
 
-function ProgressBar({ percent, width, tone }: { percent: number; width: number; tone: string }) {
-  const barWidth = Math.max(6, Math.min(36, width - 10));
-  const filled = Math.max(0, Math.min(barWidth, Math.round((percent / 100) * barWidth)));
+function InstallActivityBar({ width }: { width: number }) {
+  const barWidth = Math.max(10, Math.min(36, width - 2));
+  const filled = Math.max(3, Math.floor(barWidth * 0.55));
   const empty = Math.max(0, barWidth - filled);
   return (
     <Box flexDirection="column" width={width}>
       <Text wrap="truncate">
-        <Text color={MUTED}> 0% </Text>
-        <Text color={tone}>{"▓".repeat(filled)}</Text>
+        <Text color={ACCENT}>{"▓".repeat(filled)}</Text>
         <Text color={CHROME}>{"░".repeat(empty)}</Text>
-        <Text color={MUTED}> 100%</Text>
       </Text>
-      <Text color={tone} wrap="truncate">progress {percent}%</Text>
+      <Text color={ACCENT} wrap="truncate">installing</Text>
     </Box>
   );
 }
@@ -1100,7 +1143,7 @@ export function Footer({ view, inputMode, width }: { view: View; inputMode: Inpu
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "cache-refresh"], ["l", "live/cache"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
         ? [["j/k", "move"], ["I", "refresh list"], ["S", "sources"], ["u", "registry+lock"], ["v/V", "version"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "sources"

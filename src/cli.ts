@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { verifyFrozenInstall } from "./ci.js";
 import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
@@ -35,11 +36,13 @@ const VALUE_FLAGS = new Set([
   "--key",
   "--limit",
   "--pages",
+  "--package-manager",
   "--policy",
   "--public-key",
   "--scope",
   "--signature",
   "--source",
+  "--target",
   "--timeout",
   "--version",
 ]);
@@ -92,6 +95,9 @@ async function main(): Promise<void> {
     case "--version":
     case "-v":
       console.log(`toolpin ${TOOLPIN_VERSION}`);
+      return;
+    case "upgrade":
+      await upgrade(rest);
       return;
     case "ingest":
       await ingest(rest);
@@ -181,6 +187,51 @@ async function main(): Promise<void> {
     default:
       throw new Error(`Unknown command: ${command}. Run \`toolpin help\`.`);
   }
+}
+
+type UpgradePackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+interface UpgradeCommand {
+  packageManager: UpgradePackageManager;
+  executable: string;
+  args: string[];
+  display: string;
+}
+
+async function upgrade(rest: string[]): Promise<void> {
+  const dryRun = hasFlag(rest, "--dry-run");
+  const json = hasFlag(rest, "--json");
+  const target = stringFlag(rest, "--target", "latest");
+  const packageManager = upgradePackageManager(rest);
+  const command = upgradeCommand(packageManager, target);
+  const result = {
+    package: "toolpin",
+    currentVersion: TOOLPIN_VERSION,
+    target,
+    packageManager,
+    command: [command.executable, ...command.args],
+    dryRun,
+  };
+
+  if (json) {
+    if (!dryRun) throw new Error("toolpin upgrade --json requires --dry-run because package-manager output is streamed directly.");
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  printHeader("ToolPin Upgrade");
+  printField("current", TOOLPIN_VERSION);
+  printField("target", target);
+  printField("command", command.display);
+
+  if (dryRun) {
+    printField("status", "dry run; no changes made", WARN_COLOR);
+    return;
+  }
+
+  await runUpgradeCommand(command);
+  printField("status", "upgrade command completed", OK_COLOR);
+  printBullet("Run `tpn -v` or `toolpin --version` in a new shell to verify the active binary.");
 }
 
 async function ingest(rest: string[]): Promise<void> {
@@ -1275,6 +1326,9 @@ function doctorHelp(): void {
 
 function commandHelp(command: string): void {
   switch (command) {
+    case "upgrade":
+      upgradeHelp();
+      return;
     case "search":
       console.log("Usage: toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]");
       return;
@@ -1325,6 +1379,10 @@ function commandHelp(command: string): void {
   }
 }
 
+function upgradeHelp(): void {
+  console.log("Usage: toolpin upgrade [--target latest|<version>] [--package-manager npm|pnpm|yarn|bun] [--dry-run] [--json]\n       tpn upgrade [--target latest]");
+}
+
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
@@ -1362,6 +1420,7 @@ function help(): void {
 
 Quick start
   toolpin tui
+  tpn upgrade
   toolpin --version
   tpn -v
   toolpin ingest
@@ -1408,6 +1467,11 @@ Lock and governance
   toolpin lock sign --policy .toolpin/policy.json --key private.pem [--signature mcp-lock.sig] [--json]
   toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--signature mcp-lock.sig] [--json]
 
+Maintenance
+  toolpin upgrade [--target latest|<version>] [--package-manager npm|pnpm|yarn|bun] [--dry-run]
+  tpn upgrade
+  tpn -v
+
 Trust output
   score is metadata completeness; tier is evidence-gated
   verified requires a pinned target plus artifact proof
@@ -1425,6 +1489,7 @@ Common options
   --global, -g                      npm-style shortcut for --scope global
   --project, -p                     shortcut for --scope project
   --client, -c <client|all>         target client config
+  --target latest|<version>         package target for toolpin upgrade
 
 Clients
   ${CLIENT_USAGE.replaceAll("|", ", ")}
@@ -1614,6 +1679,54 @@ function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): Regis
     return value as RegistrySourceId | "all";
   }
   throw new Error("--source must be all or a registry source id");
+}
+
+function upgradePackageManager(values: string[]): UpgradePackageManager {
+  const requested = stringFlag(values, "--package-manager", detectPackageManager());
+  if (requested === "npm" || requested === "pnpm" || requested === "yarn" || requested === "bun") return requested;
+  throw new Error("--package-manager must be npm, pnpm, yarn, or bun");
+}
+
+function detectPackageManager(): UpgradePackageManager {
+  const userAgent = process.env.npm_config_user_agent ?? "";
+  if (userAgent.startsWith("pnpm/")) return "pnpm";
+  if (userAgent.startsWith("yarn/")) return "yarn";
+  if (userAgent.startsWith("bun/")) return "bun";
+  return "npm";
+}
+
+function upgradeCommand(packageManager: UpgradePackageManager, target: string): UpgradeCommand {
+  if (!target || target.startsWith("-")) throw new Error("--target requires a package version or dist-tag.");
+  const spec = `toolpin@${target}`;
+  const executable = packageManagerExecutable(packageManager);
+  const args = packageManager === "npm"
+    ? ["install", "-g", spec]
+    : packageManager === "pnpm"
+      ? ["add", "-g", spec]
+      : packageManager === "yarn"
+        ? ["global", "add", spec]
+        : ["add", "-g", spec];
+  return {
+    packageManager,
+    executable,
+    args,
+    display: [executable, ...args].join(" "),
+  };
+}
+
+function packageManagerExecutable(packageManager: UpgradePackageManager): string {
+  return process.platform === "win32" ? `${packageManager}.cmd` : packageManager;
+}
+
+async function runUpgradeCommand(command: UpgradeCommand): Promise<void> {
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(command.executable, command.args, { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("close", resolve);
+  });
+  if (exitCode !== 0) {
+    throw new Error(`Upgrade command failed with exit code ${exitCode ?? "unknown"}: ${command.display}`);
+  }
 }
 
 function serverVersionFlag(values: string[]): string | undefined {
