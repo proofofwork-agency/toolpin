@@ -1,12 +1,216 @@
 {
-  "servers": [],
+  "servers": [
+    {
+      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ac.tandem/docs-mcp",
+        "title": "Tandem Docs MCP",
+        "description": "Remote MCP server for Tandem docs, install guides, SDKs, workflows, and agent setup help.",
+        "repository": {
+          "url": "https://github.com/frumu-ai/tandem",
+          "source": "github"
+        },
+        "version": "0.3.2",
+        "websiteUrl": "https://tandem.ac/docs-mcp",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://tandem.ac/mcp"
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-26T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "Seeded from the Official MCP Registry as an installable remote with repository metadata.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Remote streamable-http endpoint; runtime behavior is outside registry curation.",
+            "No artifact bytes or provenance were verified by ToolPin during seed curation."
+          ],
+          "testedClients": [],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
+          }
+        }
+      }
+    },
+    {
+      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ai.abmeter/abmeter",
+        "title": "ABMeter",
+        "description": "Feature flagging and A/B testing platform with AI-first experimentation workflows.",
+        "repository": {
+          "url": "https://github.com/abmeter/abmeter",
+          "source": "github"
+        },
+        "version": "0.1.0",
+        "websiteUrl": "https://abmeter.ai",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://mcp.abmeter.ai"
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-26T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "Seeded from the Official MCP Registry as an installable remote with repository metadata.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Remote streamable-http endpoint; runtime behavior is outside registry curation.",
+            "No artifact bytes or provenance were verified by ToolPin during seed curation."
+          ],
+          "testedClients": [],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
+          }
+        }
+      }
+    },
+    {
+      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ai.adeu/adeu",
+        "title": "ADeu",
+        "description": "Automated DOCX Redlining Engine.",
+        "repository": {
+          "url": "https://github.com/dealfluence/adeu",
+          "source": "github"
+        },
+        "version": "1.7.1",
+        "packages": [
+          {
+            "registryType": "npm",
+            "identifier": "@adeu/mcp-server",
+            "version": "1.7.1",
+            "transport": {
+              "type": "stdio"
+            }
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-26T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "Seeded from the Official MCP Registry as an installable stdio package with repository metadata and an exact npm version.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Exact npm version is declared, but package bytes were not downloaded and hashed during seed curation.",
+            "Stdio packages execute local code during use; review generated config before install."
+          ],
+          "testedClients": [],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
+          }
+        }
+      }
+    },
+    {
+      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ai.agentberg/agentberg",
+        "title": "Agentberg",
+        "description": "Agent-to-agent trading intelligence exchange. Publish findings, vote on quality, earn reputation.",
+        "repository": {
+          "url": "https://github.com/Agentberg/agentberg",
+          "source": "github"
+        },
+        "version": "0.2.0",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://agentberg.ai/mcp"
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-26T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "Seeded from the Official MCP Registry as an installable remote with repository metadata.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Remote streamable-http endpoint; runtime behavior is outside registry curation.",
+            "No artifact bytes or provenance were verified by ToolPin during seed curation."
+          ],
+          "testedClients": [],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
+          }
+        }
+      }
+    },
+    {
+      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "ai.agentdm/agentdm",
+        "title": "AgentDM",
+        "description": "Agent communication platform for agent-to-agent messaging via MCP. Messages, channels, and skills.",
+        "repository": {
+          "url": "https://github.com/agentdmai/agentdm",
+          "source": "github"
+        },
+        "version": "2.0.0",
+        "websiteUrl": "https://agentdm.ai",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://api.agentdm.ai/mcp/v1/grid",
+            "headers": [
+              {
+                "description": "Optional bearer token or OAuth-managed authorization.",
+                "isSecret": true,
+                "name": "Authorization"
+              }
+            ]
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-26T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "Seeded from the Official MCP Registry as an installable remote with repository and secret-header metadata.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Remote streamable-http endpoint declares an optional secret authorization header.",
+            "No artifact bytes or provenance were verified by ToolPin during seed curation."
+          ],
+          "testedClients": [],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
+          }
+        }
+      }
+    }
+  ],
   "metadata": {
-    "count": 0,
-    "total": 0,
+    "count": 5,
+    "total": 5,
     "name": "ToolPin Curated MCP Registry",
     "description": "A PR-reviewed, GitHub-hosted registry for MCP servers ToolPin can normalize, review, lock, and recommend.",
-    "status": "scaffold",
-    "generatedAt": "2026-06-25T00:00:00.000Z",
+    "generatedAt": "2026-06-26T00:00:00.000Z",
     "source": {
       "type": "github",
       "repository": "https://github.com/proofofwork-agency/toolpin",

@@ -268,16 +268,16 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 ## What Exists Now
 
 - Official MCP Registry and Docker MCP Catalog ingestion, with combined or source-specific views.
-- GitHub-hosted ToolPin Curated Registry scaffold under `registry/v0/servers`, ready for PR-reviewed recommended servers without a custom backend.
+- GitHub-hosted ToolPin Curated Registry seed under `registry/v0/servers`, ready for PR-reviewed recommended servers without a custom backend.
 - Repo-owned custom registries via `.toolpin/registries.json`; `official-compatible` registries can be installable, while broad `http-json` directory sources default to discovery-only.
-- PulseMCP, Smithery, and Glama are visible as directory/discovery sources. They can populate browse/search results, but their entries stay discovery-only until ToolPin can normalize verified install metadata.
-- Verified install metadata means an installable source provides package or remote targets ToolPin can review and lock, preferably with exact package versions, OCI `@sha256:` digests, MCPB `fileSha256`, repository URLs, and source metadata. Use the Official MCP Registry, Docker MCP Catalog, or an `official-compatible` custom/curated registry for installable metadata.
+- PulseMCP, Smithery, and Glama are visible as directory/discovery sources. They can populate browse/search results, but their entries stay discovery-only until ToolPin can normalize installable metadata.
+- Installable metadata means a source provides package or remote targets ToolPin can review and lock, preferably with exact package versions, OCI `@sha256:` digests, MCPB `fileSha256`, repository URLs, and source metadata. Use the Official MCP Registry, Docker MCP Catalog, or an `official-compatible` custom/curated registry for installable metadata.
 - Local cache at `.toolpin/registry-cache.json`.
 - Normalized package and remote metadata.
 - Search ranking over name, title, description, package type, transport, and repository.
 - Declared metadata review scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, unknown package types, and missing install targets. Treat this as review triage, not verified trust.
-- Evidence-gated trust tiers are separate from the metadata score: `verified` requires a pinned install target plus verified artifact evidence, such as a future OCI manifest digest match, MCPB blob hash match, or verified attestation. Declared OCI digests and MCPB `fileSha256` values are metadata pins, not verified artifact proof by themselves. When the overall score is capped, CLI and TUI output include the reason.
-- Verification reports that derive a capability manifest, surface registry attestations, reject mutable or malformed OCI targets, reject MCPB packages without a valid 64-character `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
+- Evidence-gated trust tiers are separate from the metadata score: `verified` requires a pinned install target plus passed evidence with `verifiedByToolPin: true`, such as OCI registry digest resolution, MCPB byte hashing, or future verified attestations; `conditional` means useful metadata exists but proof is incomplete; `unverified` and `blocked` surface failed or unsafe evidence. When the overall score is capped, CLI and TUI output include the reason, for example missing artifact proof.
+- Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, recompute MCPB SHA-256 when bytes are available by file/HTTP, resolve OCI manifest digests when registries are reachable, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
 - Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are advisory findings (warning or info level) for human review, not prompt-injection detection, sandboxing, or an install blocker.
 - `toolpin scan` exposes the advisory description scan directly. `toolpin scan --sarif`, `toolpin verify --sarif`, and `toolpin ci --sarif` emit SARIF 2.1.0 JSON for code-scanning pipelines.
@@ -289,7 +289,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Whole-lock digest pinning via `toolpin lock digest` and `toolpin ci --expect-digest`: computes a canonical `sha256-...` over the complete lockfile server/client set, including entry notes and entry timestamps while excluding top-level file metadata timestamps. This is useful only when CI or another verifier gets the expected digest from a trusted out-of-band source; it is not a signature, provenance, sigstore, or self-protecting lockfile.
 - Detached lockfile signing via user-supplied Ed25519 keys: `toolpin policy digest`, `toolpin lock key-fingerprint`, `toolpin lock sign --policy .toolpin/policy.json --key private.pem`, `toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem`, and `toolpin ci --signature mcp-lock.sig --public-key public.pem --policy .toolpin/policy.json` bind the signature to the lock digest, policy digest, public-key fingerprint, algorithm/schema, and `signedAt`. ToolPin does not generate or store keys; verification is meaningful only when the private key and public trust root are managed outside the repo/lockfile trust path.
 - Frozen lockfile checks via `toolpin ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
-- Local policy gate via optional `.toolpin/policy.json`: `toolpin install`, `toolpin ci`, TUI installs, and `toolpin policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
+- Local policy gate via optional `.toolpin/policy.json`: `toolpin install`, `toolpin ci`, TUI installs, and `toolpin policy check` can enforce trust score/tier minimums, ToolPin-verified evidence requirements, source/client/server deny rules, remote/secret deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
 - Read-only secret hygiene via `toolpin secrets audit`: reports likely plaintext env/header secrets in installed client config files using registry `isSecret` metadata and known token prefixes. Findings are advisory and redacted; ToolPin does not resolve or print secret values.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
 - Installed inventory via `toolpin list` and the TUI Installed tab: listing of MCP server entries present in supported folder/project and global/user client config files. The TUI Installed tab augments each row with explicit `registry:exact|alias|none`, `action:update|adopt|none`, and `test:config|none` status (the CLI `list` prints names and source files only). Runtime status is advisory, not a process monitor.
@@ -303,7 +303,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Codex doctor support reads the documented `[mcp_servers.<name>]` TOML tables ToolPin writes; hand-authored inline/dotted TOML forms may be reported as missing or drift.
 - Real install writes for project/global client config files, including scope-aware `--client all`, plus lockfile generation and install progress details. Newly verified paths include Windsurf/Cascade global, Cline global, Continue global, Gemini CLI project/global, and Roo Code project. Zed install and Roo global writes fail closed until their settings paths are verified.
 - MCP server test action that connects with the SDK and lists available tools when credentials/runtime are available.
-- Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status. Sources includes a legend for installable vs discovery-only, cache/live counts, and how verified metadata is obtained. Browse rows show full evidence labels (`REVIEW`, `UNVERIFIED`, `EVIDENCE`), while Overview separates evidence tier, gated overall score, metadata completeness, and the individual trust pillars.
+- Full-screen Ink TUI with a prompt-first search bar, selectable MCP server options, focused modal panels for Overview/Install/Config/Help, source selection, project/global install scope, and test status. Sources includes a legend for installable vs discovery-only, cache/live counts, and how installable metadata is obtained. Browse rows show full evidence labels (`REVIEW`, `UNVERIFIED`, `EVIDENCE`), while Overview separates evidence tier, gated overall score, metadata completeness, and the individual trust pillars.
 
 ## TUI
 
@@ -373,6 +373,8 @@ to point at a different policy file or `--no-policy` for an explicit local bypas
 {
   "version": 1,
   "minTrustScore": 70,
+  "minTrustTier": "conditional",
+  "requireToolPinVerifiedEvidence": false,
   "allowedSources": ["official", "docker"],
   "deniedSources": ["smithery"],
   "allowedClients": ["claude", "cursor", "vscode", "codex", "opencode"],
@@ -381,6 +383,8 @@ to point at a different policy file or `--no-policy` for an explicit local bypas
   "deniedPackageTypes": ["cargo"],
   "deniedTransports": ["sse"],
   "deniedRemoteHosts": ["untrusted.example.com"],
+  "denyRemoteEndpoints": false,
+  "denyRequiredSecrets": false,
   "requireDigestPinnedOci": true,
   "requireMcpbSha256": true
 }
@@ -389,6 +393,9 @@ to point at a different policy file or `--no-policy` for an explicit local bypas
 Every field is optional; unknown keys are rejected. `deniedRemoteHosts` matches the
 exact `host` (including port) of a remote URL, so deny `api.example.com` and
 `example.com:443` separately — subdomain suffix matching is not yet supported.
+Use `minTrustTier` and `requireToolPinVerifiedEvidence` when score alone is too
+weak; use `denyRemoteEndpoints` and `denyRequiredSecrets` for strict local-only
+or no-secret policies.
 
 This is a local JSON enforcement gate, not the future Cedar/OPA enterprise policy
 engine.

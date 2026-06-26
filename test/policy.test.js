@@ -34,6 +34,45 @@ test("evaluatePolicy reports trust, source, client, transport, and server violat
   );
 });
 
+test("evaluatePolicy enforces tier and ToolPin-verified evidence requirements", () => {
+  const conditional = evaluatePolicy(buildInstallPlan(packageServer(), "claude"), {
+    minTrustTier: "verified",
+    requireToolPinVerifiedEvidence: true,
+  });
+  const verifiedPlan = buildInstallPlan(packageServer(), "claude");
+  verifiedPlan.trust.tier = "verified";
+  verifiedPlan.trust.evidence = [
+    ...(verifiedPlan.trust.evidence ?? []),
+    { code: "mcpb_sha256_verified", status: "passed", message: "bytes match", verifiedByToolPin: true },
+  ];
+  const verified = evaluatePolicy(verifiedPlan, {
+    minTrustTier: "verified",
+    requireToolPinVerifiedEvidence: true,
+  });
+
+  assert.equal(conditional.ok, false);
+  assert.deepEqual(
+    conditional.issues.map((issue) => issue.code).sort(),
+    ["toolpin_verified_evidence_required", "trust_tier_below_minimum"],
+  );
+  assert.equal(verified.ok, true);
+});
+
+test("evaluatePolicy can deny remote endpoints and required secrets", () => {
+  const plan = buildInstallPlan(remoteServer(), "claude");
+
+  const report = evaluatePolicy(plan, {
+    denyRemoteEndpoints: true,
+    denyRequiredSecrets: true,
+  });
+
+  assert.equal(report.ok, false);
+  assert.deepEqual(
+    report.issues.map((issue) => issue.code).sort(),
+    ["remote_endpoint_denied", "required_secrets_denied"],
+  );
+});
+
 test("evaluatePolicy enforces OCI and MCPB pin requirements", () => {
   const oci = evaluatePolicy(buildInstallPlan(packageServer({ registryType: "oci", identifier: "ghcr.io/example/server:latest" }), "claude"), {
     requireDigestPinnedOci: true,
@@ -78,6 +117,9 @@ test("readPolicy rejects malformed policy schema", async () => {
 
     await writeFile(".toolpin/policy.json", JSON.stringify({ requireDigestPinnedOci: "yes" }), "utf8");
     await assert.rejects(() => readPolicy(".toolpin/policy.json"), /requireDigestPinnedOci must be a boolean/);
+
+    await writeFile(".toolpin/policy.json", JSON.stringify({ minTrustTier: "safe" }), "utf8");
+    await assert.rejects(() => readPolicy(".toolpin/policy.json"), /minTrustTier must be/);
   });
 });
 
@@ -194,6 +236,36 @@ function packageServer(overrides = {}) {
           version: registryType === "oci" ? undefined : "1.0.0",
           fileSha256,
           transport: { type: "stdio" },
+        },
+      ],
+    },
+  };
+}
+
+function remoteServer() {
+  return {
+    registrySource: "official",
+    name: "io.github/remote",
+    title: "Remote Server",
+    description: "Synthetic remote server",
+    version: "1.0.0",
+    isLatest: true,
+    repositoryUrl: "https://github.com/example/remote",
+    packageTypes: [],
+    remoteTypes: ["streamable-http"],
+    transports: ["streamable-http"],
+    requiresSecrets: true,
+    raw: {
+      name: "io.github/remote",
+      title: "Remote Server",
+      description: "Synthetic remote server",
+      version: "1.0.0",
+      repository: { url: "https://github.com/example/remote" },
+      remotes: [
+        {
+          type: "streamable-http",
+          url: "https://api.example.com/mcp",
+          headers: [{ name: "Authorization", isRequired: true, isSecret: true }],
         },
       ],
     },

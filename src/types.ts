@@ -178,6 +178,12 @@ export interface TrustEvidence {
   code: string;
   status: TrustEvidenceStatus;
   message: string;
+  source?: string;
+  claim?: string;
+  verificationMethod?: string;
+  verifiedByToolPin?: boolean;
+  verifiedAt?: string;
+  failureReason?: string;
   required?: boolean;
 }
 

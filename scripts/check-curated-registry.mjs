@@ -147,6 +147,9 @@ function validateEntry(entry, label, output) {
   if (!Array.isArray(curation.testedClients)) {
     output.push(`${label} curation.testedClients must be an array.`);
   }
+  if (!["metadata-only", "digest-pinned", "byte-verified", "provenance-attested"].includes(curation.evidenceTier)) {
+    output.push(`${label} curation.evidenceTier must be metadata-only, digest-pinned, byte-verified, or provenance-attested.`);
+  }
   validateToolPinEnforcement(curation.toolpinEnforcement, label, output);
 }
 
@@ -155,8 +158,15 @@ function validateToolPinEnforcement(enforcement, label, output) {
     output.push(`${label} curation.toolpinEnforcement is required for curated entries.`);
     return;
   }
-  if (enforcement.status !== "enforced") {
-    output.push(`${label} curation.toolpinEnforcement.status must be enforced.`);
+  if (!["enforced", "not-verified"].includes(enforcement.status)) {
+    output.push(`${label} curation.toolpinEnforcement.status must be enforced or not-verified.`);
+    return;
+  }
+  if (enforcement.status === "not-verified") {
+    if (typeof enforcement.notes !== "string" || enforcement.notes.length === 0) {
+      output.push(`${label} curation.toolpinEnforcement.notes is required when status is not-verified.`);
+    }
+    return;
   }
   for (const field of ["workflow", "requiredCheck", "protectedBranch"]) {
     if (typeof enforcement[field] !== "string" || enforcement[field].length === 0) {

@@ -4,11 +4,14 @@ import { canonicalJson } from "./canonicalJson.js";
 import { isClientName, type ClientName } from "./config.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import type { InstallPlan } from "./plan.js";
-import type { RegistrySourceId } from "./types.js";
+import { trustTier } from "./trust.js";
+import type { RegistrySourceId, TrustTier } from "./types.js";
 
 export interface PolicyConfig {
   version?: 1;
   minTrustScore?: number;
+  minTrustTier?: TrustTier;
+  requireToolPinVerifiedEvidence?: boolean;
   allowedSources?: RegistrySourceId[];
   deniedSources?: RegistrySourceId[];
   allowedClients?: ClientName[];
@@ -17,6 +20,8 @@ export interface PolicyConfig {
   deniedPackageTypes?: string[];
   deniedTransports?: string[];
   deniedRemoteHosts?: string[];
+  denyRemoteEndpoints?: boolean;
+  denyRequiredSecrets?: boolean;
   requireDigestPinnedOci?: boolean;
   requireMcpbSha256?: boolean;
 }
@@ -36,6 +41,8 @@ export interface PolicyReport {
 const POLICY_KEYS = new Set([
   "version",
   "minTrustScore",
+  "minTrustTier",
+  "requireToolPinVerifiedEvidence",
   "allowedSources",
   "deniedSources",
   "allowedClients",
@@ -44,6 +51,8 @@ const POLICY_KEYS = new Set([
   "deniedPackageTypes",
   "deniedTransports",
   "deniedRemoteHosts",
+  "denyRemoteEndpoints",
+  "denyRequiredSecrets",
   "requireDigestPinnedOci",
   "requireMcpbSha256",
 ]);
@@ -103,12 +112,27 @@ export function evaluatePolicy(plan: InstallPlan, policy?: PolicyConfig): Policy
   const source = plan.resolved?.source ?? plan.capabilityManifest?.registrySource;
   const packageTypes = plan.capabilityManifest?.packageTypes ?? selectedPackageTypes(plan);
   const transports = plan.capabilityManifest?.transports ?? selectedTransports(plan);
-  const remoteHosts = plan.capabilityManifest?.remoteHosts ?? [];
+  const remoteHosts = plan.capabilityManifest?.remoteHosts ?? selectedRemoteHosts(plan);
+  const requiredSecrets = plan.capabilityManifest?.secrets?.filter((secret) => secret.required) ?? [];
 
   if (typeof policy.minTrustScore === "number" && plan.trust.score < policy.minTrustScore) {
     issues.push({
       code: "trust_below_minimum",
       message: `${plan.name} trust score ${plan.trust.score} is below required minimum ${policy.minTrustScore}`,
+    });
+  }
+
+  if (policy.minTrustTier && trustTierRank(trustTier(plan.trust)) < trustTierRank(policy.minTrustTier)) {
+    issues.push({
+      code: "trust_tier_below_minimum",
+      message: `${plan.name} trust tier ${trustTier(plan.trust)} is below required minimum ${policy.minTrustTier}`,
+    });
+  }
+
+  if (policy.requireToolPinVerifiedEvidence && !hasToolPinVerifiedEvidence(plan)) {
+    issues.push({
+      code: "toolpin_verified_evidence_required",
+      message: `${plan.name} does not have passed evidence verified by ToolPin`,
     });
   }
 
@@ -174,6 +198,20 @@ export function evaluatePolicy(plan: InstallPlan, policy?: PolicyConfig): Policy
     }
   }
 
+  if (policy.denyRemoteEndpoints && remoteHosts.length > 0) {
+    issues.push({
+      code: "remote_endpoint_denied",
+      message: `${plan.name} declares remote endpoint host(s): ${remoteHosts.join(", ")}`,
+    });
+  }
+
+  if (policy.denyRequiredSecrets && requiredSecrets.length > 0) {
+    issues.push({
+      code: "required_secrets_denied",
+      message: `${plan.name} requires secret input(s): ${requiredSecrets.map((secret) => `${secret.source}:${secret.name}`).join(", ")}`,
+    });
+  }
+
   if (policy.requireDigestPinnedOci && isSelectedPackage(plan, "oci")) {
     const target = selectedTarget(plan);
     const identifier = typeof target.identifier === "string" ? target.identifier : "";
@@ -210,10 +248,15 @@ function parsePolicy(value: unknown, path: string): PolicyConfig {
   if (value.minTrustScore !== undefined && (typeof value.minTrustScore !== "number" || value.minTrustScore < 0 || value.minTrustScore > 100)) {
     throw new Error(`Invalid policy schema in ${path}: minTrustScore must be 0-100`);
   }
+  if (value.minTrustTier !== undefined && !isTrustTier(value.minTrustTier)) {
+    throw new Error(`Invalid policy schema in ${path}: minTrustTier must be verified, conditional, unverified, or blocked`);
+  }
 
   return {
     version: value.version,
     minTrustScore: value.minTrustScore,
+    minTrustTier: value.minTrustTier,
+    requireToolPinVerifiedEvidence: booleanValue(value.requireToolPinVerifiedEvidence, "requireToolPinVerifiedEvidence", path),
     allowedSources: sourceArray(value.allowedSources, "allowedSources", path),
     deniedSources: sourceArray(value.deniedSources, "deniedSources", path),
     allowedClients: clientArray(value.allowedClients, "allowedClients", path),
@@ -222,6 +265,8 @@ function parsePolicy(value: unknown, path: string): PolicyConfig {
     deniedPackageTypes: stringArray(value.deniedPackageTypes, "deniedPackageTypes", path),
     deniedTransports: stringArray(value.deniedTransports, "deniedTransports", path),
     deniedRemoteHosts: stringArray(value.deniedRemoteHosts, "deniedRemoteHosts", path),
+    denyRemoteEndpoints: booleanValue(value.denyRemoteEndpoints, "denyRemoteEndpoints", path),
+    denyRequiredSecrets: booleanValue(value.denyRequiredSecrets, "denyRequiredSecrets", path),
     requireDigestPinnedOci: booleanValue(value.requireDigestPinnedOci, "requireDigestPinnedOci", path),
     requireMcpbSha256: booleanValue(value.requireMcpbSha256, "requireMcpbSha256", path),
   };
@@ -239,9 +284,36 @@ function selectedTransports(plan: InstallPlan): string[] {
   return [];
 }
 
+function selectedRemoteHosts(plan: InstallPlan): string[] {
+  const target = selectedTarget(plan);
+  if (target.kind !== "remote" || typeof target.url !== "string") return [];
+  try {
+    return [new URL(target.url).host];
+  } catch {
+    return [];
+  }
+}
+
 function isSelectedPackage(plan: InstallPlan, registryType: string): boolean {
   const target = selectedTarget(plan);
   return target.kind === "package" && target.registryType === registryType;
+}
+
+function hasToolPinVerifiedEvidence(plan: InstallPlan): boolean {
+  return (plan.trust.evidence ?? []).some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true);
+}
+
+function trustTierRank(tier: TrustTier): number {
+  return {
+    blocked: 0,
+    unverified: 1,
+    conditional: 2,
+    verified: 3,
+  }[tier];
+}
+
+function isTrustTier(value: unknown): value is TrustTier {
+  return value === "verified" || value === "conditional" || value === "unverified" || value === "blocked";
 }
 
 function selectedTarget(plan: InstallPlan): Record<string, unknown> {

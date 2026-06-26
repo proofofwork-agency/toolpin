@@ -136,19 +136,22 @@ a starting point:
       "reviewedAt": "2026-06-25",
       "reviewedBy": "toolpin-maintainers",
       "reason": "Why ToolPin recommends this server.",
+      "evidenceTier": "metadata-only",
       "riskNotes": [],
       "testedClients": ["claude"],
       "toolpinEnforcement": {
-        "status": "enforced",
-        "workflow": ".github/workflows/toolpin.yml",
-        "requiredCheck": "ToolPin lockfile check",
-        "protectedBranch": "main",
-        "file": "mcp-lock.json"
+        "status": "not-verified",
+        "notes": "Branch protection and ToolPin CI enforcement have not been verified."
       }
     }
   }
 }
 ```
+
+Use `metadata-only` for reviewed registry metadata. Reserve `digest-pinned`,
+`byte-verified`, and `provenance-attested` for entries where those checks really
+exist. Use `toolpinEnforcement.status: "enforced"` only when branch protection or
+rulesets require the ToolPin check; otherwise use `not-verified` with notes.
 
 The container file (`registry/v0/servers`) wraps entries in a `servers` array plus
 a `metadata` block. If `metadata.count` or `metadata.total` is present, it must
@@ -169,8 +172,10 @@ The PR description should include:
   hosted-service dependency.
 
 Reviewers should reject entries that are hosted-only, source-missing,
-non-installable, stale, duplicate, ToolPin-unenforced, or not useful enough to
-recommend.
+non-installable, stale, duplicate, or not useful enough to recommend. Use
+`evidenceTier` and `toolpinEnforcement.status` honestly: `metadata-only` and
+`not-verified` are valid for seed entries; reserve stronger labels for checks
+ToolPin can actually verify.
 
 ## Curation Gates
 
@@ -185,14 +190,15 @@ a reviewable install plan. In practice that means:
 - required secrets are represented as metadata, not committed plaintext values;
 - it includes `_meta["dev.toolpin/curation"]`;
 - the curation status is `reviewed`;
-- `toolpinEnforcement.status` is `enforced`;
-- the ToolPin workflow path, required status-check name, protected branch, and
-  lockfile path are recorded;
+- `evidenceTier` records the strongest evidence ToolPin can honestly support;
+- `toolpinEnforcement.status` is either `not-verified` with notes or
+  `enforced` with workflow path, required status-check name, protected branch,
+  and lockfile path recorded;
 - risk notes and tested clients are explicit, even when the arrays are empty.
 
-Running ToolPin CI is not enough for curated inclusion. The ToolPin check must
-be required by branch protection or repository rulesets, so a failing lockfile
-check can block merges.
+Running ToolPin CI is not enough for the `enforced` label. The ToolPin check
+must be required by branch protection or repository rulesets, so a failing
+lockfile check can block merges. Until that is verified, use `not-verified`.
 
 These are not popularity gates. A small server can be accepted if it is useful,
 maintained, and installable. A popular server can still be rejected if the

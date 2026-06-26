@@ -503,6 +503,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         />
         <TrustScoreRow label="overall" score={overallScore} cells={trustBarCells} suffix="gated trust score" width={trustRowWidth} />
         <TrustScoreRow label="metadata" score={metadataScore} cells={trustBarCells} suffix="profile completeness" width={trustRowWidth} />
+        {capExplanation ? <Text color={WARN} wrap="wrap">cap         {truncate(capExplanation, width - 12)}</Text> : null}
         {dimensions.map((dimension) => (
           <TrustScoreRow
             key={dimension.label}
@@ -513,12 +514,6 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
             width={trustRowWidth}
           />
         ))}
-        {capExplanation ? (
-          <Text wrap="wrap">
-            <Text color={MUTED}>cap reason </Text>
-            <Text color={WARN}>{capExplanation}</Text>
-          </Text>
-        ) : null}
         {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
@@ -741,8 +736,8 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <Text bold color={BLUE}>scoring</Text>
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
-          <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus verified artifact evidence; conditional means useful metadata exists but proof is incomplete." />
-          <HelpNote width={lineWidth} label="caps" text="A cap explains why the overall score was limited, such as missing manifest/blob hash verification or verified attestation." />
+          <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus artifact proof; conditional means useful metadata exists but proof is incomplete." />
+          <HelpNote width={lineWidth} label="caps" text="A cap explains why the overall score was limited, such as missing OCI digest/MCPB file hash/verified attestation." />
           <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
@@ -753,7 +748,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <Spacer />
           <Text bold color={BLUE}>sources</Text>
           <HelpNote width={lineWidth} label="installable" text="Official/Docker or official-compatible entries with package/remote metadata can be reviewed, installed, and locked." />
-          <HelpNote width={lineWidth} label="discovery" text="Directory entries such as Glama are browse/search only until normalized into verified install metadata." />
+          <HelpNote width={lineWidth} label="discovery" text="Directory entries such as Glama are browse/search only until normalized into installable metadata." />
           <HelpNote width={lineWidth} label="cached" text="Cached/loaded is the number of entries currently stored or fetched for that source." />
           <Spacer />
           <Text bold color={BLUE}>installed actions</Text>

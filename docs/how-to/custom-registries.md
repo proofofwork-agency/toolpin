@@ -6,7 +6,7 @@ Built-in sources:
 
 - `official`: Official MCP Registry, installable, `canonical` trust.
 - `docker`: Docker MCP Catalog, installable, `curated` trust.
-- `pulse` (PulseMCP), `smithery`, `glama`: known directory sources. They are visible for discovery and source accounting, but entries from broad directories stay discovery-only until ToolPin can normalize verified install metadata. `pulse` is auth-gated; `smithery` and `glama` can be listed as broad directory sources but are not treated as installable metadata by themselves.
+- `pulse` (PulseMCP), `smithery`, `glama`: known directory sources. They are visible for discovery and source accounting, but entries from broad directories stay discovery-only until ToolPin can normalize installable metadata. `pulse` is auth-gated; `smithery` and `glama` can be listed as broad directory sources but are not treated as installable metadata by themselves.
 
 ToolPin also maintains a GitHub-backed curated registry. It is not built into
 the CLI by default yet; add it as a custom `official-compatible` registry:
@@ -84,7 +84,7 @@ Broad directories and scraped indexes should start as discovery sources:
 Discovery entries can appear in search and info views. ToolPin refuses to install them until they normalize into a source that is explicitly marked `installable`.
 
 This is why a source such as Glama can be useful for discovery while still not
-providing verified install metadata. It may describe many servers, gateways, or
+providing installable metadata. It may describe many servers, gateways, or
 directory matches, but ToolPin still needs the lockable package or remote target
 before it can review, install, and enforce the entry.
 

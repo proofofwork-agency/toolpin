@@ -80,14 +80,12 @@ Required curation metadata:
       "reviewedAt": "2026-06-25",
       "reviewedBy": "toolpin-maintainers",
       "reason": "Why this server belongs in the curated registry.",
+      "evidenceTier": "metadata-only",
       "riskNotes": [],
       "testedClients": ["claude"],
       "toolpinEnforcement": {
-        "status": "enforced",
-        "workflow": ".github/workflows/toolpin.yml",
-        "requiredCheck": "ToolPin lockfile check",
-        "protectedBranch": "main",
-        "file": "mcp-lock.json"
+        "status": "not-verified",
+        "notes": "Branch protection and ToolPin CI enforcement have not been verified."
       }
     }
   }
@@ -95,6 +93,10 @@ Required curation metadata:
 ```
 
 Do not add hosted-only, source-missing, stale, duplicate, non-installable, or
-ToolPin-unenforced entries to this registry. A repo merely running ToolPin CI is
-not enough; the ToolPin check must be required by branch protection or rulesets.
-Use discovery registries for broad search.
+unreviewed entries to this registry. `evidenceTier` must be honest:
+`metadata-only` for reviewed metadata, `digest-pinned` for immutable pins,
+`byte-verified` only when ToolPin recomputed or resolved artifact bytes, and
+`provenance-attested` only when provenance verification is implemented. Use
+`toolpinEnforcement.status: "enforced"` only when the ToolPin check is required
+by branch protection or rulesets and can be validated; otherwise use
+`not-verified` with notes. Use discovery registries for broad search.

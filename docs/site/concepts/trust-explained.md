@@ -43,10 +43,10 @@ The factors below are evaluated in `src/trust.ts`. Point values are exact.
 | Strong registry type | type in `oci, mcpb` | **+4** | — |
 | Pinned version | `version` present and not floating | **+5** | badge `pinned version` |
 | Floating version | floating `version` and type ≠ `oci` | **−6** | warning `unpinned_package` |
-| OCI digest pin | `oci` and identifier ends with a valid `@sha256:<64 hex>` digest | **+8** | badge `digest-pinned` |
-| OCI mutable or malformed tag | `oci` and identifier lacks a valid digest pin | **−10** | critical `mutable_oci_tag` |
-| MCPB hash | `mcpb` and `fileSha256` is 64 hex characters | **+8** | badge `fileSha256` |
-| MCPB hash missing or malformed | `mcpb` and no valid `fileSha256` | **−12** | critical `missing_mcpb_hash` |
+| OCI digest pin | `oci` and identifier has `@sha256:` | **+8** | badge `digest-pinned` |
+| OCI mutable tag | `oci` and identifier lacks `@sha256:` | **−10** | critical `mutable_oci_tag` |
+| MCPB hash | `mcpb` and truthy `fileSha256` | **+8** | badge `fileSha256` |
+| MCPB hash missing | `mcpb` and no `fileSha256` | **−12** | critical `missing_mcpb_hash` |
 
 A version is treated as floating if it is `latest` or `*`, or contains any of
 `~ ^ x *` (case-insensitive) — e.g. `^1.2.3`, `~1.2`, `1.x`. OCI packages are
@@ -69,23 +69,25 @@ signal there.
 
 | Evidence code | Status | Meaning |
 |---|---|---|
-| `package_pin` | `passed` / `failed` | Package registry target has an exact version, or an OCI target is digest-pinned. |
-| `digest_present` | `declared` / `failed` | OCI identifier declares a syntactically valid `@sha256:<64 hex>` digest pin. ToolPin has not fetched and matched registry manifest bytes. |
-| `file_hash_present` | `declared` / `failed` | MCPB package declares a syntactically valid `fileSha256`. ToolPin has not downloaded and hashed the bundle bytes. |
+| `package_pin` | `declared` / `failed` | Package registry target declares an exact version, or an OCI target declares a digest pin. This is metadata, not byte verification. |
+| `digest_present` | `declared` / `failed` | OCI identifier includes `@sha256:`. This means the pin is present; `oci_digest_verified` records registry verification. |
+| `file_hash_present` | `declared` / `failed` | MCPB package declares `fileSha256`. This means the hash is present; `mcpb_sha256_verified` records byte hashing. |
+| `oci_digest_verified` | `passed` / `failed` / `unavailable` | ToolPin resolved the OCI manifest digest through the registry API, or could not. |
+| `mcpb_sha256_verified` | `passed` / `failed` / `unavailable` | ToolPin read MCPB bytes from a local file or HTTP URL and recomputed SHA-256, or could not. |
 | `lock_integrity` | `passed` | New lock entries include a timestamp-insensitive integrity digest over the reviewed install plan. |
 | `tool_description_hash` | `passed` / `failed` / `unavailable` | Live remote `tools/list` descriptions were hashed, failed, or were skipped. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
 Tiering is conservative:
 
-- `verified`: no critical issues, a pinned install target, and passed artifact evidence such as a future `oci_manifest_verified`, `mcpb_blob_verified`, or `attestation_verified` entry.
+- `verified`: no critical issues, a pinned install target, and passed evidence with `verifiedByToolPin: true`, such as `oci_digest_verified`, `mcpb_sha256_verified`, or future verified attestations.
 - `conditional`: usable metadata or pinning exists, but artifact proof is incomplete or unavailable.
 - `unverified`: weak or failed optional evidence, mutable OCI tags, missing MCPB hashes, or other non-blocking critical trust gaps.
 - `blocked`: unsafe or uninstallable cases such as no install target, insecure remote URLs, invalid remote URLs, or failed required evidence checks.
 
-Repository URL presence, registry source trust, declared OCI/MCPB pins,
-`capability-pinned`, and self-declared attestations are useful review metadata.
-They do not make a server `verified` by themselves.
+Repository URL presence, registry source trust, `capability-pinned`, and
+self-declared attestations are useful review metadata. They do not make a
+server `verified` by themselves.
 
 ## Why a score can be capped
 
@@ -97,7 +99,7 @@ Common cap reasons:
 
 | Cap reason | Meaning |
 |---|---|
-| `automated evidence incomplete` | Metadata and package pinning may look good, but the install target lacks verified artifact proof: a fetched OCI manifest digest match, recomputed MCPB blob hash, or future verified attestation. Declared digest/hash fields alone do not count. |
+| `automated evidence incomplete` | Metadata and package pinning may look good, but ToolPin has not verified artifact bytes/provenance: an OCI `@sha256:` or MCPB `fileSha256` may be declared without a successful `oci_digest_verified`, `mcpb_sha256_verified`, or future verified attestation. Declared attestations alone do not count. |
 | `no verified provenance` | The entry is not from an official/Docker source with a repository URL, so provenance is not strong enough for a higher cap. |
 | `mutable_oci_tag` | The OCI target uses a mutable tag instead of a digest. |
 | `missing_mcpb_hash` | The MCPB target does not declare `fileSha256`. |

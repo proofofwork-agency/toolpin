@@ -66,7 +66,7 @@ test("CLI search preserves human output without --json", async () => {
     assert.match(stdout, /Search results for "github"/);
     assert.match(stdout, /io\.github\/example@1\.0\.0/);
     assert.match(stdout, /title\s+GitHub Example Server/);
-    assert.match(stdout, /evidence\s+passed package_pin/);
+    assert.match(stdout, /evidence\s+declared package_pin/);
   });
 });
 

@@ -28,8 +28,8 @@ test("writeLockfile writes v2 entries with stable integrity metadata", async () 
     assert.equal(locked.integrity, computePlanIntegrity(locked));
     assert.equal(locked.trust.tier, "conditional");
     assert.deepEqual(locked.trust.gatedBy, []);
-    assert.ok(locked.trust.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
-    assert.ok(locked.trust.evidence.some((entry) => entry.code === "lock_integrity" && entry.status === "passed"));
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "package_pin" && entry.status === "declared" && entry.verifiedByToolPin === false));
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "lock_integrity" && entry.status === "passed" && entry.verifiedByToolPin === true));
     assert.deepEqual(locked.resolved, {
       source: "official",
       name: "io.github/example",

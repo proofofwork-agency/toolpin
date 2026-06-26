@@ -68,6 +68,10 @@ export function scoreServer(server: NormalizedServer): TrustReport {
       code: "attestation_declared",
       status: "declared",
       message: `${attestation.type} attestation metadata is declared but not cryptographically verified.`,
+      source: "registry-metadata",
+      claim: attestation.type,
+      verificationMethod: "metadata-presence",
+      verifiedByToolPin: false,
     });
   }
 
@@ -116,8 +120,8 @@ export function classifyTrust(score: number, issues: TrustIssue[], evidence: Tru
   }
   if (gates.length) return { tier: "unverified", gatedBy: criticalCodes, gates };
   if (failedEvidence.length) return { tier: "unverified", gatedBy: failedEvidence.map((entry) => entry.code), gates };
-  if (hasPassedPinEvidence(evidence) && hasPassedArtifactEvidence(evidence)) return { tier: "verified", gatedBy: [], gates };
-  if (score >= 40 || hasPassedPinEvidence(evidence)) return { tier: "conditional", gatedBy: [], gates };
+  if (hasUsablePinEvidence(evidence) && hasPassedArtifactEvidence(evidence)) return { tier: "verified", gatedBy: [], gates };
+  if (score >= 40 || hasUsablePinEvidence(evidence)) return { tier: "conditional", gatedBy: [], gates };
   return { tier: "unverified", gatedBy: [], gates };
 }
 
@@ -128,11 +132,13 @@ export function trustTier(report: Pick<TrustReport, "score" | "issues" | "tier" 
 export function evidenceSummary(report: Pick<TrustReport, "evidence">): string {
   const evidence = report.evidence ?? [];
   if (!evidence.length) return "no automated evidence";
-  const passed = evidence.filter((entry) => entry.status === "passed").map((entry) => entry.code);
+  const verified = evidence.filter((entry) => entry.status === "passed" && entry.verifiedByToolPin).map((entry) => entry.code);
+  const passed = evidence.filter((entry) => entry.status === "passed" && !entry.verifiedByToolPin).map((entry) => entry.code);
   const failed = evidence.filter((entry) => entry.status === "failed").map((entry) => entry.code);
   const declared = evidence.filter((entry) => entry.status === "declared").map((entry) => entry.code);
   const unavailable = evidence.filter((entry) => entry.status === "unavailable").map((entry) => entry.code);
   return [
+    verified.length ? `ToolPin-verified ${verified.join(", ")}` : "",
     passed.length ? `passed ${passed.join(", ")}` : "",
     failed.length ? `failed ${failed.join(", ")}` : "",
     declared.length ? `declared ${declared.join(", ")}` : "",
@@ -142,8 +148,9 @@ export function evidenceSummary(report: Pick<TrustReport, "evidence">): string {
 
 export function evidenceStatus(report: Pick<TrustReport, "evidence" | "score" | "issues" | "tier">): string {
   const tier = trustTier(report);
-  if (tier === "verified") return "verified evidence passed";
+  if (tier === "verified") return "ToolPin-verified evidence passed";
   if ((report.evidence ?? []).some((entry) => entry.status === "failed")) return "evidence failed";
+  if ((report.evidence ?? []).some((entry) => entry.status === "passed" && entry.verifiedByToolPin)) return "ToolPin evidence incomplete";
   if ((report.evidence ?? []).some((entry) => entry.status === "passed")) return "evidence incomplete";
   if ((report.evidence ?? []).some((entry) => entry.status === "declared")) return "evidence declared";
   return "no automated evidence";
@@ -153,12 +160,12 @@ export function trustCapExplanation(report: Pick<TrustReport, "capReason" | "evi
   if (!report.capReason) return undefined;
   if (report.capReason === "automated evidence incomplete") {
     const evidence = report.evidence ?? [];
-    const hasPin = hasPassedPinEvidence(evidence);
+    const hasPin = hasUsablePinEvidence(evidence);
     const hasArtifact = hasPassedArtifactEvidence(evidence);
     const declaredAttestation = evidence.some((entry) => entry.code === "attestation_declared");
     const missing = [
       hasPin ? "" : "exact package pin",
-      hasArtifact ? "" : "verified artifact proof (OCI manifest match, MCPB blob hash match, or verified attestation)",
+      hasArtifact ? "" : "ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or verified attestation)",
     ].filter(Boolean);
     const base = missing.length
       ? `automated evidence incomplete: missing ${missing.join(" and ")}`
@@ -245,8 +252,12 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
     badges.push("pinned version");
     evidence.push({
       code: "package_pin",
-      status: "passed",
+      status: "declared",
       message: `Package ${pkg.identifier} declares exact version ${pkg.version}.`,
+      source: "registry-metadata",
+      claim: `${pkg.identifier}@${pkg.version}`,
+      verificationMethod: "metadata-presence",
+      verifiedByToolPin: false,
     });
   } else if (pkg.registryType !== "oci") {
     score -= 6;
@@ -254,6 +265,11 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
       code: "package_pin",
       status: "failed",
       message: `Package ${pkg.identifier} does not declare an exact package version.`,
+      source: "registry-metadata",
+      claim: pkg.identifier,
+      verificationMethod: "metadata-presence",
+      verifiedByToolPin: false,
+      failureReason: "missing exact version",
     });
     issues.push({ severity: "warning", code: "unpinned_package", message: `Package ${pkg.identifier} does not declare an exact package version.` });
   }
@@ -264,12 +280,20 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
       evidence.push({
         code: "digest_present",
         status: "declared",
-        message: `OCI image ${pkg.identifier} declares a syntactically valid sha256 digest pin; manifest bytes are not verified.`,
+        message: `OCI image ${pkg.identifier} declares a digest pin; image bytes were not resolved by ToolPin.`,
+        source: "registry-metadata",
+        claim: pkg.identifier,
+        verificationMethod: "metadata-presence",
+        verifiedByToolPin: false,
       });
       evidence.push({
         code: "package_pin",
-        status: "passed",
+        status: "declared",
         message: `OCI image ${pkg.identifier} is pinned by digest.`,
+        source: "registry-metadata",
+        claim: pkg.identifier,
+        verificationMethod: "metadata-presence",
+        verifiedByToolPin: false,
       });
     } else {
       score -= 10;
@@ -278,6 +302,11 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
         code: "digest_present",
         status: "failed",
         message: `OCI image ${pkg.identifier} ${reason}.`,
+        source: "registry-metadata",
+        claim: pkg.identifier,
+        verificationMethod: "metadata-presence",
+        verifiedByToolPin: false,
+        failureReason: reason,
       });
       issues.push({ severity: "critical", code: "mutable_oci_tag", message: `OCI image ${pkg.identifier} ${reason}.` });
     }
@@ -289,7 +318,11 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
       evidence.push({
         code: "file_hash_present",
         status: "declared",
-        message: "MCPB package declares a syntactically valid fileSha256; bundle bytes are not verified.",
+        message: "MCPB package declares fileSha256; package bytes were not hashed by ToolPin in metadata scoring.",
+        source: "registry-metadata",
+        claim: pkg.fileSha256,
+        verificationMethod: "metadata-presence",
+        verifiedByToolPin: false,
       });
     } else {
       score -= 12;
@@ -297,6 +330,11 @@ function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string
         code: "file_hash_present",
         status: "failed",
         message: "MCPB package is missing a valid 64-character fileSha256.",
+        source: "registry-metadata",
+        claim: pkg.identifier,
+        verificationMethod: "metadata-presence",
+        verifiedByToolPin: false,
+        failureReason: "missing valid 64-character fileSha256",
       });
       issues.push({ severity: "critical", code: "missing_mcpb_hash", message: "MCPB packages should include a valid 64-character fileSha256." });
     }
@@ -336,12 +374,12 @@ function isFloatingVersion(version: string): boolean {
   return ["latest", "*"].includes(version.trim().toLowerCase()) || /[~^x*]/i.test(version);
 }
 
-function hasPassedPinEvidence(evidence: TrustEvidence[]): boolean {
-  return evidence.some((entry) => entry.status === "passed" && ["package_pin", "digest_present", "file_hash_present"].includes(entry.code));
+function hasUsablePinEvidence(evidence: TrustEvidence[]): boolean {
+  return evidence.some((entry) => (entry.status === "passed" || entry.status === "declared") && ["package_pin", "digest_present", "file_hash_present"].includes(entry.code));
 }
 
 function hasPassedArtifactEvidence(evidence: TrustEvidence[]): boolean {
-  return evidence.some((entry) => entry.status === "passed" && ["oci_manifest_verified", "mcpb_blob_verified", "attestation_verified"].includes(entry.code));
+  return evidence.some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true && ["oci_digest_verified", "mcpb_sha256_verified", "attestation_verified"].includes(entry.code));
 }
 
 function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {

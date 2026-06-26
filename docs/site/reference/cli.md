@@ -50,7 +50,7 @@ verification.
 Human-readable `search`, `info`, and `install` output separates trust tier from
 metadata completeness. If the overall score is capped, the output includes a
 `cap` line explaining why, for example that automated evidence is incomplete
-because verified artifact proof is missing.
+because artifact proof is missing.
 
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known

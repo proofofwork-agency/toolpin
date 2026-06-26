@@ -227,7 +227,7 @@ These are useful even if SaaS is never built.
 
 ## What The Project Lacks Today
 
-- The curated registry is currently scaffolded but empty.
+- The curated registry now has a small `metadata-only` seed set; it is not yet a byte-verified or provenance-attested trust anchor.
 - Curation metadata records `toolpinEnforcement`, but enforcement is still
   self-attested until a checker verifies GitHub branch protection or rulesets.
 - The CLI does not yet consume `_meta["dev.toolpin/curation"]`; today it is

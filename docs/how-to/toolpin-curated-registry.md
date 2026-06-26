@@ -94,14 +94,12 @@ Each entry must be installable and include curation metadata:
       "reviewedAt": "2026-06-25",
       "reviewedBy": "toolpin-maintainers",
       "reason": "Why ToolPin recommends this server.",
+      "evidenceTier": "metadata-only",
       "riskNotes": [],
       "testedClients": ["claude"],
       "toolpinEnforcement": {
-        "status": "enforced",
-        "workflow": ".github/workflows/toolpin.yml",
-        "requiredCheck": "ToolPin lockfile check",
-        "protectedBranch": "main",
-        "file": "mcp-lock.json"
+        "status": "not-verified",
+        "notes": "Branch protection and ToolPin CI enforcement have not been verified."
       }
     }
   }
@@ -111,6 +109,7 @@ Each entry must be installable and include curation metadata:
 The container file (`registry/v0/servers`) wraps entries in a `servers` array plus a `metadata` block. If `metadata.count` or `metadata.total` is present, it must equal `servers.length`, or `npm run registry:check` fails. Package targets require `registryType`, `identifier`, and `transport.type`; remote targets require an `https://` URL.
 
 Reviewers should reject entries that are hosted-only, source-missing,
-non-installable, stale, duplicate, ToolPin-unenforced, or not useful enough to
-recommend. Running ToolPin CI is not enough; the ToolPin check must be required
-by branch protection or rulesets.
+non-installable, stale, duplicate, or not useful enough to recommend. Use
+`evidenceTier` and `toolpinEnforcement.status` honestly: `metadata-only` and
+`not-verified` are valid for seed entries; reserve stronger labels for checks
+ToolPin can actually verify.

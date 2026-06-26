@@ -12,8 +12,8 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(trusted.overallScore, 69);
   assert.equal(trusted.tier, "conditional");
   assert.equal(trusted.capReason, "automated evidence incomplete");
-  assert.equal(trustCapExplanation(trusted), "automated evidence incomplete: missing verified artifact proof (OCI manifest match, MCPB blob hash match, or verified attestation)");
-  assert.ok(trusted.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
+  assert.equal(trustCapExplanation(trusted), "automated evidence incomplete: missing ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or verified attestation)");
+  assert.ok(trusted.evidence.some((entry) => entry.code === "package_pin" && entry.status === "declared" && entry.verifiedByToolPin === false));
   assert.deepEqual(trusted.badges.filter((badge) => ["source repo", "namespaced"].includes(badge)), ["source repo", "namespaced"]);
 
   assert.equal(missingRepository.score, 58);
@@ -66,8 +66,8 @@ test("OCI digest and MCPB hash signals have exact metadata weights", () => {
   assert.equal(digestPinned.tier, "conditional");
   assert.equal(digestPinned.capReason, "automated evidence incomplete");
   assert.ok(digestPinned.badges.includes("digest-pinned"));
-  assert.ok(digestPinned.evidence.some((entry) => entry.code === "digest_present" && entry.status === "declared"));
-  assert.ok(digestPinned.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
+  assert.ok(digestPinned.evidence.some((entry) => entry.code === "digest_present" && entry.status === "declared" && entry.verifiedByToolPin === false));
+  assert.ok(digestPinned.evidence.some((entry) => entry.code === "package_pin" && entry.status === "declared" && entry.verifiedByToolPin === false));
 
   assert.equal(fakeDigest.score, 63);
   assert.equal(fakeDigest.tier, "unverified");
@@ -90,7 +90,7 @@ test("OCI digest and MCPB hash signals have exact metadata weights", () => {
   assert.equal(hashedMcpb.tier, "conditional");
   assert.equal(hashedMcpb.capReason, "automated evidence incomplete");
   assert.ok(hashedMcpb.badges.includes("fileSha256"));
-  assert.ok(hashedMcpb.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "declared"));
+  assert.ok(hashedMcpb.evidence.some((entry) => entry.code === "file_hash_present" && entry.status === "declared" && entry.verifiedByToolPin === false));
 
   assert.equal(fakeHashedMcpb.score, 66);
   assert.equal(fakeHashedMcpb.tier, "unverified");
@@ -155,29 +155,36 @@ test("verified requires passed artifact evidence, not high metadata completeness
   assert.deepEqual(classifyTrust(95, [], [{ code: "package_pin", status: "passed", message: "exact version" }]), { tier: "conditional", gatedBy: [], gates: [] });
   assert.deepEqual(
     classifyTrust(95, [], [
-      { code: "package_pin", status: "passed", message: "exact version" },
-      { code: "digest_present", status: "passed", message: "digest" },
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "digest_present", status: "declared", message: "digest", verifiedByToolPin: false },
     ]),
     { tier: "conditional", gatedBy: [], gates: [] },
   );
   assert.deepEqual(
     classifyTrust(95, [], [
-      { code: "package_pin", status: "passed", message: "exact version" },
-      { code: "oci_manifest_verified", status: "passed", message: "registry manifest digest matched" },
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "mcpb_sha256_verified", status: "passed", message: "bytes hashed", verifiedByToolPin: true },
     ]),
     { tier: "verified", gatedBy: [], gates: [] },
   );
   assert.deepEqual(
     classifyTrust(95, [], [
-      { code: "package_pin", status: "passed", message: "exact version" },
-      { code: "mcpb_blob_verified", status: "passed", message: "MCPB bytes matched fileSha256" },
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "oci_digest_verified", status: "passed", message: "registry manifest digest matched", verifiedByToolPin: true },
     ]),
     { tier: "verified", gatedBy: [], gates: [] },
   );
   assert.deepEqual(
     classifyTrust(95, [], [
-      { code: "package_pin", status: "passed", message: "exact version" },
-      { code: "attestation_verified", status: "passed", message: "attestation verified" },
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "mcpb_sha256_verified", status: "passed", message: "MCPB bytes matched fileSha256", verifiedByToolPin: true },
+    ]),
+    { tier: "verified", gatedBy: [], gates: [] },
+  );
+  assert.deepEqual(
+    classifyTrust(95, [], [
+      { code: "package_pin", status: "declared", message: "exact version", verifiedByToolPin: false },
+      { code: "attestation_verified", status: "passed", message: "attestation verified", verifiedByToolPin: true },
     ]),
     { tier: "verified", gatedBy: [], gates: [] },
   );

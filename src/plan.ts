@@ -340,10 +340,22 @@ function parseTrustEvidence(value: unknown, key: string, index: number): TrustEv
   if (typeof value.code !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].code`);
   if (typeof value.message !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].message`);
   if (value.required !== undefined && typeof value.required !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].required`);
+  if (value.source !== undefined && typeof value.source !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].source`);
+  if (value.claim !== undefined && typeof value.claim !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].claim`);
+  if (value.verificationMethod !== undefined && typeof value.verificationMethod !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verificationMethod`);
+  if (value.verifiedByToolPin !== undefined && typeof value.verifiedByToolPin !== "boolean") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verifiedByToolPin`);
+  if (value.verifiedAt !== undefined && typeof value.verifiedAt !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].verifiedAt`);
+  if (value.failureReason !== undefined && typeof value.failureReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence[${index}].failureReason`);
   return {
     code: value.code,
     status,
     message: value.message,
+    ...(typeof value.source === "string" ? { source: value.source } : {}),
+    ...(typeof value.claim === "string" ? { claim: value.claim } : {}),
+    ...(typeof value.verificationMethod === "string" ? { verificationMethod: value.verificationMethod } : {}),
+    ...(typeof value.verifiedByToolPin === "boolean" ? { verifiedByToolPin: value.verifiedByToolPin } : {}),
+    ...(typeof value.verifiedAt === "string" ? { verifiedAt: value.verifiedAt } : {}),
+    ...(typeof value.failureReason === "string" ? { failureReason: value.failureReason } : {}),
     ...(typeof value.required === "boolean" ? { required: value.required } : {}),
   };
 }
@@ -424,6 +436,10 @@ function withLockIntegrityEvidence(report: TrustReport): TrustReport {
       code: "lock_integrity",
       status: "passed",
       message: "Lock entry integrity digest is computed over the reviewed install plan.",
+      source: "local-lockfile",
+      claim: "install plan integrity",
+      verificationMethod: "canonical-json-sha256",
+      verifiedByToolPin: true,
     },
   ];
   const uniqueEvidence = dedupeTrustEvidence(evidence);

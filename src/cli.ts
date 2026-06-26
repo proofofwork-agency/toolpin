@@ -1243,7 +1243,7 @@ Lock and governance
 
 Trust output
   score is metadata completeness; tier is evidence-gated
-  verified requires a pinned target plus verified artifact evidence
+  verified requires a pinned target plus artifact proof
   cap explains why an otherwise strong score was limited
 
 Common options
