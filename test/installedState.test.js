@@ -48,6 +48,29 @@ test("installedViewReducer clamps selection across loaded row changes", () => {
   assert.equal(reloaded.selected, 0);
 });
 
+test("loadInstalledServerStates keeps ToolPin-locked rows registry-backed without loaded registry hits", async () => {
+  await withTempHomeAndCwd(async () => {
+    const lockedServer = packageServer({ version: "1.0.0" });
+    await installServerConfig(lockedServer, "claude", "project");
+    const lockfile = await writeLockfile(buildInstallPlan(lockedServer, "claude"));
+
+    const rows = await loadInstalledServerStates({
+      servers: [],
+      lockfile,
+      scope: "project",
+    });
+
+    const row = rows.find((entry) => entry.serverName === "io.github/example" && entry.client === "claude");
+    assert.ok(row);
+    assert.equal(row.locked, true);
+    assert.equal(row.registryMatch, "exact");
+    assert.equal(row.registryStatus, "exact");
+    assert.equal(row.latestVersion, "1.0.0");
+    assert.equal(row.lifecycleAction, "none");
+    assert.equal(row.canUpdate, false);
+  });
+});
+
 test("loadInstalledServerStates can match unlocked installed aliases to registry packages", async () => {
   await withTempHomeAndCwd(async () => {
     const registryServer = packageServer({

@@ -550,6 +550,18 @@ export function MpmTui() {
   async function updateInstalled(row: InstalledServerState | undefined): Promise<void> {
     if (!row) return;
     if (!row.canUpdate || !row.updateServer || row.lifecycleAction === "none") {
+      const lines = row.locked
+        ? [
+            `${row.serverName} is already registry-backed and locked for ${row.client}.`,
+            row.latestVersion && row.lockedVersion === row.latestVersion
+              ? `locked version ${row.lockedVersion} is current.`
+              : "No newer installable registry version is loaded for this lock entry.",
+            "Refresh registry data or switch source to all/live if you want to check for updates.",
+          ]
+        : [
+            `No installable registry match is loaded for ${row.serverName}.`,
+            "Load live registry data or search the registry first, then retry the lifecycle action.",
+          ];
       setState((prev) => ({
         ...prev,
         commandLog: {
@@ -558,10 +570,7 @@ export function MpmTui() {
             ? `toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}`
             : `toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}`,
           ok: false,
-          lines: [
-            `No installable registry match is loaded for ${row.serverName}.`,
-            "Load live registry data or search the registry first, then retry the lifecycle action.",
-          ],
+          lines,
         },
       }));
       return;

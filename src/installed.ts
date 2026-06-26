@@ -96,10 +96,11 @@ export async function loadInstalledServerStates(options: {
   const rows = inventory.entries.map((entry) => {
     const locked = findLockedPlan(options.lockfile, entry.serverName, entry.client);
     const match = resolveInstalledRegistryMatch(options.servers, entry.serverName, locked?.version);
+    const registryMatch = match.registryMatch ?? (locked ? "exact" : undefined);
     const testResult = options.tests?.[installedId(entry.serverName, entry.client, entry.scope)];
     const lockDrift = issues.some((issue) => issueMatchesInstalled(issue, entry.serverName, entry.client, entry.scope));
     const updateAvailable = Boolean(locked?.version && match.latestVersion && compareVersionish(match.latestVersion, locked.version) > 0);
-    const lifecycleAction = lifecycleActionFor({ locked: Boolean(locked), updateAvailable, updateServer: match.updateServer, registryMatch: match.registryMatch });
+    const lifecycleAction = lifecycleActionFor({ locked: Boolean(locked), updateAvailable, updateServer: match.updateServer, registryMatch });
     const canTest = entry.client !== "zed";
     const runningStatus: InstalledRuntimeStatus = testResult?.ok
       ? "reachable"
@@ -125,14 +126,14 @@ export async function loadInstalledServerStates(options: {
       lockDrift,
       lockedVersion: locked?.version,
       currentVersion: locked?.version,
-      latestVersion: match.latestVersion,
+      latestVersion: match.latestVersion ?? locked?.version,
       updateAvailable,
       source: locked?.resolved?.source,
       canUpdate: lifecycleAction !== "none",
       canDelete: true,
       canTest,
-      registryMatch: match.registryMatch,
-      registryStatus: (match.registryMatch ?? "none") as InstalledRegistryStatus,
+      registryMatch,
+      registryStatus: (registryMatch ?? "none") as InstalledRegistryStatus,
       lifecycleAction,
       testSource: (canTest ? "config" : "none") as InstalledTestSource,
       runningStatus,
