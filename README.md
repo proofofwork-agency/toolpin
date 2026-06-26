@@ -315,7 +315,7 @@ Hotkeys:
 
 ```text
 tab / 1-6       Switch tabs (1=Browse, 2=Installed, 3=Overview, 4=Install, 5=Config, 6=Help)
-S               Show connected registry sources
+S               Show usable registry sources and disabled known integrations
 I               Jump to Installed and refresh the installed inventory
 /               Search
 :               Open command palette

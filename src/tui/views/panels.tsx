@@ -260,15 +260,15 @@ export function SourcesView({
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
       <ModalTitle title="sources" file="registry list" />
       <Text color={MUTED} wrap="truncate">
-        Connected registry sources, ordered by trust. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
+        Usable registry sources first; disabled directory integrations are known, not connected. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
       </Text>
       <Spacer />
       <Text wrap="truncate">
         <Text color={OK}>trusted first</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>{connected.length} connected / {sources.length} known</Text>
+        <Text color={MUTED}>{connected.length} usable / {sources.length} known</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>g changes active source, l toggles cache/live</Text>
+        <Text color={MUTED}>g cycles usable sources, l toggles cache/live</Text>
       </Text>
       <Divider width={contentWidth} />
       {visible.map((source) => (
@@ -284,7 +284,7 @@ export function SourcesView({
       <Box flexGrow={1} />
       <Divider width={contentWidth} />
       <Text color={MUTED} wrap="truncate">
-        Trust tiers: <Text color={OK}>canonical</Text> official source, <Text color={BLUE}>curated</Text> reviewed catalog, <Text color={WARN}>directory</Text> discovery/index source, <Text color={MUTED}>private</Text> configured source.
+        Disabled known directories need a fetch adapter before ToolPin can query them.
       </Text>
     </Box>
   );
@@ -292,7 +292,7 @@ export function SourcesView({
 
 function SourceRow({ source, count, active, width }: { source: RegistrySourceInfo; count: number; active: boolean; width: number }) {
   const trustColorValue = source.trust === "canonical" ? OK : source.trust === "curated" ? BLUE : source.trust === "directory" ? WARN : MUTED;
-  const status = source.enabled ? "connected" : "not connected";
+  const status = source.enabled ? "connected" : source.type === "known" ? "adapter missing" : "disabled";
   const statusColor = source.enabled ? OK : CHROME;
   const auth = source.authRequired ? "auth required" : "no auth";
   const modeColor = source.mode === "installable" ? OK : WARN;
@@ -314,7 +314,7 @@ function SourceRow({ source, count, active, width }: { source: RegistrySourceInf
       </Text>
       <Text color={MUTED} wrap="truncate">
         <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
-        {truncate(source.description || meta, Math.max(8, width - 18))}
+        {truncate(source.enabled ? source.description || meta : `${source.description || meta} Not selectable until an adapter is implemented.`, Math.max(8, width - 18))}
       </Text>
     </Box>
   );
@@ -545,7 +545,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "r", "Refresh the current registry data."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
     ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
-    ["Sources", "S", "Show connected registry sources, trust tiers, auth status, and cached entries."],
+    ["Sources", "S", "Show usable registry sources, disabled known integrations, auth status, and cached entries."],
     ["Review", "Enter", "Open the install plan for the selected server."],
     ["Review", "t", "Test the selected server with initialize and tools/list."],
     ["Review", "v / V", "Cycle selected server version."],
