@@ -1330,6 +1330,9 @@ export function MpmTui() {
       case "s":
         void saveSelectedConfig();
         break;
+      case "S":
+        switchToView("sources");
+        break;
       case "h":
       case "?":
         setState((prev) => ({ ...prev, view: prev.view === "help" ? "discover" : "help" }));
@@ -1341,17 +1344,15 @@ export function MpmTui() {
         switchToView("installed");
         break;
       case "3":
-        switchToView("sources");
-        break;
-      case "4":
         switchToView("details");
         break;
-      case "5":
+      case "4":
         switchToView("plan");
         break;
-      case "6":
+      case "5":
         switchToView("config");
         break;
+      case "6":
       case "7":
         switchToView("help");
         break;
@@ -1430,7 +1431,7 @@ export function MpmTui() {
   }
 
   function nextEnabledView(view: View): View {
-    const order: View[] = selectedServer ? ["discover", "installed", "sources", "details", "plan", "config", "help"] : ["discover", "installed", "sources", "help"];
+    const order: View[] = selectedServer ? ["discover", "installed", "details", "plan", "config", "help"] : ["discover", "installed", "help"];
     return order[(order.indexOf(view) + 1) % order.length] ?? "discover";
   }
 

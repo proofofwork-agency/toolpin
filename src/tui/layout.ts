@@ -68,7 +68,6 @@ export function computeMenuLayout({ width, hasSelection, selectedLabel }: { widt
   const helpTo = Math.max(contentStart + helpLabel.length - 1, width - 2);
   const helpFrom = Math.max(contentStart, helpTo - helpLabel.length + 1);
   const labelWidth = Math.max(4, Math.min(28, width - 78));
-  const showSources = !hasSelection || width >= 88;
   const chosenLabel = truncate(selectedLabel || "select a server", labelWidth);
   const segments: TuiMenuSegment[] = [];
   let cursor = contentStart;
@@ -81,10 +80,6 @@ export function computeMenuLayout({ width, hasSelection, selectedLabel }: { widt
   push("discover", "Browse", true);
   cursor += "  ".length;
   push("installed", "Installed", true);
-  if (showSources) {
-    cursor += "  ".length;
-    push("sources", "Sources", true);
-  }
   cursor += "  |  ".length;
   cursor += "Selected: ".length;
   const selectedFrom = cursor;

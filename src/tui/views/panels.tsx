@@ -84,12 +84,6 @@ export function ModeLine({ active, selectedServer, width }: { active: View; sele
         <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>{segment("discover")?.label}</Text>
         <Text color={CHROME}>  </Text>
         <Text bold={active === "installed"} color={active === "installed" ? BLUE : MUTED}>{segment("installed")?.label}</Text>
-        {segment("sources") ? (
-          <>
-            <Text color={CHROME}>  </Text>
-            <Text bold={active === "sources"} color={active === "sources" ? BLUE : MUTED}>{segment("sources")?.label}</Text>
-          </>
-        ) : null}
         <Text color={CHROME}>  |  </Text>
         <Text color={hasSelection ? MUTED : CHROME}>Selected: </Text>
         <Text color={hasSelection ? "white" : CHROME}>{layout.selectedLabel}</Text>
@@ -551,7 +545,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "r", "Refresh the current registry data."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
     ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
-    ["Sources", "3", "Show connected registry sources, trust tiers, auth status, and cached entries."],
+    ["Sources", "S", "Show connected registry sources, trust tiers, auth status, and cached entries."],
     ["Review", "Enter", "Open the install plan for the selected server."],
     ["Review", "t", "Test the selected server with initialize and tools/list."],
     ["Review", "v / V", "Cycle selected server version."],
@@ -930,11 +924,11 @@ export function Footer({ view, inputMode, width }: { view: View; inputMode: Inpu
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["I", "refresh list"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
+        ? [["j/k", "move"], ["I", "refresh list"], ["S", "sources"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "sources"
-        ? [["g", "source"], ["l", "cache/live"], ["r", "refresh"], ["1", "browse"], ["2", "installed"], ["q", "quit"]]
+        ? [["Esc", "browse"], ["g", "source"], ["l", "cache/live"], ["r", "refresh"], ["1", "browse"], ["2", "installed"], ["q", "quit"]]
       : view === "details"
         ? [["Enter", "plan"], ["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["i", "install"], ["q", "quit"]]
       : view === "plan"
