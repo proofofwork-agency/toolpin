@@ -20,7 +20,7 @@ for the same cleanup action.
 toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
 toolpin sources [--json]
-toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
+toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
 toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
 toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
@@ -31,7 +31,7 @@ toolpin versions <server-name> [--source official|docker|all|custom-id] [--live]
 
 ```text
 toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
-toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000]
+toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
 toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
@@ -56,6 +56,11 @@ handshake against that target directly. `adopt` is the explicit unlocked-alias
 path; `update` only updates locked entries and can explicitly relock one entry
 to a selected `--version`. `update --all` stays latest-only, skips unlocked
 adoptable rows, and reports them separately.
+
+Commands that list `--json` or `--sarif` keep the structured payload on stdout
+so it can be piped into tools such as `jq` or code-scanning uploaders. Progress,
+notes, and errors are written to stderr. The full-screen TUI requires an
+interactive terminal and fails closed when stdin or stdout is piped.
 
 ## Inventory and cleanup
 
@@ -111,7 +116,7 @@ a DLP engine.
 --source <id>               Registry source: official, docker, all, or a custom
                             registry id configured in .toolpin/registries.json.
 --live                      Fetch from the registry instead of the local cache.
---json                      Machine-readable output.
+--json                      Machine-readable output where listed.
 --version <server-version>  Target a known server version where supported.
 toolpin --version, -v       Print the ToolPin version.
 --help, -h                  Print usage.

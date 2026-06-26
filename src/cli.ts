@@ -162,11 +162,16 @@ async function ingest(rest: string[]): Promise<void> {
 
 async function search(rest: string[]): Promise<void> {
   const query = positional(rest).join(" ");
-  if (!query) throw new Error("Usage: toolpin search <query> [--limit 10] [--live]");
+  if (!query) throw new Error("Usage: toolpin search <query> [--limit 10] [--live] [--json]");
 
   const limit = numberFlag(rest, "--limit", 10);
   const servers = await loadServers(rest, { search: query });
   const results = searchServers(latestOnly(servers), query, limit);
+
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ query, count: results.length, results }, null, 2));
+    return;
+  }
 
   printHeader(`Search results for "${query}"`);
   for (const result of results) {
@@ -1022,24 +1027,32 @@ function doctorHelp(): void {
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000]");
+  if (!name) throw new Error("Usage: toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000] [--json]");
 
   const timeout = numberFlag(rest, "--timeout", 15000);
   const server = await findServer(rest, name);
-  console.error(`Testing ${server.name}@${server.version} (${server.registrySource}) with ${timeout}ms timeout...`);
+  const json = hasFlag(rest, "--json");
+  if (!json) {
+    console.error(`Testing ${server.name}@${server.version} (${server.registrySource}) with ${timeout}ms timeout...`);
+  }
   const result = await testServer(server, timeout);
 
-  printHeader(result.ok ? "Test OK" : "Test failed");
-  printField("server", result.serverName);
-  printField("target", result.target);
-  printField("duration", `${result.durationMs}ms`);
-  printField("message", result.message);
-  if (result.tools.length) {
-    printSubhead("Tools");
-    for (const tool of result.tools) {
-      printBullet(`${tool.name}${tool.description ? `: ${truncate(tool.description, 120)}` : ""}`);
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printHeader(result.ok ? "Test OK" : "Test failed");
+    printField("server", result.serverName);
+    printField("target", result.target);
+    printField("duration", `${result.durationMs}ms`);
+    printField("message", result.message);
+    if (result.tools.length) {
+      printSubhead("Tools");
+      for (const tool of result.tools) {
+        printBullet(`${tool.name}${tool.description ? `: ${truncate(tool.description, 120)}` : ""}`);
+      }
     }
   }
+  if (!result.ok) process.exitCode = 1;
 }
 
 function help(): void {
@@ -1058,13 +1071,13 @@ Discovery
   toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
   toolpin registry list [--json]
   toolpin sources [--json]
-  toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
+  toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
   toolpin info <server> [--version <server-version>] [--json] [--live]
   toolpin audit <server> [--version <server-version>] [--live]
   toolpin scan <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000]
   toolpin verify <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]
   toolpin versions <server> [--live] [--limit 10] [--json]
-  toolpin test <server> [--version <server-version>] [--live] [--timeout 15000]
+  toolpin test <server> [--version <server-version>] [--live] [--timeout 15000] [--json]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
 
 Install and config
@@ -1092,7 +1105,7 @@ Lock and governance
 Common options
   --source official|docker|all|id    choose registry source
   --live                            fetch instead of cache
-  --json                            machine-readable output
+  --json                            machine-readable output where supported
   --sarif                           SARIF 2.1.0 output where supported
   toolpin --version, -v             print ToolPin version
   --version <server-version>        select a known server version for server commands
@@ -1175,6 +1188,9 @@ async function runTui(rest: string[]): Promise<void> {
   if (rest.includes("--help") || rest.includes("-h")) {
     console.log(`Usage: toolpin tui\n\nOpens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.`);
     return;
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("toolpin tui requires an interactive terminal: stdin and stdout must both be TTYs.");
   }
   const { runTui: renderTui } = await import("./tui.js");
   renderTui();

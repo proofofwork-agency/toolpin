@@ -122,13 +122,13 @@ Where `<client>` is one of `claude`, `cursor`, `vscode`, `codex`, `opencode`,
 toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
 toolpin sources [--json]
-toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
+toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
 toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
 toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
 toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
-toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000]
+toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--timeout 15000] [--json]
 toolpin list|ls|installed [--scope|-s all|project|global] [--client|-c <client>|all] [--json]
 toolpin plan <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--live]
@@ -280,6 +280,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
 - Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are advisory findings (warning or info level) for human review, not prompt-injection detection, sandboxing, or an install blocker.
 - `toolpin scan` exposes the advisory description scan directly. `toolpin scan --sarif`, `toolpin verify --sarif`, and `toolpin ci --sarif` emit SARIF 2.1.0 JSON for code-scanning pipelines.
+- Commands that list `--json` or `--sarif` keep the structured payload on stdout so it can be piped to tools like `jq`; progress, notes, and errors go to stderr. The full-screen TUI requires an interactive terminal and fails closed when stdin or stdout is piped.
 - `toolpin install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.

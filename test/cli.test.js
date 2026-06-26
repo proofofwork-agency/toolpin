@@ -18,6 +18,51 @@ test("CLI rejects known disabled registry sources before fetching", async () => 
   );
 });
 
+test("CLI search --json writes parseable JSON to stdout only", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ]);
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "search",
+      "github",
+      "--source",
+      "official",
+      "--json",
+    ]);
+    const parsed = JSON.parse(stdout);
+
+    assert.equal(stderr, "");
+    assert.equal(parsed.query, "github");
+    assert.equal(parsed.count, 1);
+    assert.equal(parsed.results[0].server.name, "io.github/example");
+    assert.equal(typeof parsed.results[0].trust.score, "number");
+  });
+});
+
+test("CLI search preserves human output without --json", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ]);
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "search",
+      "github",
+      "--source",
+      "official",
+    ]);
+
+    assert.equal(stderr, "");
+    assert.match(stdout, /Search results for "github"/);
+    assert.match(stdout, /io\.github\/example@1\.0\.0/);
+    assert.match(stdout, /title\s+GitHub Example Server/);
+  });
+});
+
 test("CLI boolean flags do not consume positional arguments", async () => {
   await withTempCwd(async () => {
     const { stdout } = await execFileAsync(process.execPath, [
@@ -55,6 +100,7 @@ test("CLI accepts short client and scope aliases", async () => {
     const listed = await execFileAsync(process.execPath, [CLI, "list", "-s", "global", "-c", "continue", "--json"]);
     const parsed = JSON.parse(listed.stdout);
 
+    assert.equal(listed.stderr, "");
     assert.equal(parsed.checked, 1);
     assert.equal(parsed.entries.length, 0);
 
@@ -107,6 +153,26 @@ test("CLI doctor --help prints usage without cwd side effects", async () => {
   });
 });
 
+test("CLI tui --help prints usage without requiring a TTY", async () => {
+  const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "tui", "--help"]);
+
+  assert.match(stdout, /^Usage: toolpin tui/);
+  assert.equal(stderr, "");
+});
+
+test("CLI tui fails cleanly when stdio is not a TTY", async () => {
+  await assert.rejects(
+    () => execFileAsync(process.execPath, [CLI, "tui"]),
+    (error) => {
+      assert.equal(error && typeof error === "object" && "stdout" in error ? error.stdout : undefined, "");
+      const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+      assert.match(stderr, /Error: toolpin tui requires an interactive terminal/);
+      assert.match(stderr, /stdin and stdout must both be TTYs/);
+      return true;
+    },
+  );
+});
+
 test("CLI test-installed tests installed config directly", async () => {
   await withTempCwd(async (dir) => {
     const serverPath = path.join(dir, "mcp-fixture.mjs");
@@ -145,6 +211,30 @@ process.stdin.on("data", (chunk) => {
     assert.equal(parsed.ok, true);
     assert.equal(parsed.serverName, "fixture");
     assert.equal(parsed.tools[0].name, "ping");
+  });
+});
+
+test("CLI test --json emits pipe-friendly failure JSON and exits nonzero", async () => {
+  await withTempCwd(async () => {
+    const server = packageServer({ name: "io.github/unlaunchable" });
+    server.raw.packages = [];
+    await writeRegistryCache([server]);
+
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "test", "io.github/unlaunchable", "--source", "official", "--json"]),
+      (error) => {
+        const stdout = error && typeof error === "object" && "stdout" in error ? String(error.stdout) : "";
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        const parsed = JSON.parse(stdout);
+
+        assert.equal(stderr, "");
+        assert.equal(parsed.ok, false);
+        assert.equal(parsed.serverName, "io.github/unlaunchable");
+        assert.equal(parsed.target, "none");
+        assert.match(parsed.message, /No launch target is available/);
+        return true;
+      },
+    );
   });
 });
 
