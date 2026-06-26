@@ -17,6 +17,8 @@ largest catalog, a hosted gateway, a runtime sandbox, or a secret vault.
 
 Apache-2.0 licensed. Requires Node.js 22 or newer.
 
+Public documentation: <https://proofofwork-agency.github.io/toolpin/>
+
 > **No warranty — you assume all risk.** ToolPin installs and launches
 > **third-party MCP servers** (npm packages, Docker images, remote services).
 > That code can access your files, network, and credentials. The trust score and
@@ -481,6 +483,8 @@ unverified. Common cases:
 
 ## Resources
 
+- [Public documentation](https://proofofwork-agency.github.io/toolpin/) — hosted
+  Docusaurus docs and registry mirror.
 - [SECURITY.md](SECURITY.md) — security policy and reporting.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute.
 - [docs/threat-model.md](docs/threat-model.md) — what ToolPin does and does not

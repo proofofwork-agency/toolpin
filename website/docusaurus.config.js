@@ -1,8 +1,8 @@
 const config = {
   title: "ToolPin",
   tagline: "Trusted install, lockfiles, and governance for MCP servers.",
-  url: "https://toolpin.dev",
-  baseUrl: "/",
+  url: "https://proofofwork-agency.github.io",
+  baseUrl: "/toolpin/",
   onBrokenLinks: "throw",
   markdown: {
     hooks: {

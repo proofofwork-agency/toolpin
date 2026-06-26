@@ -18,7 +18,7 @@ https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
 GitHub Pages / Docusaurus, after the site is deployed:
 
 ```text
-https://toolpin.dev/registry/v0
+https://proofofwork-agency.github.io/toolpin/registry/v0
 ```
 
 ToolPin appends `/servers` automatically for `official-compatible` registries.
