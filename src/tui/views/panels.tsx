@@ -703,9 +703,6 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
       {flow.step === "version" || flow.step === "scope" || flow.step === "client" ? (
         <Text color={OK} wrap="truncate">Select an option, then press Enter to continue.</Text>
       ) : null}
-      <Divider width={contentWidth} />
-      <ProgressBar percent={progress} width={contentWidth} tone={flow.step === "failed" ? ERR : progress === 100 ? OK : ACCENT} />
-      <Divider width={contentWidth} />
       <Spacer />
       {flow.step === "installing" ? (
         <Text color={MUTED}>Writing config and mcp-lock.json...</Text>
@@ -724,6 +721,9 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
           );
         })}
       <Box flexGrow={1} />
+      <Box marginTop={1} marginBottom={1}>
+        <ProgressBar percent={progress} width={contentWidth} tone={flow.step === "failed" ? ERR : progress === 100 ? OK : ACCENT} />
+      </Box>
       <Text color={CHROME} wrap="truncate">  j/k or arrows move  Enter continue  Esc cancel</Text>
     </Box>
   );

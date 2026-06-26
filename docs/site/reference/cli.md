@@ -19,25 +19,26 @@ for the same cleanup action.
 ```text
 toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
+toolpin sources [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
-toolpin info <server-name> [--source official|docker|all|custom-id] [--json] [--live]
-toolpin audit <server-name> [--source official|docker|all|custom-id] [--live]
-toolpin scan <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
+toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
-toolpin test <server-name> [--source official|docker|all|custom-id] [--live] [--timeout 15000]
+toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
-toolpin plan <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client <client|all> [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
-toolpin export-config <server-name> --client <client|all> [--source official|docker|all|custom-id] [--live]
+toolpin export-config <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 ```
 
 `scan` runs advisory description checks against registry metadata and, with
@@ -45,6 +46,10 @@ toolpin export-config <server-name> --client <client|all> [--source official|doc
 Findings do not make `scan` fail. `verify` checks registry metadata and optional
 live MCP tool metadata. It does not perform byte-level OCI image or MCPB bundle
 verification.
+
+Use `toolpin versions <server-name>` to list known registry/cache versions. Any
+server command that accepts `--version <server-version>` targets that exact known
+version instead of the latest one, matching the TUI install version picker.
 
 `test-installed` reads the installed client config entry and performs the MCP
 handshake against that target directly. `adopt` is the explicit unlocked-alias
@@ -54,7 +59,7 @@ adoptable rows and reports them separately.
 ## Inventory and cleanup
 
 ```text
-toolpin list [--scope all|project|global] [--client <client|all>] [--json]
+toolpin list|installed [--scope all|project|global] [--client <client|all>] [--json]
 toolpin doctor [--file mcp-lock.json] [--scope all|project|global] [--json]
 toolpin remove <server-name> [--client <client|all>] [--scope project|global] [--file mcp-lock.json]
 toolpin uninstall <server-name> [--client <client|all>] [--scope project|global] [--file mcp-lock.json]
@@ -66,7 +71,7 @@ read-only.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
+toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
@@ -106,7 +111,8 @@ a DLP engine.
                             registry id configured in .toolpin/registries.json.
 --live                      Fetch from the registry instead of the local cache.
 --json                      Machine-readable output.
---version, -v               Print the ToolPin version.
+--version <server-version>  Target a known server version where supported.
+toolpin --version, -v       Print the ToolPin version.
 --help, -h                  Print usage.
 ```
 

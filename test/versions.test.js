@@ -65,6 +65,21 @@ test("CLI versions lists known current and previous versions", async () => {
   });
 });
 
+test("CLI server commands can select an older known version", async () => {
+  await withTempCwd(async () => {
+    await writeCache([
+      registryEntry(packageServer({ version: "1.0.0" })),
+      registryEntry(packageServer({ version: "1.2.0", isLatest: true })),
+      registryEntry(packageServer({ version: "1.1.0" })),
+    ]);
+
+    const { stdout } = await execFileAsync(process.execPath, [CLI, "info", "io.github/example", "--source", "official", "--version", "1.0.0"]);
+
+    assert.match(stdout, /io\.github\/example@1\.0\.0/);
+    assert.doesNotMatch(stdout, /io\.github\/example@1\.2\.0/);
+  });
+});
+
 test("CLI outdated compares locked and latest registry versions", async () => {
   await withTempCwd(async () => {
     const lockedServer = packageServer({ version: "1.0.0" });

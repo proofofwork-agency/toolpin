@@ -40,6 +40,7 @@ const VALUE_FLAGS = new Set([
   "--signature",
   "--source",
   "--timeout",
+  "--version",
 ]);
 const OK_COLOR = "\x1b[32m";
 const CYAN_COLOR = "\x1b[36m";
@@ -84,11 +85,15 @@ async function main(): Promise<void> {
     case "registry":
       await registry(rest);
       return;
+    case "sources":
+      await registry(["list", ...rest]);
+      return;
     case "outdated":
       await outdated(rest);
       return;
     case "list":
     case "ls":
+    case "installed":
       await listInstalled(rest);
       return;
     case "plan":
@@ -494,6 +499,21 @@ async function exportConfig(rest: string[]): Promise<void> {
 
 async function findServer(rest: string[], name: string): Promise<NormalizedServer> {
   const servers = await loadServers(rest, { search: name });
+  const requestedVersion = serverVersionFlag(rest);
+  if (requestedVersion) {
+    const exactVersion = servers.find((server) => server.name === name && server.version === requestedVersion);
+    if (exactVersion) return exactVersion;
+
+    const matchedName = latestOnly(servers).find((server) => server.name === name)?.name
+      ?? searchServers(latestOnly(servers), name, 1)[0]?.server.name;
+    const partialVersion = matchedName
+      ? servers.find((server) => server.name === matchedName && server.version === requestedVersion)
+      : undefined;
+    if (partialVersion) return partialVersion;
+
+    throw new Error(`No server version ${requestedVersion} found for ${name}. Run \`toolpin versions ${name}\` to list known versions.`);
+  }
+
   const exact = latestOnly(servers).find((server) => server.name === name);
   if (exact) return exact;
 
@@ -1018,43 +1038,45 @@ Quick start
 Discovery
   toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
   toolpin registry list [--json]
+  toolpin sources [--json]
   toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
-  toolpin info <server> [--json] [--live]
-  toolpin audit <server> [--live]
-  toolpin scan <server> [--live] [--json] [--sarif] [--timeout 15000]
-  toolpin verify <server> [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]
+  toolpin info <server> [--version <server-version>] [--json] [--live]
+  toolpin audit <server> [--version <server-version>] [--live]
+  toolpin scan <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000]
+  toolpin verify <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification]
   toolpin versions <server> [--live] [--limit 10] [--json]
-  toolpin test <server> [--live] [--timeout 15000]
+  toolpin test <server> [--version <server-version>] [--live] [--timeout 15000]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
 
 Install and config
-  toolpin list [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
-  toolpin plan <server> --client|-c <client> [--live]
-  toolpin install <server> --client|-c <client|all> [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin list|installed [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
+  toolpin plan <server> --client|-c <client> [--version <server-version>] [--live]
+  toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--global|-g] [--update-lock] [--verify] [--policy .toolpin/policy.json] [--no-policy]
   toolpin adopt <installed> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
   toolpin update <server> --client|-c <client> --scope|-s project|global [--dry-run] [--json]
   toolpin update --all [--scope|-s all|project|global] [--client|-c <client|all>] [--dry-run] [--json]
   toolpin remove <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
   toolpin uninstall <server> [--client|-c <client|all>] [--scope|-s project|global] [--global|-g]
-  toolpin export-config <server> --client|-c <client|all> [--live]
+  toolpin export-config <server> --client|-c <client|all> [--version <server-version>] [--live]
 
 Lock and governance
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--live] [--verify] [--sarif]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
-  toolpin policy check <server> --client|-c <client|all> [--policy .toolpin/policy.json]
-  toolpin lock <server> --client|-c <client|all> [--file mcp-lock.json]
+  toolpin policy check <server> --client|-c <client|all> [--version <server-version>] [--policy .toolpin/policy.json]
+  toolpin lock <server> --client|-c <client|all> [--version <server-version>] [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
-  toolpin lock sign --key private.pem [--signature mcp-lock.sig]
-  toolpin lock verify-signature --key public.pem [--signature mcp-lock.sig]
+  toolpin lock sign --key private.pem [--signature mcp-lock.sig] [--json]
+  toolpin lock verify-signature --key public.pem [--signature mcp-lock.sig] [--json]
 
 Common options
   --source official|docker|all|id    choose registry source
   --live                            fetch instead of cache
   --json                            machine-readable output
   --sarif                           SARIF 2.1.0 output where supported
-  --version, -v                     print ToolPin version
+  toolpin --version, -v             print ToolPin version
+  --version <server-version>        select a known server version for server commands
   --scope, -s project|global        project folder vs current-user config
   --global, -g                      npm-style shortcut for --scope global
   --project, -p                     shortcut for --scope project
@@ -1182,6 +1204,14 @@ function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): Regis
   const value = stringFlag(values, "--source", fallback);
   if (/^[a-zA-Z0-9._/-]+$/.test(value)) return value as RegistrySourceId | "all";
   throw new Error("--source must be all or a registry source id");
+}
+
+function serverVersionFlag(values: string[]): string | undefined {
+  const index = values.indexOf("--version");
+  if (index < 0) return undefined;
+  const value = values[index + 1];
+  if (!value || value.startsWith("-")) throw new Error("--version requires a server version value.");
+  return value;
 }
 
 function scopeFlag(values: string[], fallback: InventoryScope): InventoryScope {

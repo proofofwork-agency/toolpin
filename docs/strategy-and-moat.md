@@ -35,7 +35,7 @@ Two structural facts shape the entire landscape:
 |---|---|---|---|---|---|---|
 | **Official registry / SDKs** | `modelcontextprotocol/registry`, `@modelcontextprotocol/sdk` | ❌ | ❌ | ❌ | ❌ | None — they are ToolPin's *upstream* |
 | **Catalogs / marketplaces** | Smithery, PulseMCP, Glama, mcp.so | ✅ (own client) | ❌ | badge only | partial | Discovery layer; no reproducibility |
-| **Multi-client config writers** | `agent-mcp-manager`, `@khanglvm/mcpm`, `mcp-installer` | ✅ | ❌ | ❌ | ❌ | Closest on the *install* pillar; none lock |
+| **Multi-client config writers** | `agent-mcp-manager`, `pathintegral-institute/mcpm`, `mcp-installer` | ✅ | ❌ | ❌ | ❌ | Closest on the *install* pillar; none lock |
 | **Runtime governance vendors** | Docker AI Gov, Stacklok ToolHive, Glama Gateway, Pillar, Lasso, Snyk/Invariant | partial | ❌ | runtime | ✅ (runtime) | **Real fight — different layer** |
 
 ### 2.2 The two threats that actually matter
@@ -61,7 +61,7 @@ registry spec** — the existential risk below.
 | Competitor | Better at | ToolPin still wins on |
 |---|---|---|
 | **Smithery** | Polish, hosted OAuth/secret vault (agent.pw), MCPB publishing pipeline, 11k+ catalog, distribution | No lockfile, no signing, AGPL-3.0 (enterprise friction), registry-locked distribution |
-| **Glama** | Hosted MCP Gateway with per-tool ACLs + SIEM export, A/B/C/D grades, public site claims 10k+ servers | All trust is runtime/gateway; no install-time pinning; opaque grading |
+| **Glama** | Hosted MCP Gateway with per-tool ACLs + SIEM export, transparent TDQS (Tool Definition Quality Score, 1–5 across six dimensions), ~48k listed servers | All trust is runtime/gateway; no install-time pinning; no repo-owned lockfile |
 | **Docker** | Runtime enforcement, sandbox, brand, partner catalog | No lockfile artifact; Docker-only; declarative-at-install missing |
 | **Stacklok ToolHive** | Real Cedar policy, provenance signing, K8s, WG influence | Heavy infra (Go+Postgres+K8s); no committed lockfile; no multi-client config writer |
 | **Pillar / Lasso / Snyk-Invariant** | Enterprise CISO narrative, SOC2, runtime guardrails, MCP scanners | Install-time/declarative; reproducibility; neutral across clients; free OSS |
@@ -87,7 +87,7 @@ Net: threats (1) and (2) are existential because they're client-owned;
 - **Coherent fail-closed philosophy.** The order verify → policy → drift → write is enforced everywhere (`install`, `ci`, TUI installs). `toolpin ci` never mutates the lockfile; empty lockfile fails; signature/digest checks run first. This is genuinely senior-grade.
 - **Cryptographically sound lockfile integrity model.** Per-entry SHA-256 over a timestamp-insensitive stable-JSON payload; separate whole-lock digest; detached Ed25519 signatures over the digest. `signedAt` is correctly excluded from signed bytes, while normalized tool-description hashes are included when present.
 - **Strong runtime validation discipline.** `parseLockfile`, `parseInstallPlan`, `parseSignatureEnvelope`, `parsePolicy` all validate `unknown` input with explicit, tested error messages. Far above average for a v0.1.
-- **Honest security disclaimers.** README is unusually precise about what is advisory vs enforced (lines 69, 74, 75, 143, 155). For a trust product, anti-overclaiming is the right instinct.
+- **Honest security disclaimers.** README is unusually precise about what is advisory vs enforced (its *What Exists Now*, *Secret Hygiene*, and *Local Policy* sections, plus the trust/advisory bullets). For a trust product, anti-overclaiming is the right instinct.
 - **Minimal, intentional dependency footprint.** 4 runtime deps (`@modelcontextprotocol/sdk`, `ink`, `react`, `yaml`). No CLI framework, no schema lib, no HTTP client, no test framework — uses Node built-ins.
 - **Disciplined defect tracking.** ROADMAP.md's defect backlog with explicit "failing test → passing test" exit rules is exemplary engineering communication.
 - **The wedge is real and unsolved.** Multi-client config sprawl + no reproducibility is a documented pain point (the official MCP quickstart itself warns about absolute paths, JSON brittleness, stdout corruption, full restarts, no cross-client story). ToolPin solves it directly.
@@ -98,7 +98,7 @@ Net: threats (1) and (2) are existential because they're client-owned;
 - **Trust scoring is still gameable.** Every positive signal is publisher self-declared. A dedicated score-math suite now covers the current weights, but tests do not make the underlying registry claims verified facts.
 - **Artifact verification is still presence-oriented, not byte-level.** `identifier.includes("@sha256:")` and truthy `fileSha256` pass — no byte-level fetch/recompute. Attestations are *declared*, never verified (`isAttestation` only checks `typeof type === "string"`). The badge `sigstore-declared` is honest naming, but users will misread it.
 - **Tool-description pinning covers only `{name, description}`, not input schemas.** A server can hold descriptions stable while changing its argument schema. The signed whole-lock digest now covers normalized `toolDescriptionHash` when present, but that is still a narrow pin.
-- **Real client-compat gaps remain.** OCI containers now receive declared env names via Docker `-e NAME`, but global install scope is inconsistent by design: Claude global fails closed (managed by the Claude CLI), Cursor global writes the real `~/.cursor/mcp.json`, and only Generic global writes a sidecar ToolPin stub under `~/.config/toolpin/` (`install.ts:182`); Zed install (both scopes) and Roo global fail closed. Several clients are export-only.
+- **Real client-compat gaps remain.** OCI containers now receive declared env names via Docker `-e NAME`, but global install scope is inconsistent by design: Claude global fails closed (managed by the Claude CLI), Cursor global writes the real `~/.cursor/mcp.json`, and only Generic global writes a sidecar ToolPin stub under `~/.config/toolpin/` (`src/install.ts`, generic global case); Zed install (both scopes) and Roo global fail closed. Several clients are export-only.
 - **Engineering maturity gaps.** CI and publish lifecycle scripts now exist, but there is still no lint, formatter, coverage gate, or automated publish/release-notes workflow. `tsconfig.json:15` `include: ["src/**/*.ts"]` excludes `.tsx` (TUI only type-checked because imported).
 - **Heavy internal duplication.** `parseTomlPath`/`parseTomlKey` duplicated verbatim in `codexToml.ts` and `inventory.ts`; `isRecord`/`stableJson` re-implemented ~8×; doctor's `stableJson` has *diverged* and codex env-less equality silently depends on that divergence.
 - **Registry network resilience is still minimal.** Fetches now have timeout, one retry for 429/5xx, injected-fetch tests, and schema-drift errors, but there is no richer rate-limit handling, circuit breaking, or persistent offline strategy beyond the local cache.

@@ -83,7 +83,7 @@ Ships pillars 1, 2, and 3. This is the release that makes ToolPin credible.
 |------|------|--------|
 | Add capability + attestation types | `src/types.ts` | `CapabilityManifest`, `Attestation`, `ToolDescriptionHash`. Carry via existing `_meta` (`types.ts:58`) under `dev.toolpin/capabilities`, `dev.toolpin/attestations`. |
 | Capability derivation | **new** `src/capabilities.ts`, `src/tester.ts` | Normalize a `CapabilityManifest` from a `NormalizedServer`: declared env vars, transport, remote URL host (egress target), package type, secrets required. For remotes, build the tool-description hash from a live MCP probe (`initialize` → `tools/list`) rather than static registry metadata. |
-| Metadata pin enforcement | **new** `src/verify.ts` | v0.2 fails closed when an OCI target is not digest-pinned or an MCPB target lacks declared `fileSha256` (currently only scored in `trust.ts:108,122`). Byte-level MCPB/image verification and full sigstore/cosign are later verification work. |
+| Metadata pin enforcement | `src/verify.ts` | Now fails closed when an OCI target is not digest-pinned or an MCPB target lacks declared `fileSha256` (implemented in `src/verify.ts`; the matching score adjustments live in `src/trust.ts`). **Shipped in v0.1.** Byte-level MCPB/image verification and full sigstore/cosign are later verification work. |
 | Extend trust report | `src/trust.ts` | Keep heuristic `scoreServer`; add attestation-derived badges (`sigstore-signed`, `provenance`, `sbom`, `capability-pinned`). |
 | CLI surface | `src/cli.ts` | `toolpin verify <server>`; `--verify` flag on `install`. |
 
@@ -99,7 +99,7 @@ servers fail verification unless the user explicitly skips live verification.
 | Fix Codex (TOML) | `src/config.ts`, `src/install.ts`, `src/tui.tsx`, `src/codexToml.ts` | Codex uses `~/.codex/config.toml` and trusted project `.codex/config.toml` with `[mcp_servers.<id>]`. Format-aware writer/merger, export output, install paths, and TUI labels are shipped in current code. |
 | Research next-wave clients | `docs/client-configs.md` | Completed for Windsurf, Cline, Continue, Gemini CLI, Zed, and Roo Code. The document records each target's config path, schema key, local/remote transport shape, env interpolation syntax, and any implementation caveats before code support is added. |
 | Add verified clients | `src/config.ts`, `src/install.ts`, `src/cli.ts`, `src/tui.tsx` | Shipped for Windsurf/Cascade global, Cline global, Continue global YAML, Gemini CLI project/global, Roo Code project, and Zed config export. Zed install paths, Roo global path discovery, and unverified project/profile paths remain open. |
-| Per-client env syntax | `src/config.ts` | Replace generic placeholder emission (`config.ts:90-96`) with per-client interpolation syntax. |
+| Per-client env syntax | `src/config.ts` | Per-client placeholder interpolation (`src/config.ts` `placeholderFor`): `${env:NAME}` (Windsurf), `${NAME}` (Gemini), `${{ secrets.NAME }}` (Continue), `<NAME>` (Roo/Cline/Zed). **Shipped in v0.1.** |
 | Multi-client fan-out | `src/cli.ts`, `src/install.ts`, `src/tui.tsx` | Keep `toolpin install <server> --client all` as the primary verb; `--client all` writes every detected verified client without clobbering unrelated keys. |
 
 **Acceptance:** round-trip install produces spec-correct config for every verified client,

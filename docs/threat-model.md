@@ -61,13 +61,14 @@ flagged here so users do not infer stronger guarantees than the code provides.
   Once a server is running, ToolPin has no further control. Runtime defenses
   require a gateway (Glama, Docker AI Governance, Stacklok ToolHive) or the
   dual-LLM/CaMeL pattern.
-- **Not sigstore, provenance, or SLSA.** The whole-lock digest is "not a
-  signature, provenance, sigstore, or self-protecting lockfile" (README:74).
+- **Not sigstore, provenance, or SLSA.** The whole-lock digest is explicitly
+  "not a signature, provenance, sigstore, or self-protecting lockfile" (see the
+  digest and signature notes in README's *What Exists Now*).
   Detached Ed25519 signing binds lockfile contents to a user-managed key but
   has no transparency log, no identity binding, and no replay defense. There
   is no SBOM emission (CycloneDX/SPDX) today.
 - **Not a Cedar/OPA engine.** `.toolpin/policy.json` is a local JSON gate
-  (README:143). It cannot express relational rules ("server A may not
+  (see README's *Local Policy* section). It cannot express relational rules ("server A may not
   co-exist with server B") or produce auditable signed policy bundles.
 - **Not secret brokering.** ToolPin generates placeholders/references
   (`<TOKEN>`, `${env:TOKEN}`, `op://`, `vault://`, `doppler://`) and never

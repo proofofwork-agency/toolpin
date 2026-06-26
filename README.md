@@ -114,37 +114,53 @@ ownership, token/2FA, and name availability are confirmed.
 
 ## Commands
 
+Where `<client>` is one of `claude`, `cursor`, `vscode`, `codex`, `opencode`,
+`windsurf`, `cline`, `continue`, `gemini`, `zed`, `roo`, or `generic`, and
+`all` fans out across every client verified for the chosen scope:
+
 ```text
 toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
+toolpin sources [--json]
 toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live]
-toolpin info <server-name> [--source official|docker|all|custom-id] [--json] [--live]
-toolpin audit <server-name> [--source official|docker|all|custom-id] [--live]
-toolpin scan <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
-toolpin verify <server-name> [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
+toolpin audit <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
 toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
-toolpin list [--scope|-s all|project|global] [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--json]
-toolpin plan <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
-toolpin policy check <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--scope|-s project|global] [--global|-g] [--project|-p] [--policy .toolpin/policy.json] [--json] [--source official|docker|all|custom-id] [--live]
+toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000]
+toolpin test-installed <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--timeout 15000] [--json]
+toolpin list|ls|installed [--scope|-s all|project|global] [--client|-c <client>|all] [--json]
+toolpin plan <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin install <server-name> [--client|-c <client>|all] [--version <server-version>] [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin adopt <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update <server-name> --client|-c <client> [--scope|-s project|global] [--global|-g] [--project|-p] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update --all [--scope|-s all|project|global] [--client|-c <client>|all] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin policy check <server-name> [--client|-c <client>|all] [--version <server-version>] [--scope|-s project|global] [--global|-g] [--project|-p] [--policy .toolpin/policy.json] [--json] [--source official|docker|all|custom-id] [--live]
 toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
-toolpin remove <server-name> [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
-toolpin uninstall <server-name> [--client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
+toolpin remove <server-name> [--client|-c <client>|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
+toolpin uninstall <server-name> [--client|-c <client>|all] [--scope|-s project|global] [--global|-g] [--project|-p] [--file mcp-lock.json]
 toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
 toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--project|-p] [--json]
-toolpin test <server-name> [--source official|docker|all|custom-id] [--live] [--timeout 15000]
-toolpin lock <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
+toolpin lock <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin export-config <server-name> --client|-c claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all [--source official|docker|all|custom-id] [--live]
+toolpin export-config <server-name> [--client|-c <client>|all] [--version <server-version>] [--source official|docker|all|custom-id] [--live]
 toolpin tui
+toolpin --version | -v
+toolpin --help | -h
 ```
 
-`tpn` is registered as the short binary alias for the same CLI.
-Common install/config shortcuts are also supported: `-c` for `--client`, `-s`
-for `--scope`, `-g` for `--global`, and `-p` for `--project`.
+`tpn` is registered as the short binary alias for the same CLI, and `ls` is an
+alias for `list`. Common install/config shortcuts are also supported: `-c` for
+`--client`, `-s` for `--scope`, `-g` for `--global`, and `-p` for `--project`.
+For `plan`, `install`, `policy check`, `lock`, and `export-config`, `--client`
+is optional and defaults to `generic`; `test-installed` rejects `--client all`.
+Use `toolpin versions <server-name>` to list known registry/cache versions. Any
+server command that accepts `--version <server-version>` targets that exact known
+version instead of the latest one, matching the TUI install version picker.
 
 ## GitHub Actions
 
@@ -206,8 +222,25 @@ npm test
 node dist/cli.js ci --file mcp-lock.json --live
 ```
 
-See `docs/how-to/catch-drift-in-ci.md` for digest, signature, policy, verification,
-and all other action inputs.
+Action inputs (`action.yml`):
+
+| Input | Default | Purpose |
+|---|---|---|
+| `working-directory` | `.` | Directory that contains `mcp-lock.json`. |
+| `file` | `mcp-lock.json` | Lockfile path, relative to `working-directory`. |
+| `source` | `all` | Registry source passed to `--source`. |
+| `live` | `"true"` | Fetch live registry data instead of the local cache. |
+| `verify` | `"false"` | Run verification (`--verify`) before comparing locked plans. |
+| `policy` | `.toolpin/policy.json` | Policy file path (used unless `no-policy` is set). |
+| `no-policy` | `"false"` | Pass `--no-policy` and skip policy enforcement. |
+| `expect-digest` | `""` | Expected whole-lock digest from a trusted out-of-band source. |
+| `signature` | `""` | Detached signature path (requires `public-key`). |
+| `public-key` | `""` | Public key path used with `signature`. |
+| `timeout` | `"15000"` | Live verification timeout in milliseconds. |
+| `skip-live-verification` | `"false"` | Pass `--skip-live-verification` when `verify` is enabled. |
+| `toolpin-version` | `""` | npm version specifier; leave empty to build from action source. |
+
+See `docs/how-to/catch-drift-in-ci.md` for digest, signature, policy, and verification recipes.
 
 ## Release Checklist
 
@@ -242,10 +275,10 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Local cache at `.toolpin/registry-cache.json`.
 - Normalized package and remote metadata.
 - Search ranking over name, title, description, package type, transport, and repository.
-- Trust scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, and missing install targets.
+- Trust scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, unknown package types, and missing install targets.
 - Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
-- Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are warnings for human review, not prompt-injection detection, sandboxing, or an install blocker.
+- Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are advisory findings (warning or info level) for human review, not prompt-injection detection, sandboxing, or an install blocker.
 - `toolpin scan` exposes the advisory description scan directly. `toolpin scan --sarif`, `toolpin verify --sarif`, and `toolpin ci --sarif` emit SARIF 2.1.0 JSON for code-scanning pipelines.
 - `toolpin install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
@@ -257,7 +290,7 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Local policy gate via optional `.toolpin/policy.json`: `toolpin install`, `toolpin ci`, TUI installs, and `toolpin policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
 - Read-only secret hygiene via `toolpin secrets audit`: reports likely plaintext env/header secrets in installed client config files using registry `isSecret` metadata and known token prefixes. Findings are advisory and redacted; ToolPin does not resolve or print secret values.
 - Lockfile v1 entries must be regenerated before enforcement; missing v2 integrity fails closed. Use `--live` in CI when you need registry drift detection instead of local-cache validation.
-- Installed inventory via `toolpin list` and the TUI Installed tab: listing of MCP server entries present in supported folder/project and global/user client config files, with explicit `registry:exact|alias|none`, `action:update|adopt|none`, and `test:config|none` status. Runtime status is advisory, not a process monitor.
+- Installed inventory via `toolpin list` and the TUI Installed tab: listing of MCP server entries present in supported folder/project and global/user client config files. The TUI Installed tab augments each row with explicit `registry:exact|alias|none`, `action:update|adopt|none`, and `test:config|none` status (the CLI `list` prints names and source files only). Runtime status is advisory, not a process monitor.
 - Installed lifecycle commands: `toolpin test-installed` tests the installed client config directly, `toolpin adopt` replaces an unlocked alias with its registry match and writes the lockfile, `toolpin update <server>` updates only locked rows, and `toolpin update --all` applies safe locked updates while reporting unlocked adoptable rows separately. Use `--dry-run` to preview `adopt` and `update` writes.
 - Cursor project/global installs write `.cursor/mcp.json` and `~/.cursor/mcp.json`. Claude project installs write `.mcp.json`; Claude global config is managed by the Claude CLI, so ToolPin fails closed instead of writing a sidecar. Use `toolpin export-config ... --client claude` with `claude mcp add-json --scope user` for user-scope Claude setup.
 - For generic clients whose real global config path is not standardized or verified, ToolPin's global scope means the ToolPin-managed sidecar file under `~/.config/toolpin/`.
@@ -288,8 +321,11 @@ esc             Exit search/command mode, or return to Browse
 up/down or j/k  Move selection
 enter           Open selected-server install plan
 r               Refresh current source
-i / I           Open install wizard: choose version when available, folder/global, then client
+i / I           Open install wizard: choose version when available, folder/global, then client (no-op while the Installed panel is active)
 : ingest        Ingest live registry data into cache from the command palette
+: info          Server info (command palette only)
+: audit         Audit trust for the selected server (command palette only)
+: ci            Frozen-lock check, same as `toolpin ci` (command palette only)
 f               Change Browse list layout: flat/project/category
 g               Change registry source; in Installed, change inventory scope all/project/global
 G               Toggle install scope: project or global
@@ -310,8 +346,11 @@ q / ctrl-c      Quit
 ```
 
 Mouse clicks are also supported: click menu tabs to switch panels and click a
-result row to select/open it. All hotkeys remain active in every panel — there is
-no modal focus trapping, so `I`/`x`/`w`/`s` still fire while Help or Overview is open.
+result row to select it. Tabs 4/5/6 (Overview/Install/Config) require a server
+to be selected first, and `tab` skips them until one is. Most hotkeys stay live
+across every panel, but the install wizard (`i`/`I`) and the Installed delete
+modal (`x`) do trap input while open — in those, only their own keys (and `Esc`
+to cancel) apply.
 
 ## Local Policy
 
