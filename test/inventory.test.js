@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { installServerConfig } from "../dist/install.js";
+import { installServerConfig, vsCodeGlobalConfigFile } from "../dist/install.js";
 import { listInstalledServers } from "../dist/inventory.js";
 import { buildInstallPlan, writeLockfile } from "../dist/plan.js";
 
@@ -65,7 +65,7 @@ test("listInstalledServers reports clean machines, invalid scopes, and unreadabl
 
 test("listInstalledServers reports empty JSON client configs with a clean fix hint", async () => {
   await withTempHomeAndCwd(async () => {
-    const file = path.join(process.env.HOME, "Library", "Application Support", "Code", "User", "mcp.json");
+    const file = vsCodeGlobalConfigFile(process.env.HOME ?? os.homedir(), process.platform);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, "", "utf8");
 
