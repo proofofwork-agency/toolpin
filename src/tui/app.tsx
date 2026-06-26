@@ -364,6 +364,7 @@ export function MpmTui() {
           ],
         },
       }));
+      await refreshInstalledRows(state.servers, lockfile);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setState((prev) => ({
@@ -1234,8 +1235,11 @@ export function MpmTui() {
       case "R":
         resetViewDefaults();
         break;
-      case "i":
       case "I":
+        switchToView("installed");
+        void refreshInstalledRows();
+        break;
+      case "i":
         if (state.view !== "installed") beginInstallFlow();
         break;
       case "m":

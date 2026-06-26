@@ -315,13 +315,14 @@ Hotkeys:
 
 ```text
 tab / 1-7       Switch panels (1=Browse, 2=Installed, 3=Sources, 4=Overview, 5=Install, 6=Config, 7=Help)
+I               Jump to Installed and refresh the installed inventory
 /               Search
 :               Open command palette
 esc             Exit search/command mode, or return to Browse
 up/down or j/k  Move selection
 enter           Open selected-server install plan
 r               Refresh current source
-i / I           Open install wizard: choose version when available, folder/global, then client (no-op while the Installed panel is active)
+i               Open install wizard: choose version when available, folder/global, then client (no-op while the Installed panel is active)
 : ingest        Ingest live registry data into cache from the command palette
 : info          Server info (command palette only)
 : audit         Audit trust for the selected server (command palette only)
@@ -348,7 +349,7 @@ q / ctrl-c      Quit
 Mouse clicks are also supported: click menu tabs to switch panels and click a
 result row to select it. Tabs 4/5/6 (Overview/Install/Config) require a server
 to be selected first, and `tab` skips them until one is. Most hotkeys stay live
-across every panel, but the install wizard (`i`/`I`) and the Installed delete
+across every panel, but the install wizard (`i`) and the Installed delete
 modal (`x`) do trap input while open — in those, only their own keys (and `Esc`
 to cancel) apply.
 

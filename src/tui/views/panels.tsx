@@ -550,6 +550,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "m / +", "Show more results, up to the maximum cached set."],
     ["Browse", "r", "Refresh the current registry data."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
+    ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
     ["Sources", "3", "Show connected registry sources, trust tiers, auth status, and cached entries."],
     ["Review", "Enter", "Open the install plan for the selected server."],
     ["Review", "t", "Test the selected server with initialize and tools/list."],
@@ -923,9 +924,9 @@ export function Footer({ view, inputMode, width }: { view: View; inputMode: Inpu
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["m", "more"], ["i", "install"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
-        ? [["j/k", "move"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
+        ? [["j/k", "move"], ["I", "refresh list"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "sources"
         ? [["g", "source"], ["l", "cache/live"], ["r", "refresh"], ["1", "browse"], ["2", "installed"], ["q", "quit"]]
       : view === "details"
