@@ -432,7 +432,9 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         </>
       ) : null}
       <Metric label="badges" value={trust.badges.join(", ") || "no badges"} />
-      <Divider width={width} marginBottom={1} />
+      <Spacer />
+      <CompactDivider width={width} />
+      <Spacer />
       <Box flexDirection="column">
         <Text>
           <Text color={MUTED}>trust       </Text>
@@ -447,7 +449,9 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         </Text>
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
-      <Divider width={width} marginBottom={1} />
+      <Spacer />
+      <CompactDivider width={width} />
+      <Spacer />
       <Text>
         <Text color={MUTED}>test        </Text>
         {testing ? <Text color={WARN}>running MCP handshake and tools/list...</Text> : testResult ? (
@@ -1017,6 +1021,11 @@ function Divider({ width, marginBottom = 0 }: { width: number; marginBottom?: nu
       <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
     </Box>
   );
+}
+
+function CompactDivider({ width }: { width: number }) {
+  const lineWidth = Math.max(8, width - 6);
+  return <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>;
 }
 
 function IssueRows({ issues, width, rows = 4 }: { issues: Array<{ severity: "info" | "warning" | "critical"; code: string; message: string }>; width: number; rows?: number }) {
