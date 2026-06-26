@@ -27,6 +27,20 @@ server can be locked differently for different MCP clients.
       },
       "trust": {
         "score": 85,
+        "tier": "verified",
+        "gatedBy": [],
+        "evidence": [
+          {
+            "code": "digest_present",
+            "status": "passed",
+            "message": "OCI image ghcr.io/example/server@sha256:... is pinned by digest."
+          },
+          {
+            "code": "lock_integrity",
+            "status": "passed",
+            "message": "Lock entry integrity digest is computed over the reviewed install plan."
+          }
+        ],
         "badges": [],
         "issues": []
       },
@@ -99,7 +113,7 @@ on read but `ci` will reject entries missing `integrity`.
 | `version` | string | Locked server version. |
 | `client` | client name | Client this generated config targets. |
 | `selectedTarget` | object | Package or remote target selected for install. Package targets include `fileSha256` for MCPB. |
-| `trust` | object | Score, badges, and review issues at lock time. |
+| `trust` | object | Metadata completeness score, optional tier/gating/evidence, badges, and review issues at lock time. |
 | `config` | any JSON value | Generated client config fragment. |
 | `notes` | string array | Human-readable install notes. |
 | `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash` and `toolDescriptionScan` appear only after a successful `--verify` live probe of a remote target. |
@@ -112,6 +126,24 @@ on read but `ci` will reject entries missing `integrity`.
 
 The whole-lock digest from `toolpin lock digest` excludes timestamps and covers
 the canonical set of locked server/client entries.
+
+## Trust object
+
+`trust.score` remains a 0–100 metadata completeness score for compatibility
+with older lockfiles and score-based policy. Newer entries may also include:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `tier` | `"verified" \| "conditional" \| "unverified" \| "blocked"` *(optional)* | Evidence-gated trust tier. `verified` means automated evidence passed, not that the server is safe. |
+| `gatedBy` | string array *(optional)* | Issue or evidence codes that prevented a stronger tier. |
+| `evidence` | object array *(optional)* | Automated evidence entries. Older lockfiles without this field remain valid and are not rewritten on read. |
+
+Evidence entries are `{ code, status, message, required? }`, where `status` is
+`passed`, `declared`, `failed`, or `unavailable`. Current codes include
+`package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
+`lock_signature`, `attestation_declared`, and `attestation_verified`. Declared
+attestations are not treated as verified unless a future verifier adds
+`attestation_verified`.
 
 ## Capability manifest
 

@@ -13,7 +13,7 @@ export const TUI_COMMANDS: TuiCommand[] = [
   { id: "more-results", label: "Show more results", description: "Increase the TUI result window by 50 matches." },
   { id: "reset-view", label: "Reset view defaults", description: "Reset search/source/result count/client/scope to defaults." },
   { id: "info", label: "Server info", description: "Open selected server metadata and trust summary.", requiresServer: true },
-  { id: "audit", label: "Audit trust", description: "Show selected server trust score, badges, and issues.", requiresServer: true },
+  { id: "audit", label: "Audit trust", description: "Show selected server tier, evidence, score, badges, and issues.", requiresServer: true },
   { id: "plan", label: "Install plan", description: "Preview target, trust, secrets, and config writes.", requiresServer: true },
   { id: "install", label: "Install server", description: "Open the install wizard: choose scope and client, then write config + lockfile.", requiresServer: true },
   { id: "remove", label: "Remove server", description: "Delete selected server from active client config and lockfile.", requiresServer: true },

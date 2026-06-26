@@ -16,7 +16,7 @@ import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
-import { scoreServer } from "./trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustTier } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
@@ -43,6 +43,7 @@ const VALUE_FLAGS = new Set([
   "--version",
 ]);
 const OK_COLOR = "\x1b[32m";
+const ERR_COLOR = "\x1b[31m";
 const CYAN_COLOR = "\x1b[36m";
 const MUTED_COLOR = "\x1b[90m";
 
@@ -181,8 +182,9 @@ async function search(rest: string[]): Promise<void> {
     printSubhead(`${server.name}@${server.version}`);
     printField("title", server.title);
     if (server.description) printField("about", truncate(server.description, 140));
-    printField("source", `${server.registrySource}  trust ${result.trust.score}`);
+    printField("source", `${server.registrySource}  trust ${trustTier(result.trust)} / ${result.trust.score}% complete / ${evidenceStatus(result.trust)}`);
     printField("targets", `packages ${packages}; remotes ${remotes}`);
+    printField("evidence", evidenceSummary(result.trust));
     if (result.trust.badges.length) printField("badges", result.trust.badges.join(", "));
   }
 }
@@ -205,7 +207,9 @@ async function info(rest: string[]): Promise<void> {
   printField("packages", server.packageTypes.join(", ") || "none");
   printField("remotes", server.remoteTypes.join(", ") || "none");
   printField("registry", server.registrySource);
-  printField("trust", String(trust.score));
+  printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
+  printField("evidence", evidenceSummary(trust));
+  if (trust.gatedBy?.length) printField("gated by", trust.gatedBy.join(", "));
   if (trust.badges.length) printField("badges", trust.badges.join(", "));
   for (const issue of trust.issues) {
     printBullet(`${issue.severity.toUpperCase()}: ${issue.message}`);
@@ -626,7 +630,9 @@ async function install(rest: string[]): Promise<void> {
   printHeader("Install");
   printField("server", `${server.name}@${server.version}`, OK_COLOR);
   printField("registry", server.registrySource, CYAN_COLOR);
-  printField("trust", `${scoreServer(server).score}/100`, OK_COLOR);
+  const installTrust = scoreServer(server);
+  printField("trust", `${trustTier(installTrust)} / ${installTrust.score}% complete / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
+  printField("evidence", evidenceSummary(installTrust));
   printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? OK_COLOR : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
@@ -1286,6 +1292,12 @@ function verificationStatus(verifyRequested: boolean, report?: VerificationRepor
   return report?.ok ? "passed" : "failed";
 }
 
+function trustTierColor(tier: ReturnType<typeof trustTier>): string {
+  if (tier === "verified") return OK_COLOR;
+  if (tier === "conditional") return MUTED_COLOR;
+  return ERR_COLOR;
+}
+
 function colorize(value: string, color?: string): string {
   if (!color || !process.stdout.isTTY || process.env.NO_COLOR) return value;
   return `${color}${value}\x1b[0m`;
@@ -1294,6 +1306,7 @@ function colorize(value: string, color?: string): string {
 function printVerificationReport(report: VerificationReport): void {
   printHeader(`${report.ok ? "Verification OK" : "Verification failed"}: ${report.serverName}@${report.serverVersion}`);
   if (report.badges.length) printField("badges", report.badges.join(", "));
+  printField("evidence", evidenceSummary(report));
   printField("packages", report.capabilityManifest.packageTypes.join(", ") || "none");
   printField("transport", report.capabilityManifest.transports.join(", ") || "none");
   if (report.capabilityManifest.remoteHosts.length) printField("hosts", report.capabilityManifest.remoteHosts.join(", "));

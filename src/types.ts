@@ -116,8 +116,22 @@ export interface TrustIssue {
   message: string;
 }
 
+export type TrustTier = "verified" | "conditional" | "unverified" | "blocked";
+
+export type TrustEvidenceStatus = "passed" | "declared" | "failed" | "unavailable";
+
+export interface TrustEvidence {
+  code: string;
+  status: TrustEvidenceStatus;
+  message: string;
+  required?: boolean;
+}
+
 export interface TrustReport {
   score: number;
+  tier?: TrustTier;
+  gatedBy?: string[];
+  evidence?: TrustEvidence[];
   badges: string[];
   issues: TrustIssue[];
 }

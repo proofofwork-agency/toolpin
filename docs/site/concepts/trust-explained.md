@@ -4,17 +4,16 @@ title: Trust Explained
 
 # Trust explained
 
-ToolPin trust is a deterministic review score over registry metadata and the
-selected install target. It is designed to sort attention and enforce local
-policy thresholds, not to certify that a server is safe to run.
+ToolPin separates metadata completeness from evidence. The numeric score is a
+deterministic review score over registry metadata and the selected install
+target. The tier is evidence-gated: `verified` means automated evidence checks
+passed, not that a server is safe to run.
 
 ## Score scale and computation
 
 Every server starts at a base of **50**. Signals add or subtract points, the
-running total is rounded, then clamped to **0–100**. The score is deterministic
-review over registry metadata and the selected install target — it sorts
-attention and feeds local policy thresholds; it does not certify that a server
-is safe to run.
+running total is rounded, then clamped to **0–100**. The score sorts attention
+and feeds local policy thresholds; it is not the same as the trust tier.
 
 ```text
 score = clamp(round(50 + serverSignals + Σ packageSignals + Σ remoteSignals), 0, 100)
@@ -63,6 +62,30 @@ signal there.
 | Insecure remote | parsed URL protocol is not `https:` | **−15** | critical `insecure_remote` |
 | Invalid remote URL | URL cannot be parsed | **−15** | critical `invalid_remote_url` |
 | Streamable HTTP | remote type is `streamable-http` | **+4** | — |
+
+## Evidence and tiers
+
+`TrustReport.evidence` records automated evidence separately from badges:
+
+| Evidence code | Status | Meaning |
+|---|---|---|
+| `package_pin` | `passed` / `failed` | Package registry target has an exact version, or an OCI target is digest-pinned. |
+| `digest_present` | `passed` / `failed` | OCI identifier includes `@sha256:`. |
+| `file_hash_present` | `passed` / `failed` | MCPB package declares `fileSha256`. |
+| `lock_integrity` | `passed` | New lock entries include a timestamp-insensitive integrity digest over the reviewed install plan. |
+| `tool_description_hash` | `passed` / `failed` / `unavailable` | Live remote `tools/list` descriptions were hashed, failed, or were skipped. |
+| `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
+
+Tiering is conservative:
+
+- `verified`: no critical issues, a pinned install target, and passed artifact evidence such as `digest_present` or `file_hash_present`.
+- `conditional`: usable metadata or pinning exists, but artifact proof is incomplete or unavailable.
+- `unverified`: weak or failed optional evidence, mutable OCI tags, missing MCPB hashes, or other non-blocking critical trust gaps.
+- `blocked`: unsafe or uninstallable cases such as no install target, insecure remote URLs, invalid remote URLs, or failed required evidence checks.
+
+Repository URL presence, registry source trust, `capability-pinned`, and
+self-declared attestations are useful review metadata. They do not make a
+server `verified` by themselves.
 
 ### Badges and findings that do not change the score
 

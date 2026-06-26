@@ -6,7 +6,7 @@ import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult } from "../../types.js";
-import { scoreServer } from "../../trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustTier } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
 import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } from "../constants.js";
@@ -15,7 +15,7 @@ import { asObject, safeJson, shortPath, truncate } from "../format.js";
 import { computeMenuLayout, listWindowStart } from "../layout.js";
 import { commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
 import type { BrowseLayout, ClientSelection, CommandLog, InputMode, InstallFlow, TuiState, TuiVersionInfo, View } from "../types.js";
-import { riskTone, scoreBreakdown, trustBarCells } from "../ui/trust.js";
+import { trustBarCells, trustDimensions, trustRiskTone, trustTierScore } from "../ui/trust.js";
 
 export function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
@@ -190,7 +190,7 @@ function GroupedOptionRow({ result, selected = false, dimmed, width, category }:
         <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
         <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
-        <TrustMeter score={result.trust.score} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
+        <TrustMeter score={trustTierScore(result.trust)} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
       </Text>
       <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
         <Text color={CHROME}>    project </Text>
@@ -211,7 +211,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{truncate(server.registrySource, 8).padEnd(8)} </Text>
       <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
       <Text color={CHROME}> </Text>
-      <TrustMeter score={result.trust.score} cells={meterWidth} />
+      <TrustMeter score={trustTierScore(result.trust)} cells={meterWidth} />
     </Text>
   );
 }
@@ -410,8 +410,8 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   if (!result) return <EmptyPanel title="Overview" />;
   const server = selectedServer ?? result.server;
   const trust = scoreServer(server);
-  const risk = riskTone(trust.score);
-  const deltas = scoreBreakdown(trust);
+  const risk = trustRiskTone(trust);
+  const dimensions = trustDimensions(trust);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="overview" file="server.json" />
@@ -432,21 +432,30 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         </>
       ) : null}
       <Metric label="badges" value={trust.badges.join(", ") || "no badges"} />
+      <Metric label="evidence" value={evidenceSummary(trust)} />
       <Spacer />
       <CompactDivider width={width} />
       <Spacer />
       <Box flexDirection="column">
         <Text>
           <Text color={MUTED}>trust       </Text>
-          <Text color={trustColor(trust.score)}>{trust.score}%</Text>
+          <Text color={trustColor(trustTierScore(trust))}>{risk.label}</Text>
           <Text color={CHROME}>  </Text>
-          <TrustMeter score={trust.score} showScore={false} />
+          <Text color={MUTED}>{trustTier(trust)}</Text>
           <Text color={CHROME}>  </Text>
-          <Text color={MUTED}>{risk.label}</Text>
+          <TrustMeter score={trustTierScore(trust)} showScore={false} />
+          <Text color={CHROME}>  </Text>
+          <Text color={MUTED}>{trust.score}% complete</Text>
         </Text>
-        <Text color={MUTED} wrap="truncate">
-          breakdown  {deltas.map((delta) => delta.label).join("  ")}
-        </Text>
+        {dimensions.map((dimension) => (
+          <Text key={dimension.label}>
+            <Text color={MUTED}>{dimension.label.padEnd(12)}</Text>
+            <Text color={trustColor(dimension.score)}>{`${dimension.score}%`.padStart(4)}</Text>
+            <Text color={CHROME}>  </Text>
+            <TrustMeter score={dimension.score} showScore={false} />
+          </Text>
+        ))}
+        {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
       <Spacer />
@@ -497,7 +506,8 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
       <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
       {versionInfo ? <PlanMetric label="version" value={`selected ${versionInfo.selectedVersion} / locked ${versionInfo.lockedLabel} / latest ${versionInfo.latestVersion} / ${versionInfo.status}`} width={width} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} /> : null}
       {versionInfo && versionInfo.versions.length > 1 ? <PlanMetric label="versions" value={`${formatVersionChoices(versionInfo, 8)}  (v/V cycle)`} width={width} /> : null}
-      <PlanMetric label="trust" value={`${plan.trust.score} ${plan.trust.badges.join(", ") || "no badges"}`} width={width} valueColor={trustColor(plan.trust.score)} />
+      <PlanMetric label="trust" value={`${trustRiskTone(plan.trust).label} / ${trustTier(plan.trust)} / ${plan.trust.score}% complete / ${evidenceStatus(plan.trust)}`} width={width} valueColor={trustColor(trustTierScore(plan.trust))} />
+      <PlanMetric label="evidence" value={evidenceSummary(plan.trust)} width={width} />
       <PlanMetric label="writes" value={client === "all" ? `${scopeLabel(installScope)} configs for ${targetClients.join(", ")} + mcp-lock.json` : `${scopeLabel(installScope)} ${client} config + mcp-lock.json`} width={width} />
       {targetClients.map((targetClient) => (
         <PlanMetric key={targetClient} label={targetClient} value={configTargetLabel(targetClient, installScope)} width={width} />
@@ -597,9 +607,10 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="not" text="ToolPin is not a catalog, runtime sandbox, gateway, or secret vault; it is the repo-owned install and governance layer." />
           <Spacer />
           <Text bold color={BLUE}>scoring</Text>
-          <HelpNote width={lineWidth} label="score" text="0-100 advisory trust score for review priority, not a security guarantee or install blocker." />
+          <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
-          <HelpNote width={lineWidth} label="colors" text="Green is high confidence, yellow needs review, red means critical mutable or risky package evidence." />
+          <HelpNote width={lineWidth} label="tiers" text="Verified means required automated evidence passed; conditional means useful metadata exists but proof is incomplete." />
+          <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
           <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, trust data, and integrity digest." />

@@ -26,6 +26,10 @@ test("writeLockfile writes v2 entries with stable integrity metadata", async () 
     assert.equal(lockfile.lockfileVersion, 2);
     assert.ok(locked.integrity.startsWith("sha256-"));
     assert.equal(locked.integrity, computePlanIntegrity(locked));
+    assert.equal(locked.trust.tier, "conditional");
+    assert.deepEqual(locked.trust.gatedBy, []);
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "package_pin" && entry.status === "passed"));
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "lock_integrity" && entry.status === "passed"));
     assert.deepEqual(locked.resolved, {
       source: "official",
       name: "io.github/example",
@@ -293,6 +297,63 @@ test("readLockfile rejects malformed trust payloads", async () => {
     await writeFile(lockfilePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
 
     await assert.rejects(() => readLockfile(lockfilePath), /invalid trust\.issues\[0\]\.message/);
+  });
+});
+
+test("readLockfile preserves legacy trust payloads without deriving new fields", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer(), "claude"), lockfilePath);
+    const raw = JSON.parse(await readFile(lockfilePath, "utf8"));
+    const entry = raw.servers["io.github/example:claude"];
+    delete entry.trust.tier;
+    delete entry.trust.gatedBy;
+    delete entry.trust.evidence;
+    entry.integrity = computePlanIntegrity(entry);
+    await writeFile(lockfilePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    const parsed = await readLockfile(lockfilePath);
+    const locked = parsed.servers["io.github/example:claude"];
+
+    assert.equal(Object.hasOwn(locked.trust, "tier"), false);
+    assert.equal(Object.hasOwn(locked.trust, "gatedBy"), false);
+    assert.equal(Object.hasOwn(locked.trust, "evidence"), false);
+    assert.equal(locked.integrity, computePlanIntegrity(locked));
+  });
+});
+
+test("readLockfile accepts additive trust tier fields when present", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer(), "claude"), lockfilePath);
+    const parsed = await readLockfile(lockfilePath);
+    const locked = parsed.servers["io.github/example:claude"];
+
+    assert.equal(locked.trust.tier, "conditional");
+    assert.deepEqual(locked.trust.gatedBy, []);
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "lock_integrity" && entry.status === "passed"));
+  });
+});
+
+test("readLockfile accepts additive trust evidence fields when present", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeLockfile(buildInstallPlan(packageServer(), "claude"), lockfilePath);
+    const raw = JSON.parse(await readFile(lockfilePath, "utf8"));
+    raw.servers["io.github/example:claude"].trust.evidence.push({
+      code: "lock_signature",
+      status: "passed",
+      message: "Detached lock signature verified.",
+      required: true,
+    });
+    raw.servers["io.github/example:claude"].integrity = computePlanIntegrity(raw.servers["io.github/example:claude"]);
+    await writeFile(lockfilePath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+
+    const parsed = await readLockfile(lockfilePath);
+    const locked = parsed.servers["io.github/example:claude"];
+
+    assert.ok(locked.trust.evidence.some((entry) => entry.code === "lock_signature" && entry.status === "passed" && entry.required === true));
+    assert.equal(locked.integrity, computePlanIntegrity(locked));
   });
 });
 
