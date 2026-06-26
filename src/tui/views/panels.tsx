@@ -604,7 +604,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, trust data, and integrity digest." />
           <HelpNote width={lineWidth} label="install" text="Install writes client config and the matching lock entry after policy and drift checks pass." />
           <HelpNote width={lineWidth} label="doctor/ci" text="Doctor and CI compare client config with mcp-lock.json so config drift, digest drift, and signature failures are visible." />
-          <HelpNote width={lineWidth} label="adopt/update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
+          <HelpNote width={lineWidth} label="adopt / update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
         </>
       ) : null}
     </Box>
@@ -612,10 +612,11 @@ export function HelpView({ width, height }: { width: number; height: number }) {
 }
 
 function HelpNote({ label, text, width }: { label: string; text: string; width: number }) {
+  const labelWidth = 15;
   return (
     <Text wrap="truncate">
-      <Text color={MUTED}>{label.padEnd(10)}</Text>
-      <Text color="white">{truncate(text, width - 10)}</Text>
+      <Text color={MUTED}>{label.padEnd(labelWidth)}</Text>
+      <Text color="white">{truncate(text, width - labelWidth)}</Text>
     </Text>
   );
 }
