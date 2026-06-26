@@ -18,7 +18,7 @@ export function InstalledServersView({
   width: number;
   loading: boolean;
 }) {
-  const visibleCount = Math.max(3, height - 2);
+  const visibleCount = Math.max(3, height - 3);
   const start = listWindowStart(selected, visibleCount, rows.length);
   const visible = rows.slice(start, start + visibleCount);
   const selectedRow = rows[selected];
@@ -39,9 +39,12 @@ export function InstalledServersView({
         />
       ))}
       {selectedRow ? (
-        <Text color={CHROME} wrap="truncate">
-          {"  "}selected {selected + 1} of {rows.length}  u registry+lock  U update locked  x delete  t test-installed  d doctor  g scope
-        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={CHROME}>{"-".repeat(Math.max(0, width - 6))}</Text>
+          <Text color={CHROME} wrap="truncate">
+            {"  "}selected {selected + 1} of {rows.length}  u registry+lock  U update locked  x delete  t test-installed  d doctor  g scope
+          </Text>
+        </Box>
       ) : null}
     </Box>
   );
