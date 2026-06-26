@@ -451,7 +451,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         <Text color={MUTED} wrap="truncate">
           breakdown  {deltas.map((delta) => delta.label).join("  ")}
         </Text>
-        <IssueRows issues={trust.issues} width={width} />
+        <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} />
       </Box>
       <Divider width={width} marginBottom={1} />
       <Text>
