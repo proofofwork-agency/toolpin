@@ -3,8 +3,9 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
 import { canonicalJson } from "./canonicalJson.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
-import { scoreServer } from "./trust.js";
-import type { CapabilityManifest, NormalizedServer, TrustIssue, TrustReport } from "./types.js";
+import type { InstallScope } from "./install.js";
+import { scoreServer, trustTier } from "./trust.js";
+import type { CapabilityManifest, NormalizedServer, TrustIssue, TrustReport, TrustTier } from "./types.js";
 
 export const LOCKFILE_VERSION = 2;
 
@@ -12,6 +13,7 @@ export interface InstallPlan {
   name: string;
   version: string;
   client: ClientName;
+  scope?: InstallScope;
   selectedTarget: unknown;
   trust: ReturnType<typeof scoreServer>;
   config: unknown;
@@ -51,7 +53,7 @@ export interface LockVerification {
   locked?: InstallPlan;
 }
 
-export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest } = {}): InstallPlan {
+export function buildInstallPlan(server: NormalizedServer, client: ClientName, options: { capabilityManifest?: CapabilityManifest; scope?: InstallScope } = {}): InstallPlan {
   if (server.installable === false) {
     throw new Error(`Cannot install ${server.name}@${server.version}: ${server.installableReason ?? "registry entry is discovery-only"}.`);
   }
@@ -83,6 +85,7 @@ export function buildInstallPlan(server: NormalizedServer, client: ClientName, o
     name: server.name,
     version: server.version,
     client,
+    scope: options.scope ?? "project",
     selectedTarget: target,
     trust: scoreServer(server),
     config: exported.config,
@@ -250,6 +253,7 @@ function parseInstallPlan(value: unknown, key: string): InstallPlan {
     name: value.name,
     version: value.version,
     client: value.client,
+    scope: parseScope(value.scope, key),
     selectedTarget: value.selectedTarget,
     trust,
     config: value.config,
@@ -269,12 +273,27 @@ function parseTrust(value: unknown, key: string): TrustReport {
   if (typeof value.score !== "number" || !Number.isFinite(value.score)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.score`);
   if (!Array.isArray(value.badges) || !value.badges.every((badge) => typeof badge === "string")) throw new Error(`Invalid lockfile entry ${key}: invalid trust.badges`);
   if (!Array.isArray(value.issues)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues`);
+  if (value.tier !== undefined && !isTrustTier(value.tier)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.tier`);
+  if (value.overallScore !== undefined && (typeof value.overallScore !== "number" || !Number.isFinite(value.overallScore))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.overallScore`);
+  if (value.metadataCompleteness !== undefined && (typeof value.metadataCompleteness !== "number" || !Number.isFinite(value.metadataCompleteness))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.metadataCompleteness`);
+  if (value.capReason !== undefined && typeof value.capReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.capReason`);
+  if (value.gates !== undefined && (!Array.isArray(value.gates) || !value.gates.every(isTrustGate))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.gates`);
+  if (value.vetoes !== undefined && (!Array.isArray(value.vetoes) || !value.vetoes.every(isTrustGate))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.vetoes`);
+  if (value.pillars !== undefined && !isTrustPillars(value.pillars)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.pillars`);
 
-  return {
+  const trust: TrustReport = {
     score: value.score,
+    ...(typeof value.overallScore === "number" ? { overallScore: value.overallScore } : {}),
+    ...(typeof value.metadataCompleteness === "number" ? { metadataCompleteness: value.metadataCompleteness } : {}),
+    ...(value.tier ? { tier: value.tier } : {}),
+    ...(typeof value.capReason === "string" ? { capReason: value.capReason } : {}),
+    ...(Array.isArray(value.gates) ? { gates: value.gates } : {}),
+    ...(Array.isArray(value.vetoes) ? { vetoes: value.vetoes } : {}),
+    ...(isTrustPillars(value.pillars) ? { pillars: value.pillars } : {}),
     badges: value.badges,
     issues: value.issues.map((issue, index) => parseTrustIssue(issue, key, index)),
   };
+  return trust;
 }
 
 function parseTrustIssue(value: unknown, key: string, index: number): TrustIssue {
@@ -290,21 +309,61 @@ function parseTrustIssue(value: unknown, key: string, index: number): TrustIssue
   };
 }
 
+function isTrustTier(value: unknown): value is TrustTier {
+  return value === "verified" || value === "conditional" || value === "unverified" || value === "blocked";
+}
+
+function isTrustGate(value: unknown): value is NonNullable<TrustReport["gates"]>[number] {
+  if (!isRecord(value)) return false;
+  return typeof value.code === "string"
+    && typeof value.message === "string"
+    && (value.tier === "unverified" || value.tier === "blocked");
+}
+
+function isTrustPillars(value: unknown): value is NonNullable<TrustReport["pillars"]> {
+  if (!isRecord(value)) return false;
+  return typeof value.provenance === "number" && Number.isFinite(value.provenance)
+    && typeof value.integrity === "number" && Number.isFinite(value.integrity)
+    && typeof value.reputation === "number" && Number.isFinite(value.reputation)
+    && typeof value.metadataCompleteness === "number" && Number.isFinite(value.metadataCompleteness);
+}
+
 function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   const messages: string[] = [];
   if (!locked.integrity) messages.push("lock integrity is missing");
   if (locked.integrity && computePlanIntegrity(locked) !== locked.integrity) messages.push("locked entry integrity does not match its contents");
   if (locked.version !== current.version) messages.push(`version changed ${locked.version} -> ${current.version}`);
+  if ((locked.scope ?? "project") !== (current.scope ?? "project")) messages.push(`scope changed ${locked.scope ?? "project"} -> ${current.scope ?? "project"}`);
   if (stableJson(locked.selectedTarget) !== stableJson(current.selectedTarget)) messages.push("selected install target changed");
   if (locked.trust.score > current.trust.score) messages.push(`trust score decreased ${locked.trust.score} -> ${current.trust.score}`);
+  if (isTrustTierDowngrade(trustTier(locked.trust), trustTier(current.trust))) messages.push(`trust tier decreased ${trustTier(locked.trust)} -> ${trustTier(current.trust)}`);
   if (stableJson(locked.config) !== stableJson(current.config)) messages.push("client config changed");
   if (stableJson(normalizeCapabilityManifestBase(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifestBase(current.capabilityManifest))) messages.push("capability manifest changed");
   if (hasToolDescriptionHash(locked.capabilityManifest) && hasToolDescriptionHash(current.capabilityManifest)) {
     if (stableJson(normalizeToolDescriptionHash(locked.capabilityManifest.toolDescriptionHash)) !== stableJson(normalizeToolDescriptionHash(current.capabilityManifest.toolDescriptionHash))) {
       messages.push("tool-description hash changed");
     }
+  } else if (hasToolDescriptionHash(locked.capabilityManifest) && !hasToolDescriptionHash(current.capabilityManifest)) {
+    messages.push("tool-description hash pin could not be refreshed");
+  }
+  if (hasToolManifestHash(locked.capabilityManifest) && hasToolManifestHash(current.capabilityManifest)) {
+    if (stableJson(normalizeToolManifestHash(locked.capabilityManifest.toolManifestHash)) !== stableJson(normalizeToolManifestHash(current.capabilityManifest.toolManifestHash))) {
+      messages.push("tool-manifest hash changed");
+    }
+  } else if (hasToolManifestHash(locked.capabilityManifest) && !hasToolManifestHash(current.capabilityManifest)) {
+    messages.push("tool-manifest hash pin could not be refreshed");
   }
   return messages;
+}
+
+function isTrustTierDowngrade(locked: TrustTier, current: TrustTier): boolean {
+  const rank: Record<TrustTier, number> = {
+    verified: 3,
+    conditional: 2,
+    unverified: 1,
+    blocked: 0,
+  };
+  return rank[current] < rank[locked];
 }
 
 export function computePlanIntegrity(plan: InstallPlan): string {
@@ -314,6 +373,7 @@ export function computePlanIntegrity(plan: InstallPlan): string {
 function finalizeLockEntry(plan: InstallPlan, lockedAt: string): InstallPlan {
   const next: InstallPlan = {
     ...plan,
+    scope: plan.scope ?? "project",
     resolvedAt: plan.resolvedAt ?? lockedAt,
     lockedAt,
     resolved: plan.resolved ?? {
@@ -340,10 +400,14 @@ function integrityPayload(plan: InstallPlan): unknown {
     name: plan.name,
     version: plan.version,
     client: plan.client,
+    scope: plan.scope ?? "project",
     selectedTarget: plan.selectedTarget,
     trust: plan.trust,
     config: plan.config,
+    notes: plan.notes,
     capabilityManifest: normalizeCapabilityManifest(plan.capabilityManifest),
+    resolvedAt: plan.resolvedAt,
+    lockedAt: plan.lockedAt,
     resolved: plan.resolved,
     original: plan.original,
     locked: {
@@ -368,11 +432,13 @@ function lockfileDigestPayload(lockfile: Lockfile): unknown {
 
 function normalizeCapabilityManifest(manifest?: CapabilityManifest): unknown {
   const base = normalizeCapabilityManifestBase(manifest);
-  if (!base || !manifest?.toolDescriptionHash) return base;
-  return {
+  if (!base || (!manifest?.toolDescriptionHash && !manifest?.toolManifestHash)) return base;
+  const output = {
     ...base,
-    toolDescriptionHash: normalizeToolDescriptionHash(manifest.toolDescriptionHash),
+    ...(manifest.toolDescriptionHash ? { toolDescriptionHash: normalizeToolDescriptionHash(manifest.toolDescriptionHash) } : {}),
+    ...(manifest.toolManifestHash ? { toolManifestHash: normalizeToolManifestHash(manifest.toolManifestHash) } : {}),
   };
+  return output;
 }
 
 function normalizeCapabilityManifestBase(manifest?: CapabilityManifest): Record<string, unknown> | undefined {
@@ -393,7 +459,19 @@ function hasToolDescriptionHash(manifest?: CapabilityManifest): manifest is Capa
   return Boolean(manifest?.toolDescriptionHash);
 }
 
+function hasToolManifestHash(manifest?: CapabilityManifest): manifest is CapabilityManifest & { toolManifestHash: NonNullable<CapabilityManifest["toolManifestHash"]> } {
+  return Boolean(manifest?.toolManifestHash);
+}
+
 function normalizeToolDescriptionHash(hash: NonNullable<CapabilityManifest["toolDescriptionHash"]>): unknown {
+  return {
+    algorithm: hash.algorithm,
+    value: hash.value,
+    toolCount: hash.toolCount,
+  };
+}
+
+function normalizeToolManifestHash(hash: NonNullable<CapabilityManifest["toolManifestHash"]>): unknown {
   return {
     algorithm: hash.algorithm,
     value: hash.value,
@@ -427,6 +505,12 @@ function parseOriginal(value: unknown): InstallPlan["original"] {
     version: value.version,
     client: value.client,
   };
+}
+
+function parseScope(value: unknown, key: string): InstallScope | undefined {
+  if (value === undefined) return undefined;
+  if (value === "project" || value === "global") return value;
+  throw new Error(`Invalid lockfile entry ${key}: invalid scope`);
 }
 
 function parseLocked(value: unknown): InstallPlan["locked"] {

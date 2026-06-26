@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { dedupeRegistryEntries, fetchRegistry, listRegistrySources, readCache, retryAfterDelayMs } from "../dist/registry.js";
+import { dedupeRegistryEntries, fetchRegistry, fetchRegistryResult, listRegistrySources, readCache, readCacheMetadata, refreshCache, retryAfterDelayMs } from "../dist/registry.js";
 
 test("fetchRegistry retries one 429 response with an injected fetch", async () => {
   const calls = [];
@@ -238,6 +238,121 @@ test("listRegistrySources includes configured discovery registries", async () =>
   });
 });
 
+test("fetchRegistry normalizes Glama discovery entries", async () => {
+  const entries = await fetchRegistry({
+    source: "glama",
+    limit: 1,
+    maxPages: 1,
+    fetch: async (url) => {
+      assert.equal(String(url), "https://glama.ai/api/mcp/v1/servers?first=1");
+      return jsonResponse(200, {
+        servers: [{
+          name: "glama/example",
+          title: "Glama Example",
+          description: "Discovery-only server",
+          repositoryUrl: "https://github.com/example/glama",
+        }],
+      });
+    },
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].source, "glama");
+  assert.equal(entries[0].server.name, "glama/example");
+  assert.equal(entries[0]._meta["dev.toolpin/source"].mode, "discovery");
+});
+
+test("fetchRegistryResult reports PulseMCP auth missing without fetching", async () => {
+  const previousKey = process.env.PULSEMCP_API_KEY;
+  const previousTenant = process.env.PULSEMCP_TENANT_ID;
+  delete process.env.PULSEMCP_API_KEY;
+  delete process.env.PULSEMCP_TENANT_ID;
+  let calls = 0;
+  try {
+    const result = await fetchRegistryResult({
+      source: "pulsemcp",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse(200, { servers: [] });
+      },
+    });
+
+    assert.equal(calls, 0);
+    assert.equal(result.status, "auth-missing");
+    assert.equal(result.entries.length, 0);
+    assert.match(result.lastError, /PULSEMCP_API_KEY/);
+    assert.match(result.source.setupHint, /PULSEMCP_API_KEY/);
+  } finally {
+    setOptionalEnv("PULSEMCP_API_KEY", previousKey);
+    setOptionalEnv("PULSEMCP_TENANT_ID", previousTenant);
+  }
+});
+
+test("fetchRegistryResult sends optional Smithery bearer auth", async () => {
+  const previous = process.env.SMITHERY_API_KEY;
+  process.env.SMITHERY_API_KEY = "smithery-token";
+  try {
+    const result = await fetchRegistryResult({
+      source: "smithery",
+      limit: 1,
+      maxPages: 1,
+      fetch: async (url, init) => {
+        assert.equal(String(url), "https://api.smithery.ai/servers?pageSize=1");
+        assert.equal(init?.headers?.Authorization, "Bearer smithery-token");
+        return jsonResponse(200, {
+          servers: [{
+            name: "smithery/example",
+            version: "1.0.0",
+            repository: { url: "https://github.com/example/smithery" },
+          }],
+        });
+      },
+    });
+
+    assert.equal(result.status, "discovery-only");
+    assert.equal(result.accepted, 1);
+    assert.equal(result.entries[0].source, "smithery");
+  } finally {
+    setOptionalEnv("SMITHERY_API_KEY", previous);
+  }
+});
+
+test("refreshCache isolates source failures and writes successful partitions", async () => {
+  await withTempDir(async (tempDir) => {
+    const previousKey = process.env.PULSEMCP_API_KEY;
+    const previousTenant = process.env.PULSEMCP_TENANT_ID;
+    delete process.env.PULSEMCP_API_KEY;
+    delete process.env.PULSEMCP_TENANT_ID;
+    try {
+      const cachePath = path.join(tempDir, "registry-cache.json");
+      const result = await refreshCache({
+        source: "all",
+        cachePath,
+        limit: 1,
+        maxPages: 1,
+        retryBackoffMs: 0,
+        fetch: async (url) => {
+          const href = String(url);
+          if (href.includes("github.com/docker/mcp-registry")) throw new Error("docker unavailable");
+          if (href.includes("glama.ai")) return jsonResponse(200, { servers: [] });
+          if (href.includes("smithery.ai")) return jsonResponse(200, { servers: [] });
+          return jsonResponse(200, { servers: [registryEntry()] });
+        },
+      });
+      const cache = await readCacheMetadata(cachePath);
+
+      assert.ok(result.results.some((entry) => entry.source.id === "docker" && entry.status === "fetch-error"));
+      assert.equal(cache.sources.official.entries.length, 1);
+      assert.equal(cache.sources.official.status, "ready");
+      assert.equal(cache.sources.docker.status, "fetch-error");
+      assert.equal(cache.sources.pulsemcp.status, "auth-missing");
+    } finally {
+      setOptionalEnv("PULSEMCP_API_KEY", previousKey);
+      setOptionalEnv("PULSEMCP_TENANT_ID", previousTenant);
+    }
+  });
+});
+
 test("dedupeRegistryEntries prefers trusted built-ins for duplicate repository entries", () => {
   const official = {
     source: "official",
@@ -305,6 +420,14 @@ function registryEntry() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setOptionalEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
 }
 
 async function withTempDir(fn) {

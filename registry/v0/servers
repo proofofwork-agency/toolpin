@@ -5,6 +5,7 @@
     "total": 0,
     "name": "ToolPin Curated MCP Registry",
     "description": "A PR-reviewed, GitHub-hosted registry for MCP servers ToolPin can normalize, review, lock, and recommend.",
+    "status": "scaffold",
     "generatedAt": "2026-06-25T00:00:00.000Z",
     "source": {
       "type": "github",

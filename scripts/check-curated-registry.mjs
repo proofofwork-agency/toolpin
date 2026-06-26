@@ -14,13 +14,14 @@ if (stableJson(canonical) !== stableJson(website)) {
 }
 
 validateRegistry(canonical, "registry/v0/servers", errors);
+await validateGithubEnforcement(canonical, "registry/v0/servers", errors);
 
 if (errors.length) {
   for (const error of errors) console.error(`curated registry check: ${error}`);
   process.exit(1);
 }
 
-console.log(`Curated registry OK: ${canonical.servers.length} server entr${canonical.servers.length === 1 ? "y" : "ies"}.`);
+console.log(`${canonical.metadata?.status === "scaffold" ? "Registry scaffold" : "Curated registry"} OK: ${canonical.servers.length} server entr${canonical.servers.length === 1 ? "y" : "ies"}.`);
 
 async function readJson(url) {
   const raw = await readFile(url, "utf8");
@@ -42,11 +43,18 @@ function validateRegistry(value, label, output) {
   }
 
   const metadata = isRecord(value.metadata) ? value.metadata : {};
+  const isScaffold = metadata.status === "scaffold";
   if (metadata.count !== undefined && metadata.count !== value.servers.length) {
     output.push(`${label} metadata.count must equal servers.length.`);
   }
   if (metadata.total !== undefined && metadata.total !== value.servers.length) {
     output.push(`${label} metadata.total must equal servers.length.`);
+  }
+  if (value.servers.length === 0 && !isScaffold) {
+    output.push(`${label} must not be empty unless metadata.status is "scaffold".`);
+  }
+  if (isScaffold && value.servers.length !== 0) {
+    output.push(`${label} metadata.status scaffold is only valid while servers is empty.`);
   }
 
   const keys = new Set();
@@ -161,6 +169,90 @@ function validateToolPinEnforcement(enforcement, label, output) {
   if (enforcement.notes !== undefined && typeof enforcement.notes !== "string") {
     output.push(`${label} curation.toolpinEnforcement.notes must be a string when present.`);
   }
+}
+
+async function validateGithubEnforcement(registry, label, output) {
+  if (!Array.isArray(registry.servers) || registry.servers.length === 0) return;
+  const token = process.env.GITHUB_TOKEN;
+  const claims = registry.servers
+    .map((entry, index) => ({ entry, index, curation: readCuration(entry) }))
+    .filter((item) => item.curation?.toolpinEnforcement?.status === "enforced");
+  if (!claims.length) return;
+
+  if (!token) {
+    const message = `${label} has enforced toolpinEnforcement claims but GITHUB_TOKEN is not available for GitHub API validation.`;
+    if (process.env.CI) output.push(message);
+    else console.warn(`curated registry check: warning: ${message}`);
+    return;
+  }
+
+  for (const claim of claims) {
+    const server = claim.entry.server;
+    const repo = githubRepo(server?.repository?.url);
+    const enforcement = claim.curation.toolpinEnforcement;
+    const entryLabel = `${label} servers[${claim.index}]`;
+    if (!repo) {
+      output.push(`${entryLabel} curation.toolpinEnforcement requires a GitHub repository URL for API validation.`);
+      continue;
+    }
+
+    const branch = await githubJson(`https://api.github.com/repos/${repo.owner}/${repo.name}/branches/${encodeURIComponent(enforcement.protectedBranch)}`, token);
+    if (!branch.ok) {
+      output.push(`${entryLabel} protected branch ${enforcement.protectedBranch} could not be verified: ${branch.status} ${branch.statusText}.`);
+      continue;
+    }
+    if (branch.body?.protected !== true) {
+      output.push(`${entryLabel} protected branch ${enforcement.protectedBranch} is not protected according to GitHub.`);
+    }
+
+    const protection = await githubJson(`https://api.github.com/repos/${repo.owner}/${repo.name}/branches/${encodeURIComponent(enforcement.protectedBranch)}/protection`, token);
+    if (!protection.ok) {
+      output.push(`${entryLabel} branch protection details could not be verified: ${protection.status} ${protection.statusText}.`);
+      continue;
+    }
+    const checks = requiredChecks(protection.body);
+    if (!checks.includes(enforcement.requiredCheck)) {
+      output.push(`${entryLabel} required check ${enforcement.requiredCheck} is not required on ${enforcement.protectedBranch}.`);
+    }
+
+    const workflowPath = String(enforcement.workflow).replace(/^\.github\/workflows\//, "");
+    const workflow = await githubJson(`https://api.github.com/repos/${repo.owner}/${repo.name}/contents/.github/workflows/${encodeURIComponent(workflowPath)}?ref=${encodeURIComponent(enforcement.protectedBranch)}`, token);
+    if (!workflow.ok) {
+      output.push(`${entryLabel} workflow ${enforcement.workflow} could not be verified on ${enforcement.protectedBranch}: ${workflow.status} ${workflow.statusText}.`);
+    }
+  }
+}
+
+async function githubJson(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  return { ok: response.ok, status: response.status, statusText: response.statusText, body };
+}
+
+function requiredChecks(protection) {
+  const statusChecks = isRecord(protection?.required_status_checks) ? protection.required_status_checks : {};
+  const contexts = Array.isArray(statusChecks.contexts) ? statusChecks.contexts.filter((item) => typeof item === "string") : [];
+  const checks = Array.isArray(statusChecks.checks)
+    ? statusChecks.checks.map((item) => isRecord(item) && typeof item.context === "string" ? item.context : undefined).filter(Boolean)
+    : [];
+  return [...new Set([...contexts, ...checks])];
+}
+
+function githubRepo(url) {
+  if (typeof url !== "string") return undefined;
+  const match = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/.]+)(?:\.git)?\/?$/);
+  return match ? { owner: match[1], name: match[2] } : undefined;
 }
 
 function readCuration(entry) {

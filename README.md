@@ -195,20 +195,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: OWNER/REPO@v0.1.0
+      - uses: proofofwork-agency/toolpin@v0.1.0
         with:
           live: "true"
           file: mcp-lock.json
 ```
 
-Replace `OWNER/REPO` with the public ToolPin action repository after it is
-tagged. By default, the checked-in composite Action installs ToolPin from the
+By default, the checked-in composite Action installs ToolPin from the
 action source via `$GITHUB_ACTION_PATH`, then runs `toolpin ci`.
 
 After npm publish, you can opt into npm installation with `toolpin-version`:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     toolpin-version: latest
     live: "true"
@@ -271,11 +270,11 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - Official MCP Registry and Docker MCP Catalog ingestion, with combined or source-specific views.
 - GitHub-hosted ToolPin Curated Registry scaffold under `registry/v0/servers`, ready for PR-reviewed recommended servers without a custom backend.
 - Repo-owned custom registries via `.toolpin/registries.json`; `official-compatible` registries can be installable, while broad `http-json` directory sources default to discovery-only.
-- Known registry notes for PulseMCP, Smithery, and Glama; adapters stay discovery-only until stable access, credentials, and normalization are configured.
+- Planned source notes for PulseMCP, Smithery, and Glama; they are hidden from normal fetch flows until stable adapters, credentials, and normalization are implemented.
 - Local cache at `.toolpin/registry-cache.json`.
 - Normalized package and remote metadata.
 - Search ranking over name, title, description, package type, transport, and repository.
-- Trust scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, unknown package types, and missing install targets.
+- Declared metadata review scoring for repository presence, namespace shape, pinned versions, OCI digests, MCPB hashes, HTTPS remotes, secrets, legacy transports, unknown package types, and missing install targets. Treat this as review triage, not verified trust.
 - Verification reports that derive a capability manifest, surface registry attestations, reject mutable OCI targets, reject MCPB packages without `fileSha256`, and optionally pin remote tool descriptions via a live MCP `tools/list` probe.
 - Version visibility via `toolpin versions <server>` and `toolpin outdated`: ToolPin compares the lockfile's pinned server version against known registry/cache versions, reports update availability, and lists recent previous versions. The TUI Overview and Install panels show locked/latest/update status for the selected client/scope.
 - Advisory tool-description scans flag deterministic review signals: agent-directed instructions, hidden/control characters, and tool-name shadowing in registry descriptions and verified live `tools/list` descriptions. These are advisory findings (warning or info level) for human review, not prompt-injection detection, sandboxing, or an install blocker.
@@ -284,9 +283,9 @@ then focus on examples that show lockfile drift prevention in real MCP projects.
 - `toolpin install --verify` persists the verified capability manifest in `mcp-lock.json`, including remote tool-description hashes when the live probe succeeds.
 - Config export for Claude/Cursor-style `mcpServers`, VS Code-style `servers`, Codex `config.toml` `[mcp_servers.*]` tables, OpenCode `mcp`, Windsurf/Cascade, Cline, Continue `config.yaml`, Gemini CLI, Zed `context_servers`, and Roo Code.
 - Install plans and `mcp-lock.json` v2 writes keyed by server/client, with per-entry `original`, `resolved`, `locked`, capability manifest, and `sha256-...` integrity metadata.
-- Install drift checks: if an existing lock entry changes version, selected target, generated client config, capability manifest, tool-description hash, or trust score (on decrease), install refuses until the lock is reviewed and updated with `toolpin lock` or `toolpin install --update-lock`.
-- Whole-lock digest pinning via `toolpin lock digest` and `toolpin ci --expect-digest`: computes a timestamp-insensitive canonical `sha256-...` over the complete lockfile server/client set. This is useful only when CI or another verifier gets the expected digest from a trusted out-of-band source; it is not a signature, provenance, sigstore, or self-protecting lockfile.
-- Detached lockfile signing via user-supplied Ed25519 keys: `toolpin lock sign --key private.pem` signs the canonical whole-lock digest into `mcp-lock.sig`, `toolpin lock verify-signature --key public.pem` verifies it, and `toolpin ci --signature mcp-lock.sig --public-key public.pem` fails closed before registry resolution. ToolPin does not generate or store keys; verification is meaningful only when the private key and public trust root are managed outside the repo/lockfile trust path.
+- Install drift checks: if an existing lock entry changes version, selected target, scope, generated client config, capability manifest, tool manifest hash, tool-description hash, or declared metadata review score (on decrease), install refuses until the lock is reviewed and updated with `toolpin lock` or `toolpin install --update-lock`.
+- Whole-lock digest pinning via `toolpin lock digest` and `toolpin ci --expect-digest`: computes a canonical `sha256-...` over the complete lockfile server/client set, including entry notes and entry timestamps while excluding top-level file metadata timestamps. This is useful only when CI or another verifier gets the expected digest from a trusted out-of-band source; it is not a signature, provenance, sigstore, or self-protecting lockfile.
+- Detached lockfile signing via user-supplied Ed25519 keys: `toolpin policy digest`, `toolpin lock key-fingerprint`, `toolpin lock sign --policy .toolpin/policy.json --key private.pem`, `toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem`, and `toolpin ci --signature mcp-lock.sig --public-key public.pem --policy .toolpin/policy.json` bind the signature to the lock digest, policy digest, public-key fingerprint, algorithm/schema, and `signedAt`. ToolPin does not generate or store keys; verification is meaningful only when the private key and public trust root are managed outside the repo/lockfile trust path.
 - Frozen lockfile checks via `toolpin ci`: re-resolves every locked server/client entry, verifies lock integrity, rejects drift, and never mutates the lockfile.
 - Local policy gate via optional `.toolpin/policy.json`: `toolpin install`, `toolpin ci`, TUI installs, and `toolpin policy check` can enforce trust minimums, source/client/server deny rules, denied package/transport/remote-host rules, and OCI/MCPB pin requirements.
 - Read-only secret hygiene via `toolpin secrets audit`: reports likely plaintext env/header secrets in installed client config files using registry `isSecret` metadata and known token prefixes. Findings are advisory and redacted; ToolPin does not resolve or print secret values.

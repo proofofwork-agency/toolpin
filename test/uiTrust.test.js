@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { riskTone, scoreBreakdown, trustBand, trustBarCells } from "../dist/tui/ui/trust.js";
+import { riskTone, trustDimensions, trustRiskTone, trustBand, trustBarCells } from "../dist/tui/ui/trust.js";
 
 test("trustBand maps score boundaries to neutral bands", () => {
   assert.equal(trustBand(39), "low");
@@ -16,6 +16,16 @@ test("riskTone maps score ranges to labels and bands", () => {
   assert.deepEqual(riskTone(69), { label: "REVIEW", band: "medium" });
   assert.deepEqual(riskTone(70), { label: "LOW RISK", band: "high" });
   assert.deepEqual(riskTone(100), { label: "LOW RISK", band: "high" });
+});
+
+test("trustRiskTone gates critical issues regardless of metadata score", () => {
+  const report = {
+    score: 74,
+    badges: ["source repo", "namespaced", "oci"],
+    issues: [{ severity: "critical", code: "mutable_oci_tag", message: "OCI image is mutable." }],
+  };
+
+  assert.deepEqual(trustRiskTone(report), { label: "UNVERIFIED", band: "low", tier: "unverified" });
 });
 
 test("trustBarCells returns a nine-cell rounded trust bar", () => {
@@ -35,26 +45,37 @@ test("trustBarCells returns a nine-cell rounded trust bar", () => {
   }
 });
 
-test("scoreBreakdown translates known trust badges and drops unknown badges", () => {
-  const breakdown = scoreBreakdown({
-    badges: [
-      "source repo",
-      "namespaced",
-      "npm",
-      "pinned version",
-      "https remote",
-      "requires secrets",
-      "latest",
-      "oci",
+test("trustDimensions reports gated trust pillars with metadata completeness", () => {
+  const dimensions = trustDimensions({
+    score: 45,
+    metadataCompleteness: 74,
+    tier: "unverified",
+    gates: [{ code: "mutable_oci_tag", message: "OCI image is mutable.", tier: "unverified" }],
+    badges: ["source repo", "namespaced", "oci", "pinned version"],
+    issues: [
+      { severity: "critical", code: "mutable_oci_tag", message: "OCI image is mutable." },
     ],
   });
 
-  assert.deepEqual(breakdown[0], { label: "base 50", tone: "base" });
-  assert.ok(breakdown.some((entry) => entry.label === "repo +8" && entry.tone === "positive"));
-  assert.ok(breakdown.some((entry) => entry.label === "namespaced +6" && entry.tone === "positive"));
-  assert.ok(breakdown.some((entry) => entry.label === "https +6" && entry.tone === "positive"));
-  assert.ok(breakdown.some((entry) => entry.label === "pinned +5" && entry.tone === "positive"));
-  assert.equal(breakdown.filter((entry) => entry.label === "supported type +5" && entry.tone === "positive").length, 1);
-  assert.ok(breakdown.some((entry) => entry.label === "secrets -6" && entry.tone === "negative"));
-  assert.equal(breakdown.some((entry) => entry.label.includes("latest")), false);
+  assert.deepEqual(dimensions.map((entry) => entry.label), ["provenance", "integrity", "reputation", "metadata"]);
+  assert.equal(dimensions.find((entry) => entry.label === "integrity").score, 25);
+  assert.equal(dimensions.find((entry) => entry.label === "metadata").score, 74);
+});
+
+test("trustDimensions uses trust report pillars when present", () => {
+  const dimensions = trustDimensions({
+    score: 58,
+    metadataCompleteness: 74,
+    tier: "conditional",
+    badges: [],
+    issues: [],
+    pillars: {
+      provenance: 55,
+      integrity: 50,
+      reputation: 45,
+      metadataCompleteness: 74,
+    },
+  });
+
+  assert.deepEqual(dimensions.map((entry) => entry.score), [55, 50, 45, 74]);
 });

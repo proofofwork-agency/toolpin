@@ -52,6 +52,7 @@ export interface TuiState {
   query: string;
   commandQuery: string;
   commandSelected: number;
+  sourceSelected: number;
   selected: number;
   versionSelections: Record<string, string>;
   installedVersionSelections: Record<string, string>;

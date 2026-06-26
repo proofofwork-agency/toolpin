@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan } from "./types.js";
+import { canonicalJson } from "./canonicalJson.js";
+import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan, ToolManifestHash } from "./types.js";
 
 export interface ToolDescriptionInput {
   name: string;
   description?: string;
+  inputSchema?: unknown;
 }
 
 const TOOLPIN_CAPABILITIES_META = "dev.toolpin/capabilities";
@@ -13,6 +15,14 @@ export function deriveCapabilityManifest(
   server: NormalizedServer,
   options: { toolDescriptionHash?: ToolDescriptionHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
 ): CapabilityManifest {
+  const toolManifestHash = options.toolDescriptionHash
+    ? {
+        algorithm: options.toolDescriptionHash.algorithm,
+        value: options.toolDescriptionHash.value,
+        toolCount: options.toolDescriptionHash.toolCount,
+        generatedAt: options.toolDescriptionHash.generatedAt,
+      }
+    : undefined;
   return {
     version: 1,
     serverName: server.name,
@@ -24,6 +34,7 @@ export function deriveCapabilityManifest(
     secrets: capabilitySecrets(server).sort((left, right) => `${left.source}:${left.name}`.localeCompare(`${right.source}:${right.name}`)),
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     toolDescriptionHash: options.toolDescriptionHash,
+    toolManifestHash,
     toolDescriptionScan: options.toolDescriptionScan,
   };
 }
@@ -35,7 +46,24 @@ export function hashToolDescriptions(tools: ToolDescriptionInput[], generatedAt 
       description: tool.description ?? "",
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
-  const value = createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+  const value = createHash("sha256").update(canonicalJson(normalized)).digest("hex");
+  return {
+    algorithm: "sha256",
+    value,
+    toolCount: normalized.length,
+    generatedAt,
+  };
+}
+
+export function hashToolManifests(tools: ToolDescriptionInput[], generatedAt = new Date().toISOString()): ToolManifestHash {
+  const normalized = tools
+    .map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: tool.inputSchema ?? {},
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const value = createHash("sha256").update(canonicalJson(normalized)).digest("hex");
   return {
     algorithm: "sha256",
     value,
@@ -109,7 +137,18 @@ export function isCapabilityManifest(value: unknown): value is CapabilityManifes
     Array.isArray(value.remoteHosts) &&
     Array.isArray(value.secrets) &&
     typeof value.generatedAt === "string" &&
+    (value.toolManifestHash === undefined || isToolManifestHash(value.toolManifestHash)) &&
     (value.toolDescriptionScan === undefined || isToolDescriptionScan(value.toolDescriptionScan))
+  );
+}
+
+function isToolManifestHash(value: unknown): value is ToolManifestHash {
+  return (
+    isRecord(value) &&
+    value.algorithm === "sha256" &&
+    typeof value.value === "string" &&
+    typeof value.toolCount === "number" &&
+    typeof value.generatedAt === "string"
   );
 }
 

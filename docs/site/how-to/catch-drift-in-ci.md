@@ -43,13 +43,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: OWNER/REPO@v0.1.0
+      - uses: proofofwork-agency/toolpin@v0.1.0
         with:
           file: mcp-lock.json
           live: "true"
 ```
 
-Replace `OWNER/REPO` after the public ToolPin action is tagged. The action
+The action
 builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
 
 ```bash
@@ -100,7 +100,7 @@ toolpin lock digest --file mcp-lock.json
 Store the digest as a CI variable or secret, then run:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     file: mcp-lock.json
     live: "true"
@@ -120,7 +120,7 @@ toolpin lock verify-signature --key public.pem --file mcp-lock.json --signature 
 Then in CI:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     file: mcp-lock.json
     live: "true"
@@ -135,7 +135,7 @@ The private key and trust root must be managed outside the pull request path.
 To enforce a non-default policy path:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     policy: security/toolpin-policy.json
 ```
@@ -143,7 +143,7 @@ To enforce a non-default policy path:
 To make CI skip policy enforcement explicitly:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     no-policy: "true"
 ```
@@ -151,7 +151,7 @@ To make CI skip policy enforcement explicitly:
 To re-run verification before comparing locked plans:
 
 ```yaml
-- uses: OWNER/REPO@v0.1.0
+- uses: proofofwork-agency/toolpin@v0.1.0
   with:
     live: "true"
     verify: "true"

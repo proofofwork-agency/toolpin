@@ -96,18 +96,66 @@ export interface NormalizedServer {
 
 export type RegistrySourceId = string;
 export type RegistrySourceMode = "installable" | "discovery";
-export type RegistrySourceType = "official" | "docker" | "official-compatible" | "http-json" | "known";
+export type SourceKind = "official" | "docker" | "glama" | "smithery" | "pulsemcp" | "custom";
+export type SourceStatus = "ready" | "disabled" | "auth-missing" | "discovery-only" | "fetch-error" | "stale";
+export type RegistrySourceType = SourceKind | "official-compatible" | "http-json" | "known";
+export type RegistryAdapterKind = "official-compatible" | "http-json" | "glama" | "smithery" | "pulsemcp";
 
 export interface RegistrySourceInfo {
   id: RegistrySourceId;
   label: string;
   type?: RegistrySourceType;
+  adapter?: RegistryAdapterKind;
   mode: RegistrySourceMode;
   trust: "canonical" | "curated" | "directory" | "private";
   enabled: boolean;
   authRequired: boolean;
   description: string;
   url?: string;
+  status?: SourceStatus;
+  setupHint?: string;
+}
+
+export interface RegistryFetchPageInfo {
+  fetchedPages: number;
+  maxPages: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  total?: number;
+}
+
+export interface RegistryFetchResult {
+  source: RegistrySourceInfo;
+  status: SourceStatus;
+  entries: RegistryEntry[];
+  pageInfo?: RegistryFetchPageInfo;
+  accepted: number;
+  skipped: number;
+  malformed: number;
+  failed: number;
+  lastError?: string;
+  fetchedAt: string;
+}
+
+export interface RegistryCachePartition {
+  source: RegistrySourceInfo;
+  status: SourceStatus;
+  generatedAt: string;
+  ttlMs?: number;
+  entries: RegistryEntry[];
+  pageInfo?: RegistryFetchPageInfo;
+  accepted: number;
+  skipped: number;
+  malformed: number;
+  failed: number;
+  lastError?: string;
+}
+
+export interface RegistryCacheFileV2 {
+  schema: "dev.toolpin.registry-cache.v2";
+  generatedAt: string;
+  ttlMs: number;
+  sources: Record<string, RegistryCachePartition>;
 }
 
 export interface TrustIssue {
@@ -116,8 +164,28 @@ export interface TrustIssue {
   message: string;
 }
 
+export type TrustTier = "verified" | "conditional" | "unverified" | "blocked";
+
+export interface TrustGate {
+  code: string;
+  message: string;
+  tier: "unverified" | "blocked";
+}
+
 export interface TrustReport {
   score: number;
+  overallScore?: number;
+  metadataCompleteness?: number;
+  tier?: TrustTier;
+  capReason?: string;
+  vetoes?: TrustGate[];
+  gates?: TrustGate[];
+  pillars?: {
+    provenance: number;
+    integrity: number;
+    reputation: number;
+    metadataCompleteness: number;
+  };
   badges: string[];
   issues: TrustIssue[];
 }
@@ -139,10 +207,18 @@ export interface CapabilityManifest {
   secrets: CapabilitySecret[];
   generatedAt: string;
   toolDescriptionHash?: ToolDescriptionHash;
+  toolManifestHash?: ToolManifestHash;
   toolDescriptionScan?: ToolDescriptionScan;
 }
 
 export interface ToolDescriptionHash {
+  algorithm: "sha256";
+  value: string;
+  toolCount: number;
+  generatedAt: string;
+}
+
+export interface ToolManifestHash {
   algorithm: "sha256";
   value: string;
   toolCount: number;

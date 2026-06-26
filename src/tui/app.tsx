@@ -8,7 +8,7 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "../i
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
-import { fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "../registry.js";
+import { fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache } from "../registry.js";
 import { searchServers } from "../search.js";
 import { testServer, type ServerTestResult } from "../tester.js";
 import type { NormalizedServer } from "../types.js";
@@ -61,6 +61,7 @@ import {
   SourcesView,
 } from "./views/panels.js";
 import { InstalledServerDetails, InstalledServersView } from "./views/installed.js";
+import { trustRiskTone } from "./ui/trust.js";
 
 export function MpmTui() {
   const { exit } = useApp();
@@ -73,6 +74,7 @@ export function MpmTui() {
     query: "github",
     commandQuery: "",
     commandSelected: 0,
+    sourceSelected: 0,
     selected: 0,
     versionSelections: {},
     installedVersionSelections: {},
@@ -143,21 +145,19 @@ export function MpmTui() {
   async function loadData(mode: DataMode, query = state.query, sourceMode = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined, dataMode: mode }));
     try {
-      const registrySources = await listRegistrySources().catch(() => REGISTRY_SOURCES);
+      const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
       const entries = mode === "live"
         ? await fetchRegistry({ maxPages: 4, search: query || undefined, source: sourceMode })
         : await readCache().then(async (cached) => {
             if (!cacheHasSource(cached, sourceMode)) {
-              const fetched = await fetchRegistry({ maxPages: 3, search: query || undefined, source: sourceMode });
-              await writeCache(fetched);
-              return fetched;
+              const fetched = await refreshRegistryCache({ maxPages: 3, search: query || undefined, source: sourceMode });
+              return fetched.entries;
             }
             return cached;
           }).catch(async () => {
-            const fetched = await fetchRegistry({ maxPages: 3, search: query || undefined, source: sourceMode });
-            await writeCache(fetched);
-            return fetched;
-          });
+            const fetched = await refreshRegistryCache({ maxPages: 3, search: query || undefined, source: sourceMode });
+            return fetched.entries;
+      });
       const servers = normalizeEntries(entries);
       const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       void refreshInstalledRows(servers, lockfile);
@@ -169,7 +169,6 @@ export function MpmTui() {
         lockfile,
         selected: 0,
         testResult: undefined,
-        commandLog: undefined,
         versionSelections: pruneVersionSelections(prev.versionSelections, servers),
         resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
@@ -187,30 +186,37 @@ export function MpmTui() {
     }
   }
 
-  async function refreshCache(): Promise<void> {
+  async function refreshCache(source = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
-      const registrySources = await listRegistrySources().catch(() => REGISTRY_SOURCES);
-      const entries = await fetchRegistry({ maxPages: 6, search: state.query || undefined, source: state.sourceMode });
-      await writeCache(entries);
+      const fetched = await refreshRegistryCache({ maxPages: 6, search: state.query || undefined, source });
+      const entries = await readCache().catch(() => fetched.entries);
+      const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
       const servers = normalizeEntries(entries);
       const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const ingestLog = fetched.lastError ? {
+        title: "ingest",
+        command: "toolpin ingest",
+        ok: fetched.entries.length > 0,
+        lines: [`cached ${fetched.entries.length} ${source} entries`, fetched.lastError],
+      } : undefined;
       void refreshInstalledRows(servers, lockfile);
       setState((prev) => ({
         ...prev,
         entries,
         registrySources,
-        servers: filterBySource(servers, state.sourceMode),
+        servers: filterBySource(servers, source),
         lockfile,
         selected: 0,
         testResult: undefined,
-        commandLog: undefined,
         versionSelections: pruneVersionSelections(prev.versionSelections, servers),
         resultLimit: DEFAULT_RESULT_LIMIT,
         loading: false,
         error: undefined,
         dataMode: "cache",
-        lastAction: `ingested ${entries.length} ${state.sourceMode} versions`,
+        sourceMode: source,
+        lastAction: `ingested ${fetched.entries.length} ${source} versions`,
+        commandLog: ingestLog ?? prev.commandLog,
       }));
     } catch (error) {
       setState((prev) => ({ ...prev, loading: false, error: error instanceof Error ? error.message : String(error) }));
@@ -223,7 +229,7 @@ export function MpmTui() {
       let lockfile: Lockfile | undefined;
       for (const client of selectedClients(state.client)) {
         lockfile = await writeLockfile(
-          buildInstallPlan(selectedServer, client),
+          buildInstallPlan(selectedServer, client, { scope: state.installScope }),
           "mcp-lock.json",
           lockKey(selectedServer.name, client),
         );
@@ -314,7 +320,7 @@ export function MpmTui() {
     try {
       const files: string[] = [];
       let lockfile: Lockfile | undefined;
-      const plans = targetClients.map((client) => buildInstallPlan(server, client));
+      const plans = targetClients.map((client) => buildInstallPlan(server, client, { scope }));
       const policyViolations = [];
       for (const plan of plans) {
         const policy = await enforcePolicy(plan);
@@ -921,7 +927,8 @@ export function MpmTui() {
             command: commandLine,
             ok: true,
             lines: selectedResult ? [
-              `trust score: ${selectedResult.trust.score}`,
+              `trust tier: ${trustRiskTone(selectedResult.trust).label}`,
+              `metadata completeness: ${selectedResult.trust.score}`,
               `badges: ${selectedResult.trust.badges.join(", ") || "none"}`,
               ...selectedResult.trust.issues.slice(0, 4).map((issue) => `${issue.severity}: ${issue.message}`),
             ] : [],
@@ -1205,6 +1212,26 @@ export function MpmTui() {
       return;
     }
 
+    if (state.view === "help") {
+      if (key.escape) {
+        switchToView("discover");
+        return;
+      }
+      if (key.tab) {
+        switchToView(nextEnabledView(state.view));
+        return;
+      }
+      if (input === "q") {
+        exit();
+        return;
+      }
+      if (input === "h" || input === "?") {
+        switchToView("discover");
+        return;
+      }
+      return;
+    }
+
     if (key.escape && state.view !== "discover") {
       switchToView("discover");
       return;
@@ -1221,6 +1248,14 @@ export function MpmTui() {
       dispatchInstalled({ type: "move", delta: 1 });
       return;
     }
+    if (state.view === "sources" && (key.upArrow || input === "k")) {
+      setState((prev) => ({ ...prev, sourceSelected: Math.max(0, prev.sourceSelected - 1) }));
+      return;
+    }
+    if (state.view === "sources" && (key.downArrow || input === "j")) {
+      setState((prev) => ({ ...prev, sourceSelected: Math.min(Math.max(0, sourceRows(prev.registrySources).length - 1), prev.sourceSelected + 1) }));
+      return;
+    }
     if (key.upArrow || input === "k") {
       setState((prev) => ({ ...prev, selected: Math.max(0, prev.selected - 1), pendingRemove: undefined, testResult: undefined, commandLog: undefined }));
       return;
@@ -1230,7 +1265,10 @@ export function MpmTui() {
       return;
     }
     if (key.return) {
-      if ((state.view === "discover" || state.view === "details") && selectedServer) {
+      if (state.view === "sources") {
+        const source = sourceRows(state.registrySources)[state.sourceSelected];
+        if (source?.enabled) void loadData(state.dataMode, state.query, source.id);
+      } else if ((state.view === "discover" || state.view === "details") && selectedServer) {
         switchToView("plan");
       } else if (state.view === "plan" && selectedServer) {
         beginInstallFlow();
@@ -1249,10 +1287,16 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, inputMode: "command", commandQuery: "", commandSelected: 0 }));
         break;
       case "r":
-        void loadData(state.dataMode);
+        if (state.view === "sources") {
+          const source = sourceRows(state.registrySources)[state.sourceSelected];
+          void refreshCache(source?.id ?? state.sourceMode);
+        } else {
+          void loadData(state.dataMode);
+        }
         break;
       case "R":
-        resetViewDefaults();
+        if (state.view === "sources") void refreshCache("all");
+        else resetViewDefaults();
         break;
       case "I":
         switchToView("installed");
@@ -1550,6 +1594,7 @@ export function MpmTui() {
               sources={state.registrySources}
               entries={state.entries}
               activeSource={state.sourceMode}
+              selectedSource={state.sourceSelected}
               dataMode={state.dataMode}
               width={width - 4}
               height={paneHeight}
@@ -1615,6 +1660,22 @@ export function MpmTui() {
       <Footer view={state.view} inputMode={state.inputMode} width={width} />
     </Box>
   );
+}
+
+function sourceRows(sources: TuiState["registrySources"]): TuiState["registrySources"] {
+  return [...sources].sort((left, right) => (
+    Number(right.enabled) - Number(left.enabled)
+    || sourceTrustRank(left.trust) - sourceTrustRank(right.trust)
+    || (left.mode === right.mode ? 0 : left.mode === "installable" ? -1 : 1)
+    || left.label.localeCompare(right.label)
+  ));
+}
+
+function sourceTrustRank(trust: TuiState["registrySources"][number]["trust"]): number {
+  if (trust === "canonical") return 0;
+  if (trust === "curated") return 1;
+  if (trust === "directory") return 2;
+  return 3;
 }
 
 function useTerminalSize(stdout: ReturnType<typeof useStdout>["stdout"]): { width: number; height: number } {

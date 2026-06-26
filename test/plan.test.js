@@ -46,7 +46,7 @@ test("writeLockfile writes v2 entries with stable integrity metadata", async () 
   });
 });
 
-test("computeLockfileDigest is stable across timestamp churn", async () => {
+test("computeLockfileDigest ignores top-level metadata timestamps but covers entry timestamps", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
     await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/one" }), "claude"), lockfilePath);
@@ -54,10 +54,15 @@ test("computeLockfileDigest is stable across timestamp churn", async () => {
 
     const lockfile = await readLockfile(lockfilePath);
     const digest = computeLockfileDigest(lockfile);
-    const churned = {
+    const topLevelChurned = {
       ...lockfile,
       generatedAt: "2030-01-01T00:00:00.000Z",
       updatedAt: "2030-01-02T00:00:00.000Z",
+    };
+    assert.equal(computeLockfileDigest(topLevelChurned), digest);
+
+    const entryChurned = {
+      ...lockfile,
       servers: Object.fromEntries(
         Object.entries(lockfile.servers).map(([key, entry]) => [
           key,
@@ -75,7 +80,7 @@ test("computeLockfileDigest is stable across timestamp churn", async () => {
       ),
     };
 
-    assert.equal(computeLockfileDigest(churned), digest);
+    assert.notEqual(computeLockfileDigest(entryChurned), digest);
   });
 });
 
@@ -146,7 +151,7 @@ test("buildInstallPlan refuses discovery-only registry entries", () => {
   );
 });
 
-test("verifyAgainstLockfile ignores missing current tool-description hash", async () => {
+test("verifyAgainstLockfile rejects missing current tool-description hash", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
     const server = packageServer();
@@ -154,12 +159,12 @@ test("verifyAgainstLockfile ignores missing current tool-description hash", asyn
 
     const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
 
-    assert.equal(verification.ok, true);
-    assert.deepEqual(verification.messages, []);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool-description hash pin could not be refreshed"));
   });
 });
 
-test("verifyAgainstLockfile ignores missing current tool-description scan", async () => {
+test("verifyAgainstLockfile rejects missing current tool pin even when scan metadata is advisory", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
     const server = packageServer();
@@ -167,8 +172,8 @@ test("verifyAgainstLockfile ignores missing current tool-description scan", asyn
 
     const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
 
-    assert.equal(verification.ok, true);
-    assert.deepEqual(verification.messages, []);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool-description hash pin could not be refreshed"));
   });
 });
 

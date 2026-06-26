@@ -8,6 +8,7 @@ import type { NormalizedServer, RegistryRemote } from "./types.js";
 export interface ServerTestTool {
   name: string;
   description?: string;
+  inputSchema?: unknown;
 }
 
 export interface ServerTestResult {
@@ -59,7 +60,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
     }
 
     const response = await withTimeout(client.listTools(), timeoutMs, "Timed out listing MCP tools.");
-    const tools = response.tools.map((tool) => ({ name: tool.name, description: tool.description }));
+    const tools = response.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
 
     return {
       ok: true,
@@ -112,7 +113,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
     }
 
     const response = await withTimeout(client.listTools(), timeoutMs, "Timed out listing MCP tools.");
-    const tools = response.tools.map((tool) => ({ name: tool.name, description: tool.description }));
+    const tools = response.tools.map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
 
     return {
       ok: true,

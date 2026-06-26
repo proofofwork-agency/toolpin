@@ -14,10 +14,14 @@ const CLI = path.resolve("dist", "cli.js");
 
 test("signLockfile and verifyLockfileSignature round-trip with user-supplied Ed25519 keys", async () => {
   await withSignedLock(async ({ privateKeyPath, publicKeyPath }) => {
-    const envelope = await signLockfile("mcp-lock.json", privateKeyPath, "mcp-lock.sig");
-    const report = await verifyLockfileSignature("mcp-lock.json", publicKeyPath, "mcp-lock.sig");
+    await writeFile(".toolpin-policy.json", JSON.stringify({ version: 1, minTrustScore: 1 }), "utf8");
+    const envelope = await signLockfile("mcp-lock.json", privateKeyPath, "mcp-lock.sig", { policyPath: ".toolpin-policy.json" });
+    const report = await verifyLockfileSignature("mcp-lock.json", publicKeyPath, "mcp-lock.sig", { policyPath: ".toolpin-policy.json" });
 
     assert.equal(envelope.algorithm, "ed25519");
+    assert.equal(envelope.version, 2);
+    assert.ok(envelope.policyDigest);
+    assert.ok(envelope.publicKeyFingerprint);
     assert.equal(report.ok, true);
     assert.equal(report.lockfileDigest, envelope.lockfileDigest);
   });
@@ -57,7 +61,7 @@ test("verifyLockfileSignature rejects the wrong public key", async () => {
     const report = await verifyLockfileSignature("mcp-lock.json", "wrong-public.pem", "mcp-lock.sig");
 
     assert.equal(report.ok, false);
-    assert.equal(report.message, "Signature verification failed.");
+    assert.match(report.message, /Public key fingerprint mismatch/);
   });
 });
 
@@ -71,7 +75,7 @@ test("verifyLockfileSignature rejects unexpected algorithms", async () => {
   });
 });
 
-test("verifyLockfileSignature does not trust signedAt for verification decisions", async () => {
+test("verifyLockfileSignature rejects signedAt tampering", async () => {
   await withSignedLock(async ({ publicKeyPath }) => {
     const envelope = JSON.parse(await readFile("mcp-lock.sig", "utf8"));
     envelope.signedAt = "1999-01-01T00:00:00.000Z";
@@ -79,7 +83,21 @@ test("verifyLockfileSignature does not trust signedAt for verification decisions
 
     const report = await verifyLockfileSignature("mcp-lock.json", publicKeyPath, "mcp-lock.sig");
 
-    assert.equal(report.ok, true);
+    assert.equal(report.ok, false);
+    assert.equal(report.message, "Signature verification failed.");
+  });
+});
+
+test("verifyLockfileSignature rejects policy tampering after signing", async () => {
+  await withSignedLock(async ({ privateKeyPath, publicKeyPath }) => {
+    await writeFile("policy.json", JSON.stringify({ version: 1, minTrustScore: 1 }), "utf8");
+    await signLockfile("mcp-lock.json", privateKeyPath, "mcp-lock.sig", { policyPath: "policy.json" });
+    await writeFile("policy.json", JSON.stringify({ version: 1, minTrustScore: 99 }), "utf8");
+
+    const report = await verifyLockfileSignature("mcp-lock.json", publicKeyPath, "mcp-lock.sig", { policyPath: "policy.json" });
+
+    assert.equal(report.ok, false);
+    assert.match(report.message, /Policy digest mismatch/);
   });
 });
 
@@ -97,10 +115,16 @@ test("CLI lock sign and verify-signature use detached signature files", async ()
     const { privateKeyPath, publicKeyPath } = await writeKeys();
     await writeLockfile(buildInstallPlan(packageServer(), "claude"));
 
-    const signResult = await execFileAsync(process.execPath, [CLI, "lock", "sign", "--key", privateKeyPath, "--signature", "mcp-lock.sig"]);
-    assert.match(signResult.stdout, /Signed mcp-lock\.json/);
+    await writeFile("policy.json", JSON.stringify({ version: 1, minTrustScore: 1 }), "utf8");
 
-    const verifyResult = await execFileAsync(process.execPath, [CLI, "lock", "verify-signature", "--key", publicKeyPath, "--signature", "mcp-lock.sig"]);
+    const signResult = await execFileAsync(process.execPath, [CLI, "lock", "sign", "--policy", "policy.json", "--key", privateKeyPath, "--signature", "mcp-lock.sig"]);
+    assert.match(signResult.stdout, /Signed mcp-lock\.json/);
+    assert.match(signResult.stdout, /policy\s+sha256-/);
+
+    const fingerprintResult = await execFileAsync(process.execPath, [CLI, "lock", "key-fingerprint", "--public-key", publicKeyPath]);
+    assert.match(fingerprintResult.stdout, /^sha256-/);
+
+    const verifyResult = await execFileAsync(process.execPath, [CLI, "lock", "verify-signature", "--policy", "policy.json", "--public-key", publicKeyPath, "--signature", "mcp-lock.sig"]);
     assert.match(verifyResult.stdout, /OK Signature valid/);
   });
 });

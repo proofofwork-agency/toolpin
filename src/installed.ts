@@ -285,7 +285,7 @@ async function mutateInstalledRow(
   const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
   const planned = mutationPlan(row, server, action, lockfilePath);
   const dryRun = options.dryRun === true;
-  const { plan, verification } = await buildCheckedPlan(server, row.client, options);
+  const { plan, verification } = await buildCheckedPlan(server, row.client, row.scope, options);
 
   if (dryRun) {
     return {
@@ -333,6 +333,7 @@ async function mutateInstalledRow(
 async function buildCheckedPlan(
   server: NormalizedServer,
   client: ClientName,
+  scope: InstallScope,
   options: InstalledLifecycleOptions,
 ): Promise<{ plan: InstallPlan; verification?: VerificationReport }> {
   let capabilityManifest: CapabilityManifest | undefined;
@@ -351,7 +352,7 @@ async function buildCheckedPlan(
     capabilityManifest = verification.capabilityManifest;
   }
 
-  const plan = buildInstallPlan(server, client, { capabilityManifest });
+  const plan = buildInstallPlan(server, client, { capabilityManifest, scope });
   if (options.enforcePolicy !== false) {
     const report = await enforcePolicy(plan, options.policyPath ?? ".toolpin/policy.json");
     if (!report.ok) {

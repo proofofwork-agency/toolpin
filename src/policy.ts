@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { canonicalJson } from "./canonicalJson.js";
 import { isClientName, type ClientName } from "./config.js";
 import type { InstallPlan } from "./plan.js";
 import type { RegistrySourceId } from "./types.js";
@@ -63,6 +65,28 @@ export async function readPolicy(path = ".toolpin/policy.json"): Promise<PolicyC
     }
     throw error;
   }
+}
+
+export async function readPolicyDigest(path = ".toolpin/policy.json"): Promise<string | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Invalid policy JSON in ${path}: ${error.message}`);
+    }
+    throw error;
+  }
+  const policy = parsePolicy(parsed, path);
+  return `sha256-${createHash("sha256").update(canonicalJson(policy)).digest("base64")}`;
 }
 
 export async function enforcePolicy(plan: InstallPlan, path = ".toolpin/policy.json"): Promise<PolicyReport> {

@@ -7,6 +7,10 @@ website/build/
 .contextrelay/
 .engram/
 .watcher/
+.codex/
+.vscode/
+TPN-UI/
+opencode-main/
 
 # Local environment and package-manager secrets.
 .env

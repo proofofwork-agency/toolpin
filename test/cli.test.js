@@ -11,11 +11,17 @@ import { buildInstallPlan, readLockfile, writeLockfile } from "../dist/plan.js";
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("dist", "cli.js");
 
-test("CLI rejects known disabled registry sources before fetching", async () => {
-  await assert.rejects(
-    () => execFileAsync(process.execPath, [CLI, "search", "github", "--source", "smithery"]),
-    /--source smithery is known but not enabled yet/,
-  );
+test("CLI lists directory sources as discovery-only instead of disabled", async () => {
+  await withTempCwd(async () => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "registry", "list", "--json"]);
+    const parsed = JSON.parse(stdout);
+    const smithery = parsed.sources.find((source) => source.id === "smithery");
+
+    assert.equal(stderr, "");
+    assert.equal(smithery.mode, "discovery");
+    assert.equal(smithery.status, "discovery-only");
+    assert.equal(smithery.adapter, "smithery");
+  });
 });
 
 test("CLI search --json writes parseable JSON to stdout only", async () => {
@@ -79,19 +85,41 @@ test("CLI boolean flags do not consume positional arguments", async () => {
   });
 });
 
-test("CLI treats unknown double-dash flags as boolean for positional parsing", async () => {
+test("CLI rejects unknown double-dash flags with a clear parser error", async () => {
   await withTempCwd(async () => {
-    const { stdout } = await execFileAsync(process.execPath, [
-      CLI,
-      "remove",
-      "--future-boolean",
-      "io.github/example",
-      "--client",
-      "claude",
-    ]);
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [
+        CLI,
+        "remove",
+        "--future-boolean",
+        "io.github/example",
+        "--client",
+        "claude",
+      ]),
+      /Unknown flag for remove: --future-boolean/,
+    );
+  });
+});
 
-    assert.match(stdout, /Remove/);
-    assert.match(stdout, /server\s+io\.github\/example/);
+test("CLI accepts --flag=value syntax and suggests flag typos", async () => {
+  await withTempCwd(async () => {
+    const { stdout } = await execFileAsync(process.execPath, [CLI, "list", "--scope=global", "--client=continue", "--json"]);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.checked, 1);
+
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "list", "--scoep=global"]),
+      /Unknown flag for list: --scoep\. Did you mean --scope\?/,
+    );
+  });
+});
+
+test("CLI search help is universal and does not execute a search", async () => {
+  await withTempCwd(async (dir) => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "search", "github", "--help"]);
+    assert.match(stdout, /^Usage: toolpin search /);
+    assert.equal(stderr, "");
+    assert.deepEqual(await readdir(dir), []);
   });
 });
 

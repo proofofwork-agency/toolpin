@@ -5,7 +5,7 @@ import { type InstallScope } from "../../install.js";
 import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
-import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult } from "../../types.js";
+import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult, TrustTier } from "../../types.js";
 import { scoreServer } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
@@ -15,7 +15,7 @@ import { asObject, safeJson, shortPath, truncate } from "../format.js";
 import { computeMenuLayout, listWindowStart } from "../layout.js";
 import { commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
 import type { BrowseLayout, ClientSelection, CommandLog, InputMode, InstallFlow, TuiState, TuiVersionInfo, View } from "../types.js";
-import { riskTone, scoreBreakdown, trustBarCells } from "../ui/trust.js";
+import { trustDimensions, trustRiskTone, trustBarCells } from "../ui/trust.js";
 
 export function ChromeHeader({ state, resultCount, selectedServer, width }: { state: TuiState; resultCount: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
@@ -190,7 +190,7 @@ function GroupedOptionRow({ result, selected = false, dimmed, width, category }:
         <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
         <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
-        <TrustMeter score={result.trust.score} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
+        <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={Math.max(9, Math.min(18, contentWidth - titleWidth - 4))} />
       </Text>
       <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
         <Text color={CHROME}>    project </Text>
@@ -211,7 +211,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{truncate(server.registrySource, 8).padEnd(8)} </Text>
       <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
       <Text color={CHROME}> </Text>
-      <TrustMeter score={result.trust.score} cells={meterWidth} />
+      <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={meterWidth} />
     </Text>
   );
 }
@@ -239,6 +239,7 @@ export function SourcesView({
   sources,
   entries,
   activeSource,
+  selectedSource,
   dataMode,
   width,
   height,
@@ -246,6 +247,7 @@ export function SourcesView({
   sources: RegistrySourceInfo[];
   entries: RegistryEntry[];
   activeSource: RegistrySourceId | "all";
+  selectedSource: number;
   dataMode: "cache" | "live";
   width: number;
   height: number;
@@ -268,15 +270,16 @@ export function SourcesView({
         <Text color={CHROME}>  </Text>
         <Text color={MUTED}>{connected.length} usable / {sources.length} known</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>g cycles usable sources, l toggles cache/live</Text>
+        <Text color={MUTED}>j/k select, Enter browse, r refresh source, R refresh all</Text>
       </Text>
       <Divider width={contentWidth} />
-      {visible.map((source) => (
+      {visible.map((source, index) => (
         <SourceRow
           key={source.id}
           source={source}
           count={counts.get(source.id) ?? 0}
           active={activeSource === source.id || (activeSource === "all" && source.enabled && source.mode === "installable")}
+          selected={index === selectedSource}
           width={contentWidth}
         />
       ))}
@@ -284,29 +287,30 @@ export function SourcesView({
       <Box flexGrow={1} />
       <Divider width={contentWidth} />
       <Text color={MUTED} wrap="truncate">
-        Disabled known directories need a fetch adapter before ToolPin can query them.
+        Auth-missing sources stay visible and keep stale cached partitions when refresh-all partially fails.
       </Text>
     </Box>
   );
 }
 
-function SourceRow({ source, count, active, width }: { source: RegistrySourceInfo; count: number; active: boolean; width: number }) {
+function SourceRow({ source, count, active, selected, width }: { source: RegistrySourceInfo; count: number; active: boolean; selected: boolean; width: number }) {
   const trustColorValue = source.trust === "canonical" ? OK : source.trust === "curated" ? BLUE : source.trust === "directory" ? WARN : MUTED;
-  const status = source.enabled ? "connected" : source.type === "known" ? "adapter missing" : "disabled";
-  const statusColor = source.enabled ? OK : CHROME;
+  const status = source.status ?? (source.enabled ? source.mode === "discovery" ? "discovery-only" : "ready" : "disabled");
+  const statusColor = status === "ready" ? OK : status === "auth-missing" || status === "fetch-error" || status === "stale" ? ERR : status === "discovery-only" ? WARN : CHROME;
   const auth = source.authRequired ? "auth required" : "no auth";
   const modeColor = source.mode === "installable" ? OK : WARN;
   const titleWidth = Math.max(16, Math.min(34, Math.floor(width * 0.26)));
   const meta = `${source.trust} / ${source.mode} / ${source.type ?? "custom"} / ${auth}`;
+  const rowColor = selected ? BLUE : active ? OK : CHROME;
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text wrap="truncate">
-        <Text color={active ? OK : CHROME}>{active ? "> " : ": "}</Text>
-        <Text bold={active} color={active ? OK : "white"}>{truncate(source.label, titleWidth).padEnd(titleWidth)}</Text>
+        <Text color={rowColor}>{selected ? "> " : active ? "* " : ": "}</Text>
+        <Text bold={selected || active} color={selected ? BLUE : active ? OK : "white"}>{truncate(source.label, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
         <Text color={trustColorValue}>{source.trust.padEnd(9)}</Text>
         <Text color={CHROME}> </Text>
-        <Text color={statusColor}>{status.padEnd(13)}</Text>
+        <Text color={statusColor}>{status.padEnd(14)}</Text>
         <Text color={CHROME}> </Text>
         <Text color={modeColor}>{source.mode}</Text>
         <Text color={CHROME}> </Text>
@@ -314,7 +318,7 @@ function SourceRow({ source, count, active, width }: { source: RegistrySourceInf
       </Text>
       <Text color={MUTED} wrap="truncate">
         <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
-        {truncate(source.enabled ? source.description || meta : `${source.description || meta} Not selectable until an adapter is implemented.`, Math.max(8, width - 18))}
+        {truncate(source.setupHint && status === "auth-missing" ? source.setupHint : source.description || meta, Math.max(8, width - 18))}
       </Text>
     </Box>
   );
@@ -323,7 +327,8 @@ function SourceRow({ source, count, active, width }: { source: RegistrySourceInf
 function sourceEntryCounts(entries: RegistryEntry[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const entry of entries) {
-    const source = entry.source ?? entry._meta?.source;
+    const meta = entry._meta?.["dev.toolpin/source"];
+    const source = entry.source ?? (meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>).source : undefined);
     if (typeof source === "string") counts.set(source, (counts.get(source) ?? 0) + 1);
   }
   return counts;
@@ -360,6 +365,19 @@ function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: 
       <Text color={color}>{"▓".repeat(cells.filled)}</Text>
       <Text color={CHROME}>{"░".repeat(cells.empty)}</Text>
       {showScore ? <Text color={color}>{" " + `${score}%`.padStart(4)}</Text> : null}
+    </Text>
+  );
+}
+
+function TrustTierMeter({ tier, score, issues, cells: cellCount = 9 }: { tier?: TrustTier; score: number; issues: SearchResult["trust"]["issues"]; cells?: number }) {
+  const tone = trustRiskTone({ score, issues, tier });
+  const filled = tierFill(tone.tier, cellCount);
+  const label = tone.label.length > 8 ? tone.label.slice(0, 8) : tone.label;
+  return (
+    <Text>
+      <Text color={tierColor(tone.tier)}>{"▓".repeat(filled)}</Text>
+      <Text color={CHROME}>{"░".repeat(Math.max(0, cellCount - filled))}</Text>
+      <Text color={tierColor(tone.tier)}> {label.padStart(8)}</Text>
     </Text>
   );
 }
@@ -410,8 +428,8 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   if (!result) return <EmptyPanel title="Overview" />;
   const server = selectedServer ?? result.server;
   const trust = scoreServer(server);
-  const risk = riskTone(trust.score);
-  const deltas = scoreBreakdown(trust);
+  const risk = trustRiskTone(trust);
+  const dimensions = trustDimensions(trust);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="overview" file="server.json" />
@@ -438,15 +456,21 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
       <Box flexDirection="column">
         <Text>
           <Text color={MUTED}>trust       </Text>
-          <Text color={trustColor(trust.score)}>{trust.score}%</Text>
+          <Text color={tierColor(risk.tier)}>{risk.label}</Text>
           <Text color={CHROME}>  </Text>
-          <TrustMeter score={trust.score} showScore={false} />
+          <TrustTierMeter tier={trust.tier} score={trust.score} issues={trust.issues} />
           <Text color={CHROME}>  </Text>
-          <Text color={MUTED}>{risk.label}</Text>
+          <Text color={MUTED}>metadata {trust.metadataCompleteness ?? trust.score}%</Text>
         </Text>
-        <Text color={MUTED} wrap="truncate">
-          breakdown  {deltas.map((delta) => delta.label).join("  ")}
-        </Text>
+        {trust.capReason ? <Text color={WARN} wrap="truncate">cap         {truncate(trust.capReason, width - 12)}</Text> : null}
+        {dimensions.map((dimension) => (
+          <Text key={dimension.label}>
+            <Text color={MUTED}>{dimension.label.padEnd(12)}</Text>
+            <Text color={trustColor(dimension.score)}>{String(dimension.score).padStart(3)}%</Text>
+            <Text color={CHROME}>  </Text>
+            <TrustMeter score={dimension.score} showScore={false} />
+          </Text>
+        ))}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
       <Spacer />
@@ -497,7 +521,7 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
       <PlanMetric label="target" value={targetLabel} width={width} valueColor={targetKind === "remote" ? OK : WARN} />
       {versionInfo ? <PlanMetric label="version" value={`selected ${versionInfo.selectedVersion} / locked ${versionInfo.lockedLabel} / latest ${versionInfo.latestVersion} / ${versionInfo.status}`} width={width} valueColor={versionInfo.selectedVersion === versionInfo.latestVersion ? OK : WARN} /> : null}
       {versionInfo && versionInfo.versions.length > 1 ? <PlanMetric label="versions" value={`${formatVersionChoices(versionInfo, 8)}  (v/V cycle)`} width={width} /> : null}
-      <PlanMetric label="trust" value={`${plan.trust.score} ${plan.trust.badges.join(", ") || "no badges"}`} width={width} valueColor={trustColor(plan.trust.score)} />
+      <PlanMetric label="trust" value={`${trustRiskTone(plan.trust).label} metadata ${plan.trust.score} ${plan.trust.badges.join(", ") || "no badges"}`} width={width} valueColor={tierColor(trustRiskTone(plan.trust).tier)} />
       <PlanMetric label="writes" value={client === "all" ? `${scopeLabel(installScope)} configs for ${targetClients.join(", ")} + mcp-lock.json` : `${scopeLabel(installScope)} ${client} config + mcp-lock.json`} width={width} />
       {targetClients.map((targetClient) => (
         <PlanMetric key={targetClient} label={targetClient} value={configTargetLabel(targetClient, installScope)} width={width} />
@@ -597,7 +621,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="not" text="ToolPin is not a catalog, runtime sandbox, gateway, or secret vault; it is the repo-owned install and governance layer." />
           <Spacer />
           <Text bold color={BLUE}>scoring</Text>
-          <HelpNote width={lineWidth} label="score" text="0-100 advisory trust score for review priority, not a security guarantee or install blocker." />
+          <HelpNote width={lineWidth} label="trust" text="Tier is gated by critical issues; score is 0-100 metadata completeness for review priority." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
           <HelpNote width={lineWidth} label="colors" text="Green is high confidence, yellow needs review, red means critical mutable or risky package evidence." />
           <Spacer />
@@ -1066,4 +1090,17 @@ function trustColor(score: number): string {
   if (score >= 80) return OK;
   if (score >= 60) return WARN;
   return ERR;
+}
+
+function tierColor(tier: TrustTier): string {
+  if (tier === "verified") return OK;
+  if (tier === "conditional") return WARN;
+  return ERR;
+}
+
+function tierFill(tier: TrustTier, cells: number): number {
+  if (tier === "verified") return cells;
+  if (tier === "conditional") return Math.max(1, Math.round(cells * 0.66));
+  if (tier === "unverified") return Math.max(1, Math.round(cells * 0.33));
+  return 0;
 }

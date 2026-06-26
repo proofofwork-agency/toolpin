@@ -8,21 +8,22 @@ import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, u
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
-import { enforcePolicy } from "./policy.js";
-import { CacheSchemaError, fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache, writeCache } from "./registry.js";
+import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_SIGNATURE_PATH } from "./constants.js";
+import { enforcePolicy, readPolicyDigest } from "./policy.js";
+import { BUILTIN_REGISTRY_SOURCES, CacheSchemaError, fetchRegistry, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, readCacheMetadata, refreshCache } from "./registry.js";
 import { searchServers } from "./search.js";
 import { scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
-import { signLockfile, verifyLockfileSignature } from "./signing.js";
+import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
-import { scoreServer } from "./trust.js";
+import { scoreServer, trustTier } from "./trust.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId, ToolDescriptionScan } from "./types.js";
 
-const args = process.argv.slice(2);
+const args = normalizeArgs(process.argv.slice(2));
 type ClientSelection = ClientName | "all";
 const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
 const VALUE_FLAGS = new Set([
@@ -42,7 +43,29 @@ const VALUE_FLAGS = new Set([
   "--timeout",
   "--version",
 ]);
+const KNOWN_FLAGS = new Set([
+  ...VALUE_FLAGS,
+  "--all",
+  "--dry-run",
+  "--global",
+  "-g",
+  "--help",
+  "-h",
+  "--json",
+  "--live",
+  "--no-policy",
+  "--project",
+  "-p",
+  "--sarif",
+  "--skip-live-verification",
+  "--skip-live-verify",
+  "--update-lock",
+  "--verify",
+  "-v",
+]);
 const OK_COLOR = "\x1b[32m";
+const WARN_COLOR = "\x1b[33m";
+const ERR_COLOR = "\x1b[31m";
 const CYAN_COLOR = "\x1b[36m";
 const MUTED_COLOR = "\x1b[90m";
 
@@ -54,6 +77,13 @@ main().catch((error) => {
 async function main(): Promise<void> {
   const command = args[0] ?? "help";
   const rest = args.slice(1);
+  if (command !== "help" && command !== "--help" && command !== "-h") {
+    validateFlags(command, rest);
+    if (isHelp(rest)) {
+      commandHelp(command);
+      return;
+    }
+  }
 
   switch (command) {
     case "version":
@@ -155,9 +185,10 @@ async function ingest(rest: string[]): Promise<void> {
   const limit = numberFlag(rest, "--limit", 100);
   const pages = numberFlag(rest, "--pages", 10);
   const source = sourceFlag(rest, "all");
-  const entries = await fetchRegistry({ limit, maxPages: pages, source });
-  await writeCache(entries);
+  const result = await refreshCache({ limit, maxPages: pages, source });
+  const entries = result.entries;
   console.log(`Cached ${entries.length} registry versions from ${source} in .toolpin/registry-cache.json`);
+  if (result.lastError) console.error(`Source diagnostics: ${result.lastError}`);
 }
 
 async function search(rest: string[]): Promise<void> {
@@ -181,7 +212,7 @@ async function search(rest: string[]): Promise<void> {
     printSubhead(`${server.name}@${server.version}`);
     printField("title", server.title);
     if (server.description) printField("about", truncate(server.description, 140));
-    printField("source", `${server.registrySource}  trust ${result.trust.score}`);
+    printField("source", `${server.registrySource}  trust ${trustTier(result.trust)}  metadata ${result.trust.score}`);
     printField("targets", `packages ${packages}; remotes ${remotes}`);
     if (result.trust.badges.length) printField("badges", result.trust.badges.join(", "));
   }
@@ -205,7 +236,7 @@ async function info(rest: string[]): Promise<void> {
   printField("packages", server.packageTypes.join(", ") || "none");
   printField("remotes", server.remoteTypes.join(", ") || "none");
   printField("registry", server.registrySource);
-  printField("trust", String(trust.score));
+  printField("trust", `${trustTier(trust)}  metadata ${trust.score}/100`);
   if (trust.badges.length) printField("badges", trust.badges.join(", "));
   for (const issue of trust.issues) {
     printBullet(`${issue.severity.toUpperCase()}: ${issue.message}`);
@@ -320,22 +351,34 @@ async function registry(rest: string[]): Promise<void> {
     throw new Error("Usage: toolpin registry list [--json]");
   }
 
-  const sources = await listRegistrySources();
+  const sources = await listRegistrySourceStatuses();
+  const cache = await readCacheMetadata().catch(() => undefined);
   if (hasFlag(rest, "--json")) {
-    console.log(JSON.stringify({ sources }, null, 2));
+    console.log(JSON.stringify({ sources, cache }, null, 2));
     return;
   }
 
   printHeader("Registry sources");
   for (const source of sources) {
+    const partition = cache?.sources[source.id];
     printSubhead(source.id);
     printField("label", source.label);
     printField("type", source.type ?? "unknown");
+    if (source.adapter) printField("adapter", source.adapter);
     printField("mode", source.mode);
+    printField("status", partition?.status ?? source.status ?? (source.enabled ? "ready" : "disabled"));
     printField("trust", source.trust);
     printField("enabled", source.enabled ? "yes" : "no");
     printField("auth", source.authRequired ? "required" : "none");
     if (source.url) printField("url", source.url);
+    if (partition) {
+      printField("cached", `${partition.entries.length}`);
+      printField("last fetched", partition.generatedAt);
+      printField("fetched", `accepted ${partition.accepted}, skipped ${partition.skipped}, malformed ${partition.malformed}, failed ${partition.failed}`);
+      if (partition.pageInfo) printField("pages", `${partition.pageInfo.fetchedPages}/${partition.pageInfo.maxPages} hasMore=${partition.pageInfo.hasMore}`);
+      if (partition.lastError) printField("last error", partition.lastError);
+    }
+    if (source.setupHint) printField("setup", source.setupHint);
     printField("about", source.description);
   }
 }
@@ -411,21 +454,26 @@ async function lock(rest: string[]): Promise<void> {
     await lockVerifySignature(rest.slice(1));
     return;
   }
+  if (rest[0] === "key-fingerprint") {
+    await lockKeyFingerprint(rest.slice(1));
+    return;
+  }
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
+  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock key-fingerprint --public-key public.pem [--json]\n       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
 
   const client = clientFlag(rest, "generic");
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
+  const scope = scopeFlag(rest, "project") as InstallScope;
   const server = await findServer(rest, name);
   let lockfile;
   if (client === "all") {
     for (const targetClient of PROJECT_CLIENTS) {
-      lockfile = await writeLockfile(buildInstallPlan(server, targetClient), path);
+      lockfile = await writeLockfile(buildInstallPlan(server, targetClient, { scope }), path);
     }
   } else {
-    lockfile = await writeLockfile(buildInstallPlan(server, client), path);
+    lockfile = await writeLockfile(buildInstallPlan(server, client, { scope }), path);
   }
   printHeader("Lockfile updated");
   printField("server", `${server.name}@${server.version}`);
@@ -433,8 +481,19 @@ async function lock(rest: string[]): Promise<void> {
   printField("entries", `${Object.keys(lockfile?.servers ?? {}).length} server/client entrie(s)`);
 }
 
+async function lockKeyFingerprint(rest: string[]): Promise<void> {
+  const keyPath = stringAnyFlag(rest, ["--public-key", "--key"], "");
+  if (!keyPath) throw new Error("Usage: toolpin lock key-fingerprint --public-key public.pem [--json]");
+  const fingerprint = await readPublicKeyFingerprint(keyPath);
+  if (hasFlag(rest, "--json")) {
+    console.log(JSON.stringify({ publicKey: keyPath, fingerprint }, null, 2));
+  } else {
+    console.log(fingerprint);
+  }
+}
+
 async function lockDigest(rest: string[]): Promise<void> {
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const digest = await readLockfileDigest(path);
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify({ file: path, digest }, null, 2));
@@ -445,32 +504,38 @@ async function lockDigest(rest: string[]): Promise<void> {
 
 async function lockSign(rest: string[]): Promise<void> {
   const keyPath = stringFlag(rest, "--key", "");
-  if (!keyPath) throw new Error("Usage: toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
-  const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
-  const envelope = await signLockfile(path, keyPath, signaturePath);
+  const policyPath = stringFlag(rest, "--policy", "");
+  if (!keyPath || !policyPath) throw new Error("Usage: toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
+  const signaturePath = stringFlag(rest, "--signature", DEFAULT_SIGNATURE_PATH);
+  const envelope = await signLockfile(path, keyPath, signaturePath, { policyPath });
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify({ file: path, signature: signaturePath, envelope }, null, 2));
   } else {
     printHeader(`Signed ${path}`);
     printField("file", path);
     printField("digest", envelope.lockfileDigest);
+    printField("policy", envelope.policyDigest ?? "none");
+    printField("key", envelope.publicKeyFingerprint);
     printField("signature", signaturePath);
   }
 }
 
 async function lockVerifySignature(rest: string[]): Promise<void> {
-  const keyPath = stringFlag(rest, "--key", "");
-  if (!keyPath) throw new Error("Usage: toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
-  const signaturePath = stringFlag(rest, "--signature", "mcp-lock.sig");
-  const report = await verifyLockfileSignature(path, keyPath, signaturePath);
+  const keyPath = stringAnyFlag(rest, ["--public-key", "--key"], "");
+  const policyPath = stringFlag(rest, "--policy", "");
+  if (!keyPath || !policyPath) throw new Error("Usage: toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
+  const signaturePath = stringFlag(rest, "--signature", DEFAULT_SIGNATURE_PATH);
+  const report = await verifyLockfileSignature(path, keyPath, signaturePath, { policyPath });
   if (hasFlag(rest, "--json")) {
     console.log(JSON.stringify({ file: path, signature: signaturePath, report }, null, 2));
   } else {
     printHeader(`${report.ok ? "OK" : "FAILED"} ${report.message.replace(/\.$/, "")}`);
     printField("file", path);
     printField("signature", signaturePath);
+    printField("policy", report.policyDigest ?? "none");
+    if (report.publicKeyFingerprint) printField("key", report.publicKeyFingerprint);
     printField("result", report.message);
   }
   if (!report.ok) process.exitCode = 1;
@@ -566,7 +631,7 @@ async function install(rest: string[]): Promise<void> {
   const scope = scopeFlag(rest, "project") as InstallScope;
   const updateLock = hasFlag(rest, "--update-lock");
   const verifyBeforeInstall = hasFlag(rest, "--verify");
-  const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
+  const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -590,7 +655,7 @@ async function install(rest: string[]): Promise<void> {
     verifiedCapabilityManifest = report.capabilityManifest;
   }
   const clients = client === "all" ? clientsForScope(scope) : [client];
-  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest }));
+  const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest, scope }));
   if (!hasFlag(rest, "--no-policy")) {
     const violations = [];
     for (const plan of plans) {
@@ -609,7 +674,7 @@ async function install(rest: string[]): Promise<void> {
   if (!updateLock) {
     const mismatches = [];
     for (const plan of plans) {
-      const verification = await verifyAgainstLockfile(plan, "mcp-lock.json");
+      const verification = await verifyAgainstLockfile(plan, DEFAULT_LOCKFILE_PATH);
       if (!verification.ok) {
         mismatches.push(`${verification.key}: ${verification.messages.join("; ")}`);
       }
@@ -626,13 +691,14 @@ async function install(rest: string[]): Promise<void> {
   printHeader("Install");
   printField("server", `${server.name}@${server.version}`, OK_COLOR);
   printField("registry", server.registrySource, CYAN_COLOR);
-  printField("trust", `${scoreServer(server).score}/100`, OK_COLOR);
+  const trust = scoreServer(server);
+  printField("trust", `${trustTier(trust)}  metadata ${trust.score}/100`, trustTier(trust) === "verified" ? OK_COLOR : trustTier(trust) === "conditional" ? WARN_COLOR : ERR_COLOR);
   printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? OK_COLOR : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
     const result = await installServerConfig(server, targetClient, scope);
-    await writeLockfile(plans[index], "mcp-lock.json");
+    await writeLockfile(plans[index], DEFAULT_LOCKFILE_PATH);
     printSubhead(`${result.client} ${result.scope}`);
     printField("config", `${result.action}: ${result.file}`, OK_COLOR);
     printField("lock", "mcp-lock.json updated", OK_COLOR);
@@ -840,17 +906,28 @@ async function ci(rest: string[]): Promise<void> {
     return;
   }
 
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const expectedDigest = stringFlag(rest, "--expect-digest", "");
   const signaturePath = stringFlag(rest, "--signature", "");
   const publicKeyPath = stringFlag(rest, "--public-key", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
-  const policyPath = stringFlag(rest, "--policy", ".toolpin/policy.json");
+  const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   const enforcePolicies = !hasFlag(rest, "--no-policy");
   const sarif = hasFlag(rest, "--sarif");
   if (signaturePath || publicKeyPath) {
     if (!signaturePath || !publicKeyPath) throw new Error("toolpin ci requires both --signature and --public-key when verifying a lock signature.");
-    const signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath);
+    let signature;
+    try {
+      signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath, { policyPath });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (sarif) {
+        console.log(JSON.stringify(sarifLog([ciSarifResult("ci_signature_failed", `Lockfile signature verification failed for ${path}: ${message}`, path)], { executionSuccessful: false }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
     if (!signature.ok) {
       if (sarif) {
         console.log(JSON.stringify(sarifLog([ciSarifResult("ci_signature_failed", `Lockfile signature verification failed for ${path}: ${signature.message}`, path)], { executionSuccessful: false }), null, 2));
@@ -874,6 +951,9 @@ async function ci(rest: string[]): Promise<void> {
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
     let verifiedCapabilityManifest: CapabilityManifest | undefined;
+    if (hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]) && lockedHasLivePins(locked)) {
+      throw new Error(`${locked.name} has live capability pins in ${path}; --skip-live-verification is not allowed for pinned CI entries.`);
+    }
     if (verifyBeforeUse) {
       const verification = await verifyServer(server, {
         liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
@@ -887,7 +967,7 @@ async function ci(rest: string[]): Promise<void> {
       }
       verifiedCapabilityManifest = verification.capabilityManifest;
     }
-    const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest });
+    const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest, scope: locked.scope ?? "project" });
     if (enforcePolicies) {
       const policy = await enforcePolicy(plan, policyPath);
       if (!policy.ok) {
@@ -918,8 +998,19 @@ async function ci(rest: string[]): Promise<void> {
 async function policy(rest: string[]): Promise<void> {
   const subcommand = rest[0] ?? "help";
   const values = rest.slice(1);
+  if (subcommand === "digest") {
+    const policyPath = stringFlag(values, "--policy", stringFlag(values, "--file", DEFAULT_POLICY_PATH));
+    const digest = await readPolicyDigest(policyPath);
+    if (!digest) throw new Error(`Policy file not found: ${policyPath}`);
+    if (hasFlag(values, "--json")) {
+      console.log(JSON.stringify({ file: policyPath, digest }, null, 2));
+    } else {
+      console.log(digest);
+    }
+    return;
+  }
   if (subcommand !== "check") {
-    throw new Error(`Usage: toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
+    throw new Error(`Usage: toolpin policy digest [--policy .toolpin/policy.json] [--json]\n       toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
   }
 
   const name = positional(values)[0];
@@ -927,7 +1018,7 @@ async function policy(rest: string[]): Promise<void> {
 
   const client = clientFlag(values, "generic");
   const scope = scopeFlag(values, "project") as InstallScope;
-  const policyPath = stringFlag(values, "--policy", ".toolpin/policy.json");
+  const policyPath = stringFlag(values, "--policy", DEFAULT_POLICY_PATH);
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -1024,6 +1115,45 @@ function doctorHelp(): void {
   console.log("Usage: toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]");
 }
 
+function commandHelp(command: string): void {
+  switch (command) {
+    case "search":
+      console.log("Usage: toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]");
+      return;
+    case "ci":
+      ciHelp();
+      return;
+    case "doctor":
+      doctorHelp();
+      return;
+    case "list":
+    case "ls":
+    case "installed":
+      console.log(`Usage: toolpin list [--scope all|project|global] [--client ${CLIENT_USAGE}] [--json]`);
+      return;
+    case "remove":
+    case "uninstall":
+      console.log(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
+      return;
+    case "lock":
+      console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json]
+       toolpin lock digest [--file mcp-lock.json] [--json]
+       toolpin lock key-fingerprint --public-key public.pem [--json]
+       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]
+       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
+      return;
+    case "policy":
+      console.log(`Usage: toolpin policy digest [--policy .toolpin/policy.json] [--json]
+       toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
+      return;
+    case "tui":
+      console.log(`Usage: toolpin tui\n\nOpens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.`);
+      return;
+    default:
+      help();
+  }
+}
+
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
@@ -1096,11 +1226,13 @@ Lock and governance
   toolpin outdated [--file mcp-lock.json] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
+  toolpin policy digest [--policy .toolpin/policy.json] [--json]
   toolpin policy check <server> --client|-c <client|all> [--version <server-version>] [--policy .toolpin/policy.json]
-  toolpin lock <server> --client|-c <client|all> [--version <server-version>] [--file mcp-lock.json]
+  toolpin lock <server> --client|-c <client|all> [--version <server-version>] [--scope project|global] [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
-  toolpin lock sign --key private.pem [--signature mcp-lock.sig] [--json]
-  toolpin lock verify-signature --key public.pem [--signature mcp-lock.sig] [--json]
+  toolpin lock key-fingerprint --public-key public.pem [--json]
+  toolpin lock sign --policy .toolpin/policy.json --key private.pem [--signature mcp-lock.sig] [--json]
+  toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--signature mcp-lock.sig] [--json]
 
 Common options
   --source official|docker|all|id    choose registry source
@@ -1200,6 +1332,53 @@ function hasFlag(values: string[], flag: string): boolean {
   return values.includes(flag);
 }
 
+function normalizeArgs(values: string[]): string[] {
+  const normalized: string[] = [];
+  for (const value of values) {
+    const equalIndex = value.indexOf("=");
+    if (value.startsWith("-") && equalIndex > 1) {
+      normalized.push(value.slice(0, equalIndex), value.slice(equalIndex + 1));
+    } else {
+      normalized.push(value);
+    }
+  }
+  return normalized;
+}
+
+function validateFlags(command: string, values: string[]): void {
+  for (const value of values) {
+    if (!value.startsWith("-")) continue;
+    if (KNOWN_FLAGS.has(value)) continue;
+    const suggestion = nearestFlag(value);
+    throw new Error(`Unknown flag for ${command}: ${value}.${suggestion ? ` Did you mean ${suggestion}?` : ""}`);
+  }
+}
+
+function nearestFlag(value: string): string | undefined {
+  let best: { flag: string; distance: number } | undefined;
+  for (const flag of KNOWN_FLAGS) {
+    const distance = editDistance(value, flag);
+    if (!best || distance < best.distance) best = { flag, distance };
+  }
+  return best && best.distance <= 3 ? best.flag : undefined;
+}
+
+function editDistance(left: string, right: string): number {
+  const rows = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
+  for (let i = 0; i <= left.length; i += 1) rows[i][0] = i;
+  for (let j = 0; j <= right.length; j += 1) rows[0][j] = j;
+  for (let i = 1; i <= left.length; i += 1) {
+    for (let j = 1; j <= right.length; j += 1) {
+      rows[i][j] = Math.min(
+        rows[i - 1][j] + 1,
+        rows[i][j - 1] + 1,
+        rows[i - 1][j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  return rows[left.length][right.length];
+}
+
 function hasAnyFlag(values: string[], flags: string[]): boolean {
   return flags.some((flag) => hasFlag(values, flag));
 }
@@ -1237,7 +1416,13 @@ function clientFlag(values: string[], fallback: ClientName): ClientSelection {
 
 function sourceFlag(values: string[], fallback: RegistrySourceId | "all"): RegistrySourceId | "all" {
   const value = stringFlag(values, "--source", fallback);
-  if (/^[a-zA-Z0-9._/-]+$/.test(value)) return value as RegistrySourceId | "all";
+  if (/^[a-zA-Z0-9._/-]+$/.test(value)) {
+    const builtIn = BUILTIN_REGISTRY_SOURCES.find((source) => source.id === value);
+    if (builtIn && !builtIn.enabled) {
+      throw new Error(`--source ${value} is a planned source for v0.1.0 and is not enabled yet. Run \`toolpin registry list\` to see available sources.`);
+    }
+    return value as RegistrySourceId | "all";
+  }
   throw new Error("--source must be all or a registry source id");
 }
 
@@ -1275,6 +1460,10 @@ function positional(values: string[]): string[] {
     result.push(value);
   }
   return result;
+}
+
+function lockedHasLivePins(locked: { capabilityManifest?: CapabilityManifest }): boolean {
+  return Boolean(locked.capabilityManifest?.toolDescriptionHash || locked.capabilityManifest?.toolManifestHash);
 }
 
 function truncate(value: string, maxLength: number): string {

@@ -51,7 +51,7 @@ export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: Doct
     let foundConfig = false;
     let foundUnreadable = false;
 
-    for (const currentScope of scopesToCheck(scope)) {
+    for (const currentScope of scopesToCheck(scope, plan)) {
       let target: ReturnType<typeof resolveConfigTarget>;
       try {
         target = resolveConfigTarget(plan.client, currentScope);
@@ -127,8 +127,9 @@ export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: Doct
   };
 }
 
-function scopesToCheck(scope: DoctorScope): InstallScope[] {
-  return scope === "all" ? ["project", "global"] : [scope];
+function scopesToCheck(scope: DoctorScope, plan: InstallPlan): InstallScope[] {
+  if (scope !== "all") return [scope];
+  return plan.scope ? [plan.scope] : ["project", "global"];
 }
 
 function expectedServerConfig(plan: InstallPlan): unknown {

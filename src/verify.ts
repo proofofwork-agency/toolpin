@@ -1,5 +1,5 @@
 import { selectLaunchTarget } from "./config.js";
-import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
 import type { Attestation, CapabilityManifest, NormalizedServer, TrustIssue } from "./types.js";
@@ -53,9 +53,11 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
       const result = await testServer(server, options.timeoutMs);
       if (result.ok) {
         const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
+        const toolManifestHash = hashToolManifests(result.tools, generatedAt);
         const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
         capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
-        badges.push("tool-description-pinned");
+        capabilityManifest.toolManifestHash = toolManifestHash;
+        badges.push("tool-manifest-pinned");
         if (toolDescriptionScan.findings.length) {
           badges.push("tool-description-scan-advisory");
           issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));

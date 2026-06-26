@@ -109,7 +109,7 @@ Net: threats (1) and (2) are existential because they're client-owned;
 
 - **Public naming is now aligned to the live repo.** Product "ToolPin", binary aliases `toolpin`/`tpn`, and the GitHub repository `proofofwork-agency/toolpin` are coherent enough for public use.
 - **Public distribution is still unfinished.** Package metadata now supports the public path `npm install -g toolpin`, but `npm view toolpin` returned 404 on 2026-06-25. Until the first publish, the npm install command describes the intended release path, not a currently usable package.
-- **GitHub Action publication is still unfinished.** `action.yml` exists and installs ToolPin from the action source by default, with npm installation available after publish via `toolpin-version`; consumers still need a public repository name and tag before `uses: OWNER/REPO@v0.1.0` is real.
+- **GitHub Action publication is still unfinished.** `action.yml` exists and installs ToolPin from the action source by default, with npm installation available after publish via `toolpin-version`; consumers still need a public repository name and tag before `uses: proofofwork-agency/toolpin@v0.1.0` is real.
 - **Over-claiming surface.** Badges like `sigstore-declared`, `digest-pinned`, `tool-description-pinned`, "verified" attestations read stronger than the substring/regex/presence checks actually provide. A security reviewer will catch this and lose trust.
 
 ---
@@ -148,7 +148,7 @@ There is **one narrow, conditional, time-boxed moat**. Everything else is absorb
 Ranked by leverage, not effort:
 
 1. **Publish to npm** with a working `npm install -g toolpin`. Package metadata, `release:check`, `prepare`, and `prepublishOnly` are now in place; the registry package is not published yet.
-2. **Publish/tag the GitHub Action** and replace `OWNER/REPO` examples with the real action path.
+2. **Publish/tag the GitHub Action** and keep examples on the real `proofofwork-agency/toolpin` action path.
 3. **Keep repo identity stable** at `proofofwork-agency/toolpin` and keep public copy on `ToolPin`, `toolpin`, and `tpn`.
 4. **Finish the P0 docs**: `threat-model`, `comparison`, `catch-drift-in-ci`, `trust-explained`, `lockfile-schema`, and `policy-schema` now exist (see `docs/docusaurus-design.md`); `signing-guide` is the remaining P0 gap.
 5. **Continue TUI refactor phase 2**: move async operations and input handling out of `src/tui.tsx`, then split view components.
