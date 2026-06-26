@@ -1,13 +1,14 @@
 import { ALL_CLIENTS, type ClientName } from "../config.js";
 import type { ClientSelection, TuiCommand, View } from "./types.js";
 
-export const VIEWS: View[] = ["discover", "installed", "details", "plan", "config", "help"];
+export const VIEWS: View[] = ["discover", "installed", "sources", "details", "plan", "config", "help"];
 export const SERVER_VIEWS = new Set<View>(["details", "plan", "config"]);
 export const CLIENTS: ClientSelection[] = [...ALL_CLIENTS.filter((client): client is Exclude<ClientName, "generic"> => client !== "generic"), "all"];
 
 export const TUI_COMMANDS: TuiCommand[] = [
   { id: "ingest", label: "Ingest registries", description: "Fetch registry metadata and refresh .toolpin/registry-cache.json." },
   { id: "installed", label: "Installed servers", description: "Show installed MCP servers, lock drift, versions, updates, and lifecycle actions." },
+  { id: "sources", label: "Registry sources", description: "Show connected registry sources, trust tier, auth, and cache coverage." },
   { id: "search", label: "Search servers", description: "Edit the current search query." },
   { id: "more-results", label: "Show more results", description: "Increase the TUI result window by 50 matches." },
   { id: "reset-view", label: "Reset view defaults", description: "Reset search/source/result count/client/scope to defaults." },

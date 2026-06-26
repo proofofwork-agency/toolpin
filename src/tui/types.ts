@@ -2,9 +2,9 @@ import type { ClientName } from "../config.js";
 import type { InstallScope } from "../install.js";
 import type { Lockfile } from "../plan.js";
 import type { ServerTestResult } from "../tester.js";
-import type { NormalizedServer, RegistryEntry, RegistrySourceId } from "../types.js";
+import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo } from "../types.js";
 
-export type View = "discover" | "installed" | "details" | "plan" | "config" | "help";
+export type View = "discover" | "installed" | "sources" | "details" | "plan" | "config" | "help";
 export type InputMode = "normal" | "search" | "command";
 export type DataMode = "cache" | "live";
 export type SourceMode = RegistrySourceId | "all";
@@ -13,6 +13,7 @@ export type BrowseLayout = "flat" | "project" | "category";
 export type TuiCommandId =
   | "ingest"
   | "installed"
+  | "sources"
   | "search"
   | "more-results"
   | "reset-view"
@@ -45,6 +46,7 @@ export interface CommandLog {
 
 export interface TuiState {
   entries: RegistryEntry[];
+  registrySources: RegistrySourceInfo[];
   servers: NormalizedServer[];
   lockfile?: Lockfile;
   query: string;

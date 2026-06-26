@@ -8,7 +8,7 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "../i
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
-import { fetchRegistry, latestOnly, normalizeEntries, readCache, writeCache } from "../registry.js";
+import { fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache, REGISTRY_SOURCES, writeCache } from "../registry.js";
 import { searchServers } from "../search.js";
 import { testServer, type ServerTestResult } from "../tester.js";
 import type { NormalizedServer } from "../types.js";
@@ -57,6 +57,7 @@ import {
   OptionList,
   PromptBar,
   SelectedServerPanel,
+  SourcesView,
 } from "./views/panels.js";
 import { InstalledServerDetails, InstalledServersView } from "./views/installed.js";
 
@@ -66,6 +67,7 @@ export function MpmTui() {
   const { width, height } = useTerminalSize(stdout);
   const [state, setState] = useState<TuiState>(() => ({
     entries: [],
+    registrySources: REGISTRY_SOURCES,
     servers: [],
     query: "github",
     commandQuery: "",
@@ -135,6 +137,7 @@ export function MpmTui() {
   async function loadData(mode: DataMode, query = state.query, sourceMode = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined, dataMode: mode }));
     try {
+      const registrySources = await listRegistrySources().catch(() => REGISTRY_SOURCES);
       const entries = mode === "live"
         ? await fetchRegistry({ maxPages: 4, search: query || undefined, source: sourceMode })
         : await readCache().then(async (cached) => {
@@ -155,6 +158,7 @@ export function MpmTui() {
       setState((prev) => ({
         ...prev,
         entries,
+        registrySources,
         servers: filterBySource(servers, sourceMode),
         lockfile,
         selected: 0,
@@ -180,6 +184,7 @@ export function MpmTui() {
   async function refreshCache(): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
+      const registrySources = await listRegistrySources().catch(() => REGISTRY_SOURCES);
       const entries = await fetchRegistry({ maxPages: 6, search: state.query || undefined, source: state.sourceMode });
       await writeCache(entries);
       const servers = normalizeEntries(entries);
@@ -188,6 +193,7 @@ export function MpmTui() {
       setState((prev) => ({
         ...prev,
         entries,
+        registrySources,
         servers: filterBySource(servers, state.sourceMode),
         lockfile,
         selected: 0,
@@ -846,6 +852,21 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, view: "installed", commandLog: { title: "installed", command: commandLine, ok: true, lines: [`${installed.rows.length} installed server entrie(s) loaded`] } }));
         await refreshInstalledRows();
         break;
+      case "sources":
+        setState((prev) => ({
+          ...prev,
+          view: "sources",
+          commandLog: {
+            title: "sources",
+            command: commandLine,
+            ok: true,
+            lines: [
+              `${prev.registrySources.filter((source) => source.enabled).length} connected source(s)`,
+              `active source: ${prev.sourceMode}`,
+            ],
+          },
+        }));
+        break;
       case "search":
         setState((prev) => ({ ...prev, inputMode: "search", view: "discover", commandLog: undefined }));
         break;
@@ -1307,15 +1328,18 @@ export function MpmTui() {
         switchToView("installed");
         break;
       case "3":
-        switchToView("details");
+        switchToView("sources");
         break;
       case "4":
-        switchToView("plan");
+        switchToView("details");
         break;
       case "5":
-        switchToView("config");
+        switchToView("plan");
         break;
       case "6":
+        switchToView("config");
+        break;
+      case "7":
         switchToView("help");
         break;
     }
@@ -1393,7 +1417,7 @@ export function MpmTui() {
   }
 
   function nextEnabledView(view: View): View {
-    const order: View[] = selectedServer ? ["discover", "installed", "details", "plan", "config", "help"] : ["discover", "installed", "help"];
+    const order: View[] = selectedServer ? ["discover", "installed", "sources", "details", "plan", "config", "help"] : ["discover", "installed", "sources", "help"];
     return order[(order.indexOf(view) + 1) % order.length] ?? "discover";
   }
 
@@ -1428,6 +1452,17 @@ export function MpmTui() {
         ) : state.view === "help" ? (
           <Box marginX={2} height={paneHeight}>
             <HelpView width={width - 4} height={paneHeight} />
+          </Box>
+        ) : state.view === "sources" ? (
+          <Box marginX={2} height={paneHeight}>
+            <SourcesView
+              sources={state.registrySources}
+              entries={state.entries}
+              activeSource={state.sourceMode}
+              dataMode={state.dataMode}
+              width={width - 4}
+              height={paneHeight}
+            />
           </Box>
         ) : state.view === "installed" ? (
           <Box marginX={2} height={paneHeight}>

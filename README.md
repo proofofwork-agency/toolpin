@@ -281,7 +281,7 @@ npm run tui
 Hotkeys:
 
 ```text
-tab / 1-6       Switch panels (1=Browse, 2=Installed, 3=Overview, 4=Install, 5=Config, 6=Help)
+tab / 1-7       Switch panels (1=Browse, 2=Installed, 3=Sources, 4=Overview, 5=Install, 6=Config, 7=Help)
 /               Search
 :               Open command palette
 esc             Exit search/command mode, or return to Browse

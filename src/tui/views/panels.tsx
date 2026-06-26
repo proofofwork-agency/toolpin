@@ -5,7 +5,7 @@ import { type InstallScope } from "../../install.js";
 import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
-import type { NormalizedServer, SearchResult } from "../../types.js";
+import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult } from "../../types.js";
 import { scoreServer } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
@@ -84,6 +84,12 @@ export function ModeLine({ active, selectedServer, width }: { active: View; sele
         <Text bold={active === "discover"} color={active === "discover" ? BLUE : MUTED}>{segment("discover")?.label}</Text>
         <Text color={CHROME}>  </Text>
         <Text bold={active === "installed"} color={active === "installed" ? BLUE : MUTED}>{segment("installed")?.label}</Text>
+        {segment("sources") ? (
+          <>
+            <Text color={CHROME}>  </Text>
+            <Text bold={active === "sources"} color={active === "sources" ? BLUE : MUTED}>{segment("sources")?.label}</Text>
+          </>
+        ) : null}
         <Text color={CHROME}>  |  </Text>
         <Text color={hasSelection ? MUTED : CHROME}>Selected: </Text>
         <Text color={hasSelection ? "white" : CHROME}>{layout.selectedLabel}</Text>
@@ -235,6 +241,118 @@ function browseProject(server: NormalizedServer): string {
   }
 }
 
+export function SourcesView({
+  sources,
+  entries,
+  activeSource,
+  dataMode,
+  width,
+  height,
+}: {
+  sources: RegistrySourceInfo[];
+  entries: RegistryEntry[];
+  activeSource: RegistrySourceId | "all";
+  dataMode: "cache" | "live";
+  width: number;
+  height: number;
+}) {
+  const contentWidth = Math.max(24, width - 4);
+  const counts = sourceEntryCounts(entries);
+  const sorted = [...sources].sort(compareSources);
+  const connected = sorted.filter((source) => source.enabled);
+  const visibleRows = Math.max(1, height - 9);
+  const visible = sorted.slice(0, visibleRows);
+  return (
+    <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
+      <ModalTitle title="sources" file="registry list" />
+      <Text color={MUTED} wrap="truncate">
+        Connected registry sources, ordered by trust. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
+      </Text>
+      <Spacer />
+      <Text wrap="truncate">
+        <Text color={OK}>trusted first</Text>
+        <Text color={CHROME}>  </Text>
+        <Text color={MUTED}>{connected.length} connected / {sources.length} known</Text>
+        <Text color={CHROME}>  </Text>
+        <Text color={MUTED}>g changes active source, l toggles cache/live</Text>
+      </Text>
+      <Divider width={contentWidth} />
+      {visible.map((source) => (
+        <SourceRow
+          key={source.id}
+          source={source}
+          count={counts.get(source.id) ?? 0}
+          active={activeSource === source.id || (activeSource === "all" && source.enabled && source.mode === "installable")}
+          width={contentWidth}
+        />
+      ))}
+      {visible.length < sorted.length ? <Text color={CHROME}>{" ".repeat(2)}{sorted.length - visible.length} more source(s) hidden on this terminal height.</Text> : null}
+      <Box flexGrow={1} />
+      <Divider width={contentWidth} />
+      <Text color={MUTED} wrap="truncate">
+        Trust tiers: <Text color={OK}>canonical</Text> official source, <Text color={BLUE}>curated</Text> reviewed catalog, <Text color={WARN}>directory</Text> discovery/index source, <Text color={MUTED}>private</Text> configured source.
+      </Text>
+    </Box>
+  );
+}
+
+function SourceRow({ source, count, active, width }: { source: RegistrySourceInfo; count: number; active: boolean; width: number }) {
+  const trustColorValue = source.trust === "canonical" ? OK : source.trust === "curated" ? BLUE : source.trust === "directory" ? WARN : MUTED;
+  const status = source.enabled ? "connected" : "not connected";
+  const statusColor = source.enabled ? OK : CHROME;
+  const auth = source.authRequired ? "auth required" : "no auth";
+  const modeColor = source.mode === "installable" ? OK : WARN;
+  const titleWidth = Math.max(16, Math.min(34, Math.floor(width * 0.26)));
+  const meta = `${source.trust} / ${source.mode} / ${source.type ?? "custom"} / ${auth}`;
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text wrap="truncate">
+        <Text color={active ? OK : CHROME}>{active ? "> " : ": "}</Text>
+        <Text bold={active} color={active ? OK : "white"}>{truncate(source.label, titleWidth).padEnd(titleWidth)}</Text>
+        <Text color={CHROME}> </Text>
+        <Text color={trustColorValue}>{source.trust.padEnd(9)}</Text>
+        <Text color={CHROME}> </Text>
+        <Text color={statusColor}>{status.padEnd(13)}</Text>
+        <Text color={CHROME}> </Text>
+        <Text color={modeColor}>{source.mode}</Text>
+        <Text color={CHROME}> </Text>
+        <Text color={MUTED}>{count} cached</Text>
+      </Text>
+      <Text color={MUTED} wrap="truncate">
+        <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
+        {truncate(source.description || meta, Math.max(8, width - 18))}
+      </Text>
+    </Box>
+  );
+}
+
+function sourceEntryCounts(entries: RegistryEntry[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const source = entry.source ?? entry._meta?.source;
+    if (typeof source === "string") counts.set(source, (counts.get(source) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function compareSources(left: RegistrySourceInfo, right: RegistrySourceInfo): number {
+  return Number(right.enabled) - Number(left.enabled)
+    || sourceTrustRank(left.trust) - sourceTrustRank(right.trust)
+    || sourceModeRank(left.mode) - sourceModeRank(right.mode)
+    || left.label.localeCompare(right.label);
+}
+
+function sourceTrustRank(trust: RegistrySourceInfo["trust"]): number {
+  if (trust === "canonical") return 0;
+  if (trust === "curated") return 1;
+  if (trust === "directory") return 2;
+  return 3;
+}
+
+function sourceModeRank(mode: RegistrySourceInfo["mode"]): number {
+  return mode === "installable" ? 0 : 1;
+}
+
 function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: number; showScore?: boolean; cells?: number }) {
   const cells = cellCount === 9
     ? trustBarCells(score)
@@ -320,7 +438,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         </>
       ) : null}
       <Metric label="badges" value={trust.badges.join(", ") || "no badges"} />
-      <Divider width={width} />
+      <Divider width={width} marginBottom={1} />
       <Box flexDirection="column">
         <Text>
           <Text color={MUTED}>trust       </Text>
@@ -335,8 +453,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         </Text>
         <IssueRows issues={trust.issues} width={width} />
       </Box>
-      <Divider width={width} />
-      <Spacer />
+      <Divider width={width} marginBottom={1} />
       <Text>
         <Text color={MUTED}>test        </Text>
         {testing ? <Text color={WARN}>running MCP handshake and tools/list...</Text> : testResult ? (
@@ -433,6 +550,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "m / +", "Show more results, up to the maximum cached set."],
     ["Browse", "r", "Refresh the current registry data."],
     ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
+    ["Sources", "3", "Show connected registry sources, trust tiers, auth status, and cached entries."],
     ["Review", "Enter", "Open the install plan for the selected server."],
     ["Review", "t", "Test the selected server with initialize and tools/list."],
     ["Review", "v / V", "Cycle selected server version."],
@@ -808,6 +926,8 @@ export function Footer({ view, inputMode, width }: { view: View; inputMode: Inpu
       ? [["/", "search"], ["f", "layout"], ["g", "source"], ["m", "more"], ["i", "install"], ["r", "refresh"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
         ? [["j/k", "move"], ["u", "registry+lock"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
+      : view === "sources"
+        ? [["g", "source"], ["l", "cache/live"], ["r", "refresh"], ["1", "browse"], ["2", "installed"], ["q", "quit"]]
       : view === "details"
         ? [["Enter", "plan"], ["Esc", "browse"], ["c", "client"], ["G", "scope"], ["v/V", "version"], ["t", "test"], ["i", "install"], ["q", "quit"]]
       : view === "plan"
@@ -889,10 +1009,10 @@ function Spacer() {
   return <Text> </Text>;
 }
 
-function Divider({ width }: { width: number }) {
+function Divider({ width, marginBottom = 0 }: { width: number; marginBottom?: number }) {
   const lineWidth = Math.max(8, width - 6);
   return (
-    <Box marginTop={1}>
+    <Box marginTop={1} marginBottom={marginBottom}>
       <Text color={CHROME}>{"─".repeat(lineWidth)}</Text>
     </Box>
   );

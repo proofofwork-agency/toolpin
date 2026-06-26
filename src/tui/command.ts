@@ -15,6 +15,8 @@ export function commandLineFor(commandId: TuiCommandId, state: TuiCommandState, 
       return `toolpin ingest ${source} --pages 6`;
     case "installed":
       return "toolpin list --scope all --json";
+    case "sources":
+      return "toolpin registry list";
     case "search":
       return `toolpin search ${shellQuote(state.query || "mcp")} ${source}${live}`;
     case "more-results":
