@@ -570,7 +570,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
   const lineWidth = Math.max(24, width - 8);
   const showExplanations = height >= 16;
   const shortcutRows = showExplanations
-    ? Math.max(2, Math.min(lines.length, height - 17))
+    ? Math.max(2, Math.min(lines.length, height - 22))
     : Math.max(1, height - 4);
   const visibleShortcuts = lines.slice(0, shortcutRows);
   const hiddenShortcutCount = Math.max(0, lines.length - visibleShortcuts.length);
@@ -591,6 +591,12 @@ export function HelpView({ width, height }: { width: number; height: number }) {
       {showExplanations ? (
         <>
           <Divider width={width} />
+          <Text bold color={BLUE}>about toolpin</Text>
+          <HelpNote width={lineWidth} label="created" text="ToolPin is the review gate between MCP registries and AI clients that run servers with your credentials." />
+          <HelpNote width={lineWidth} label="goal" text="Make MCP installs reviewable and repeatable: inspect the plan, write client config, commit mcp-lock.json, fail CI on drift." />
+          <HelpNote width={lineWidth} label="needed" text="MCP servers can add tools, local process access, network access, and secrets; copied JSON alone leaves no reviewed artifact." />
+          <HelpNote width={lineWidth} label="not" text="ToolPin is not a catalog, runtime sandbox, gateway, or secret vault; it is the repo-owned install and governance layer." />
+          <Spacer />
           <Text bold color={BLUE}>scoring</Text>
           <HelpNote width={lineWidth} label="score" text="0-100 advisory trust score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
