@@ -369,7 +369,7 @@ function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: 
   );
 }
 
-function TrustTierMeter({ tier, score, issues, cells: cellCount = 9 }: { tier?: TrustTier; score: number; issues: SearchResult["trust"]["issues"]; cells?: number }) {
+function TrustTierMeter({ tier, score, issues, cells: cellCount = 9, showLabel = true }: { tier?: TrustTier; score: number; issues: SearchResult["trust"]["issues"]; cells?: number; showLabel?: boolean }) {
   const tone = trustRiskTone({ score, issues, tier });
   const filled = tierFill(tone.tier, cellCount);
   const label = tone.label.length > 8 ? tone.label.slice(0, 8) : tone.label;
@@ -377,7 +377,7 @@ function TrustTierMeter({ tier, score, issues, cells: cellCount = 9 }: { tier?: 
     <Text>
       <Text color={tierColor(tone.tier)}>{"▓".repeat(filled)}</Text>
       <Text color={CHROME}>{"░".repeat(Math.max(0, cellCount - filled))}</Text>
-      <Text color={tierColor(tone.tier)}> {label.padStart(8)}</Text>
+      {showLabel ? <Text color={tierColor(tone.tier)}> {label.padStart(8)}</Text> : null}
     </Text>
   );
 }
@@ -430,6 +430,10 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   const trust = scoreServer(server);
   const risk = trustRiskTone(trust);
   const dimensions = trustDimensions(trust);
+  const trustRowWidth = Math.max(28, width - 6);
+  const trustBarCells = Math.max(9, Math.min(16, trustRowWidth - 34));
+  const overallScore = trust.overallScore ?? trust.score;
+  const metadataScore = trust.metadataCompleteness ?? trust.score;
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="overview" file="server.json" />
@@ -455,23 +459,28 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
       <CompactDivider width={width} />
       <Spacer />
       <Box flexDirection="column">
-        <Text>
-          <Text color={MUTED}>trust       </Text>
-          <Text color={tierColor(risk.tier)}>{risk.label}</Text>
-          <Text color={tierColor(risk.tier)}>{risk.label}</Text>
-          <Text color={CHROME}>  </Text>
-          <TrustTierMeter tier={trust.tier} score={trust.score} issues={trust.issues} />
-          <Text color={CHROME}>  </Text>
-          <Text color={MUTED}>{trustTier(trust)}  metadata {trust.metadataCompleteness ?? trust.score}%</Text>
-        </Text>
+        <TrustTierRow
+          label="evidence"
+          value={risk.label}
+          tier={risk.tier}
+          score={trust.score}
+          issues={trust.issues}
+          cells={trustBarCells}
+          suffix={`${trustTier(trust)} tier`}
+          width={trustRowWidth}
+        />
+        <TrustScoreRow label="overall" score={overallScore} cells={trustBarCells} suffix="gated trust score" width={trustRowWidth} />
+        <TrustScoreRow label="metadata" score={metadataScore} cells={trustBarCells} suffix="profile completeness" width={trustRowWidth} />
         {trust.capReason ? <Text color={WARN} wrap="truncate">cap         {truncate(trust.capReason, width - 12)}</Text> : null}
         {dimensions.map((dimension) => (
-          <Text key={dimension.label}>
-            <Text color={MUTED}>{dimension.label.padEnd(12)}</Text>
-            <Text color={trustColor(dimension.score)}>{String(dimension.score).padStart(3)}%</Text>
-            <Text color={CHROME}>  </Text>
-            <TrustMeter score={dimension.score} showScore={false} />
-          </Text>
+          <TrustScoreRow
+            key={dimension.label}
+            label={dimension.label}
+            score={dimension.score}
+            cells={trustBarCells}
+            suffix="pillar"
+            width={trustRowWidth}
+          />
         ))}
         {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
@@ -489,6 +498,56 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
         <Text key={tool.name} color="white" wrap="truncate">tool        {tool.name}{tool.description ? <Text color={MUTED}> - {truncate(tool.description, width - tool.name.length - 20)}</Text> : null}</Text>
       ))}
     </Box>
+  );
+}
+
+const TRUST_ROW_LABEL_WIDTH = 12;
+const TRUST_ROW_VALUE_WIDTH = 12;
+
+function TrustTierRow({
+  label,
+  value,
+  tier,
+  score,
+  issues,
+  cells,
+  suffix,
+  width,
+}: {
+  label: string;
+  value: string;
+  tier: TrustTier;
+  score: number;
+  issues: SearchResult["trust"]["issues"];
+  cells: number;
+  suffix: string;
+  width: number;
+}) {
+  const suffixWidth = Math.max(0, width - TRUST_ROW_LABEL_WIDTH - TRUST_ROW_VALUE_WIDTH - cells - 4);
+  return (
+    <Text wrap="truncate">
+      <Text color={MUTED}>{label.padEnd(TRUST_ROW_LABEL_WIDTH)}</Text>
+      <Text color={tierColor(tier)}>{truncate(value, TRUST_ROW_VALUE_WIDTH).padEnd(TRUST_ROW_VALUE_WIDTH)}</Text>
+      <Text color={CHROME}>  </Text>
+      <TrustTierMeter tier={tier} score={score} issues={issues} cells={cells} showLabel={false} />
+      <Text color={CHROME}>  </Text>
+      <Text color={MUTED}>{truncate(suffix, suffixWidth)}</Text>
+    </Text>
+  );
+}
+
+function TrustScoreRow({ label, score, cells, suffix, width }: { label: string; score: number; cells: number; suffix: string; width: number }) {
+  const suffixWidth = Math.max(0, width - TRUST_ROW_LABEL_WIDTH - TRUST_ROW_VALUE_WIDTH - cells - 4);
+  const value = `${Math.round(score)}%`;
+  return (
+    <Text wrap="truncate">
+      <Text color={MUTED}>{label.padEnd(TRUST_ROW_LABEL_WIDTH)}</Text>
+      <Text color={trustColor(score)}>{value.padStart(4).padEnd(TRUST_ROW_VALUE_WIDTH)}</Text>
+      <Text color={CHROME}>  </Text>
+      <TrustMeter score={score} showScore={false} cells={cells} />
+      <Text color={CHROME}>  </Text>
+      <Text color={MUTED}>{truncate(suffix, suffixWidth)}</Text>
+    </Text>
   );
 }
 

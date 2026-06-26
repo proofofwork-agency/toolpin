@@ -89,8 +89,14 @@ export function InstalledServerDetails({ row, width, selectedVersion, selectedTa
 }
 
 function InstalledRow({ row, selected, width }: { row: InstalledServerState; selected: boolean; width: number }) {
-  const nameWidth = width < 90 ? 26 : 38;
-  const fileWidth = width < 90 ? 18 : 28;
+  const contentWidth = Math.max(32, width - 6);
+  const registryWidth = contentWidth < 88 ? 12 : 15;
+  const versionWidth = contentWidth < 88 ? 10 : 13;
+  const actionWidth = contentWidth < 88 ? 0 : 12;
+  const testWidth = contentWidth >= 112 ? 12 : 0;
+  const fileWidth = contentWidth >= 132 ? Math.min(24, contentWidth - 108) : 0;
+  const fixedWidth = 1 + 8 + 10 + 9 + versionWidth + registryWidth + actionWidth + testWidth + fileWidth;
+  const nameWidth = Math.max(14, contentWidth - fixedWidth);
   const version = row.updateAvailable
     ? `${row.lockedVersion ?? "unknown"} -> ${row.latestVersion}`
     : row.lockedVersion ?? row.currentVersion ?? "unknown";
@@ -102,17 +108,21 @@ function InstalledRow({ row, selected, width }: { row: InstalledServerState; sel
   return (
     <Text wrap="truncate">
       <Text color={selected ? OK : CHROME}>{selected ? ">" : ":"}</Text>
-      <Text color={scopeColor(row.scope)}> {row.scope.padEnd(7)}</Text>
-      <Text color={MUTED}> {row.client.padEnd(9)}</Text>
-      <Text bold={selected} color="white"> {truncate(row.serverName, nameWidth).padEnd(nameWidth + 1)}</Text>
+      <Text color={scopeColor(row.scope)}>{column(row.scope, 8)}</Text>
+      <Text color={MUTED}>{column(row.client, 10)}</Text>
+      <Text bold={selected} color="white">{column(row.serverName, nameWidth)}</Text>
       <Text color={lock === "drift" ? ERR : lock === "locked" ? OK : WARN}>{lock.padEnd(9)}</Text>
-      <Text color={row.updateAvailable ? WARN : MUTED}> {truncate(version, 18).padEnd(19)}</Text>
-      <Text color={row.registryStatus === "none" ? MUTED : OK}>{registry.padEnd(15)}</Text>
-      <Text color={row.lifecycleAction === "none" ? MUTED : WARN}>{action.padEnd(14)}</Text>
-      <Text color={row.testSource === "none" ? MUTED : OK}>{test.padEnd(12)}</Text>
-      <Text color={CHROME}> {truncate(shortPath(row.file), fileWidth)}</Text>
+      <Text color={row.updateAvailable ? WARN : MUTED}>{column(version, versionWidth)}</Text>
+      <Text color={row.registryStatus === "none" ? MUTED : OK}>{column(registry, registryWidth)}</Text>
+      {actionWidth > 0 ? <Text color={row.lifecycleAction === "none" ? MUTED : WARN}>{column(action, actionWidth)}</Text> : null}
+      {testWidth > 0 ? <Text color={row.testSource === "none" ? MUTED : OK}>{column(test, testWidth)}</Text> : null}
+      {fileWidth > 0 ? <Text color={CHROME}>{column(shortPath(row.file), fileWidth)}</Text> : null}
     </Text>
   );
+}
+
+function column(value: string, width: number): string {
+  return ` ${truncate(value, Math.max(0, width - 1)).padEnd(Math.max(0, width - 1))}`;
 }
 
 function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
