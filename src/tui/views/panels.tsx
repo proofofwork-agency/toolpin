@@ -569,7 +569,7 @@ export function HelpView({ width, height }: { width: number; height: number }) {
   const lineWidth = Math.max(24, width - 8);
   const showExplanations = height >= 16;
   const shortcutRows = showExplanations
-    ? Math.max(2, Math.min(lines.length, height - 22))
+    ? Math.max(2, Math.min(lines.length, height - 25))
     : Math.max(1, height - 4);
   const visibleShortcuts = lines.slice(0, shortcutRows);
   const hiddenShortcutCount = Math.max(0, lines.length - visibleShortcuts.length);
@@ -606,6 +606,11 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="install" text="Install writes client config and the matching lock entry after policy and drift checks pass." />
           <HelpNote width={lineWidth} label="doctor/ci" text="Doctor and CI compare client config with mcp-lock.json so config drift, digest drift, and signature failures are visible." />
           <HelpNote width={lineWidth} label="adopt / update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
+          <Spacer />
+          <Text bold color={BLUE}>installed actions</Text>
+          <HelpNote width={lineWidth} label="action:update" text="The row is locked and a newer registry version is loaded; u updates config and mcp-lock.json." />
+          <HelpNote width={lineWidth} label="action:adopt" text="The row is installed but not locked; u finds the registry match and writes the reviewed lock entry." />
+          <HelpNote width={lineWidth} label="action:none" text="No safe registry lifecycle action is loaded; refresh, switch source/live, or inspect the row first." />
         </>
       ) : null}
     </Box>
