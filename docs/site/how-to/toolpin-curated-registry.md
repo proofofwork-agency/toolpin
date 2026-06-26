@@ -32,7 +32,11 @@ https://toolpin.dev/registry/v0
 
 ToolPin appends `/servers` automatically for `official-compatible` registries.
 Until the repository rename is complete, use the matching raw GitHub URL for
-the current repository location.
+the current repository location:
+
+```text
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
+```
 
 ## How the Registry Is Maintained
 
