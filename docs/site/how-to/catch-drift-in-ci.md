@@ -80,13 +80,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: npm test
-      - run: node dist/cli.js ci --file mcp-lock.json --live
+      - run: npm install -g @proofofwork-agency/toolpin
+      - run: toolpin ci --file mcp-lock.json --live
 ```
 
-After npm publish, use `npm install -g toolpin` and `toolpin ci --file
-mcp-lock.json --live`.
+For unreleased local development, run `npm ci`, `npm test`, and
+`node dist/cli.js ci --file mcp-lock.json --live` from a source checkout.
 
 ## Digest pin
 

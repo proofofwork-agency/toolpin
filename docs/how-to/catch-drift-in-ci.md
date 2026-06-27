@@ -58,7 +58,8 @@ as a no-op.
 
 ## Direct CLI Workflow
 
-Use this form before npm publish if you are running from this repository:
+Use this form when you want the workflow to install the npm package directly
+instead of using the composite Action:
 
 ```yaml
 name: ToolPin
@@ -77,13 +78,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: npm test
-      - run: node dist/cli.js ci --file mcp-lock.json --live
+      - run: npm install -g @proofofwork-agency/toolpin
+      - run: toolpin ci --file mcp-lock.json --live
 ```
 
-After npm publish, replace the build steps with `npm install -g toolpin` and
-`toolpin ci --file mcp-lock.json --live`.
+For unreleased local development, run `npm ci`, `npm test`, and
+`node dist/cli.js ci --file mcp-lock.json --live` from a source checkout.
 
 ## Digest Pin
 

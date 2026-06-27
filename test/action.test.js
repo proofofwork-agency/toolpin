@@ -10,5 +10,5 @@ test("GitHub Action installs from action source by default", async () => {
   assert.equal(action.inputs["toolpin-version"].default, "");
   assert.match(installStep.run, /\$GITHUB_ACTION_PATH/);
   assert.match(installStep.run, /npm ci --prefix/);
-  assert.match(installStep.run, /npm install -g "toolpin@\$\{TOOLPIN_VERSION\}"/);
+  assert.match(installStep.run, /npm install -g "@proofofwork-agency\/toolpin@\$\{TOOLPIN_VERSION\}"/);
 });

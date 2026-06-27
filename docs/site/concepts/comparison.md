@@ -43,7 +43,7 @@ Legend: ✅ native · (✅) partial/indirect · ❌ absent · — N/A.
 | **Runtime sandbox / enforcement** | ❌ | ❌ | ❌ | (✅) Firecracker (build-time) | ✅ microVM | ✅ container/K8s isolation | ✅ |
 | **Open source** | ✅ Apache-2.0 | ✅ (Go, in-repo LICENSE) | ✅ AGPL-3.0 CLI | ✅ TDQS scoring OSS; gateway closed | ❌ closed | ✅ Apache-2.0 | ❌ closed |
 | **Enterprise readiness** | v1.0 target | infra | mid | high | very high | very high | very high |
-| **Distribution** | Docusaurus docs + TUI + composite Action; npm publish pending | hosted API (`registry.modelcontextprotocol.io`) | npm CLI + SaaS | SaaS | Docker Desktop ($24/user/mo Business) | K8s operator + Portal | SaaS / VPC |
+| **Distribution** | Docusaurus docs + TUI + composite Action; scoped npm package pending | hosted API (`registry.modelcontextprotocol.io`) | npm CLI + SaaS | SaaS | Docker Desktop ($24/user/mo Business) | K8s operator + Portal | SaaS / VPC |
 
 The cell at the intersection of **committed Lockfile = ✅** and **install-time
 Client neutrality = ✅**, in an **open-source CLI**, is ToolPin's alone among

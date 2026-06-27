@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/proofofwork-agency/toolpin/actions/workflows/ci.yml/badge.svg)](https://github.com/proofofwork-agency/toolpin/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![npm publish pending](https://img.shields.io/badge/npm-publish%20pending-orange)](https://www.npmjs.com/package/toolpin)
+[![npm publish pending](https://img.shields.io/badge/npm-publish%20pending-orange)](https://www.npmjs.com/package/@proofofwork-agency/toolpin)
 
 ToolPin is a review gate for MCP server installs. It helps teams inspect what
 an MCP server will run, generate client config, commit an enforcing
@@ -22,6 +22,7 @@ ToolPin is Apache-2.0 licensed and requires Node.js 22 or newer.
 ## Contents
 
 - [Highlights](#highlights)
+- [Screenshots](#screenshots)
 - [Why ToolPin](#why-toolpin)
 - [Getting Started](#getting-started)
 - [Usage](#usage)
@@ -48,6 +49,24 @@ ToolPin is Apache-2.0 licensed and requires Node.js 22 or newer.
   requirements.
 - **Terminal UI:** browse, inspect, install, update, adopt, remove, and test MCP
   servers from an Ink-based TUI.
+
+## Screenshots
+
+ToolPin gives MCP installs the same review loop teams already expect for code:
+inspect the server, verify the evidence, preview the exact client config, then
+write a lockfile that CI can enforce.
+
+![ToolPin TUI browse overview with ContextRelay selected, verified evidence, trust scores, and install actions.](docs/assets/readme/tui-browse-overview.jpg)
+
+The TUI is built for repeated operations: source-aware browsing, registry/cache
+state, trust scoring, version selection, installed inventory, config preview,
+and one-key install/adopt/update/delete flows.
+
+| Config preview | Installed inventory |
+|---|---|
+| ![ToolPin TUI config preview showing the Claude project MCP JSON that will be written for a streamable HTTP server.](docs/assets/readme/tui-config-preview.jpg) | ![ToolPin TUI installed inventory showing locked and unlocked Codex MCP servers.](docs/assets/readme/tui-installed-inventory.jpg) |
+
+![ToolPin TUI help screen showing keyboard shortcuts, scoring explanations, locking behavior, sources, and installed actions.](docs/assets/readme/tui-help.jpg)
 
 ## Why ToolPin
 
@@ -77,11 +96,22 @@ reproducibility layer.
 - One supported MCP client, such as Claude, Cursor, VS Code, Codex, OpenCode,
   Continue, Gemini CLI, Windsurf, Cline, Roo Code, Zed, or a generic sidecar.
 
-### Install From Source
+### Install From npm
 
-The npm package metadata is ready, but `toolpin` has not been published from
-this repository yet. Use the source checkout until the first npm release is
-complete.
+```bash
+npm install -g @proofofwork-agency/toolpin
+toolpin --version
+tpn -v
+tpn upgrade --dry-run
+```
+
+`toolpin` and `tpn` are aliases for the same CLI. `toolpin upgrade` and
+`tpn upgrade` update the globally installed package; pass `--dry-run` to preview
+the package-manager command.
+
+### Develop From Source
+
+Use the source checkout when changing ToolPin itself:
 
 ```bash
 git clone https://github.com/proofofwork-agency/toolpin.git
@@ -97,34 +127,19 @@ npm run build
 node dist/cli.js --help
 ```
 
-### Install From npm
-
-After the package is published:
-
-```bash
-npm install -g toolpin
-toolpin --version
-tpn -v
-tpn upgrade --dry-run
-```
-
-`toolpin` and `tpn` are aliases for the same CLI. `toolpin upgrade` and
-`tpn upgrade` update the globally installed package; pass `--dry-run` to preview
-the package-manager command.
-
 ## Usage
 
 ### Search Registries
 
 ```bash
-node dist/cli.js ingest --source all --limit 500 --pages 25
-node dist/cli.js search github --source all --limit 5
+toolpin ingest --source all --limit 500 --pages 25
+toolpin search github --source all --limit 5
 ```
 
 ### Review an Install Plan
 
 ```bash
-node dist/cli.js plan io.github.github/github-mcp-server \
+toolpin plan io.github.github/github-mcp-server \
   --client claude \
   --scope project \
   --live
@@ -133,7 +148,7 @@ node dist/cli.js plan io.github.github/github-mcp-server \
 ### Install and Lock
 
 ```bash
-node dist/cli.js install io.github.github/github-mcp-server \
+toolpin install io.github.github/github-mcp-server \
   --client claude \
   --scope project \
   --live \
@@ -147,8 +162,8 @@ teammates and CI can reject drift.
 ### Check Drift
 
 ```bash
-node dist/cli.js doctor --scope project
-node dist/cli.js ci --file mcp-lock.json --live --verify
+toolpin doctor --scope project
+toolpin ci --file mcp-lock.json --live --verify
 ```
 
 ### Use the TUI
@@ -203,7 +218,8 @@ jobs:
 
 The checked-in composite Action builds ToolPin from the action source by
 default, then runs `toolpin ci`. After npm publish, set `toolpin-version` to an
-npm version specifier if you want the Action to install from npm instead.
+npm version specifier if you want the Action to install
+`@proofofwork-agency/toolpin` from npm instead.
 
 Recommended CI posture for reviewed lockfiles is `toolpin ci --live --verify`
 for capability drift. Use `--skip-live-verification` only as an explicit downgrade
@@ -253,7 +269,6 @@ for the exact scope and limits.
 The immediate release path is public distribution:
 
 - Publish the npm package with provenance.
-- Move README and docs install examples from source checkout to npm-first usage.
 - Keep the GitHub Action pinned and documented for CI adoption.
 - Continue tightening evidence definitions, policy fields, and trust docs.
 

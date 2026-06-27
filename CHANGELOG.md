@@ -2,8 +2,11 @@
 
 ## 0.2.2
 
+- Distribution: switch the npm package target to `@proofofwork-agency/toolpin` while keeping the `toolpin` and `tpn` CLI binaries.
+- README/docs: lead with npm-first install and CI examples, add TUI screenshots to the README, and keep source-checkout commands as development-only fallbacks.
 - Curated ContextRelay verification: accept ToolPin-owned npm tarball integrity evidence from the curated registry, validate it against `registry.npmjs.org`, and show verified curated entries as evidence-complete without overriding ordinary registry metadata rules.
 - Registry cache correctness: invalidate stale built-in ToolPin cache partitions when the bundled curated registry snapshot changes, so users do not keep seeing removed or outdated trusted listings after upgrading.
+- Installed inventory: expose stale lock-only rows as deletable in the TUI and remove stale lock entries from the repo lockfile so audit no longer reports servers that are gone from client config.
 - ContextRelay install metadata: clarify that Codex support is a stdio MCP registration, not a Codex plugin, and document the upstream `ctxrelay codex-mcp install` path alongside ToolPin's direct Codex config install.
 - Contributor workflow: make curated-registry PRs ask explicitly for install targets, runtime/package details, and per-client setup fields.
 - Release hygiene: defer the pending npm release from `0.2.1` to `0.2.2` so the evidence, cache invalidation, and install-metadata changes are represented in the published version.

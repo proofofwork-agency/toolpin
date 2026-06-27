@@ -461,6 +461,7 @@ export function trustedArtifactEvidenceProblem(evidence: TrustEvidence[], now = 
   if (!candidates.length) return "missing trusted artifact evidence";
   if (candidates.some((entry) => entry.status === "failed" && entry.required)) return "required artifact evidence failed";
   if (candidates.some((entry) => entry.status === "passed" && entry.verifiedByToolPin === true && entry.trustedAnchor !== true)) return "artifact evidence used an untrusted anchor";
+  if (candidates.some((entry) => isTrustedArtifactEvidence(entry) && isFreshVerifiedAt(entry.verifiedAt, now))) return undefined;
   if (candidates.some((entry) => isTrustedArtifactEvidence(entry) && !isFreshVerifiedAt(entry.verifiedAt, now))) return "trusted artifact evidence is stale";
   return "missing trusted artifact evidence";
 }

@@ -1,5 +1,5 @@
 {
-  "name": "toolpin",
+  "name": "@proofofwork-agency/toolpin",
   "version": "0.2.2",
   "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "license": "Apache-2.0",
@@ -29,6 +29,7 @@
     "CONTRIBUTING.md",
     "action.yml",
     "registry",
+    "docs/assets/readme",
     "docs/how-to/catch-drift-in-ci.md",
     "docs/how-to/custom-registries.md",
     "docs/how-to/toolpin-curated-registry.md"

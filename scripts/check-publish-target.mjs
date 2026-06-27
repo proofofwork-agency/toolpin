@@ -28,7 +28,7 @@ function isNotFound(result) {
   return `${result.stdout}\n${result.stderr}`.includes("E404");
 }
 
-assertField(packageJson.name === "toolpin", "package name must be toolpin");
+assertField(packageJson.name === "@proofofwork-agency/toolpin", "package name must be @proofofwork-agency/toolpin");
 assertField(packageJson.version, "package version is required");
 assertField(packageJson.license === "Apache-2.0", "license must be Apache-2.0");
 assertField(packageJson.repository?.url, "repository.url is required before publish");

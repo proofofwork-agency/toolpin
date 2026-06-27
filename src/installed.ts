@@ -95,7 +95,7 @@ export async function loadInstalledServerStates(options: {
     doctorLockfile("mcp-lock.json", scope).catch(() => undefined),
   ]);
   const issues = doctor?.issues ?? [];
-  const rows = inventory.entries.map((entry) => {
+  const rows: InstalledServerState[] = inventory.entries.map((entry) => {
     const locked = findLockedPlan(options.lockfile, entry.serverName, entry.client);
     const match = resolveInstalledRegistryMatch(options.servers, entry.serverName, locked?.version);
     const registryMatch = match.registryMatch ?? (locked ? "exact" : undefined);
@@ -147,6 +147,47 @@ export async function loadInstalledServerStates(options: {
       registryCandidates: match.ambiguousCandidates,
     };
   });
+
+  if (options.lockfile) {
+    const installedKeys = new Set(rows.map((row) => installedId(row.serverName, row.client, row.scope)));
+    for (const locked of Object.values(options.lockfile.servers)) {
+      const lockedScope = locked.scope ?? "project";
+      if (scope !== "all" && lockedScope !== scope) continue;
+      if (options.client && options.client !== "all" && locked.client !== options.client) continue;
+      const id = installedId(locked.name, locked.client, lockedScope);
+      if (installedKeys.has(id)) continue;
+
+      const match = resolveInstalledRegistryMatch(options.servers, locked.name, locked.version);
+      const target = safeConfigTarget(locked.client, lockedScope);
+      rows.push({
+        id,
+        client: locked.client,
+        scope: lockedScope,
+        file: target?.file ?? "missing client config",
+        serverName: locked.name,
+        installed: false,
+        locked: true,
+        lockDrift: true,
+        lockedVersion: locked.version,
+        currentVersion: undefined,
+        latestVersion: match.latestVersion ?? locked.version,
+        updateAvailable: false,
+        source: locked.resolved?.source,
+        canUpdate: false,
+        canDelete: true,
+        canTest: false,
+        registryMatch: match.registryMatch,
+        registryStatus: (match.registryMatch ?? "none") as InstalledRegistryStatus,
+        lifecycleAction: "none",
+        testSource: "none",
+        runningStatus: "stale",
+        installableServer: match.currentServer,
+        updateServer: match.updateServer,
+        issue: "locked in mcp-lock.json but missing from checked client config",
+        registryCandidates: match.ambiguousCandidates,
+      });
+    }
+  }
 
   return rows.sort((left, right) =>
     left.scope.localeCompare(right.scope)
@@ -259,6 +300,14 @@ function lifecycleActionFor(input: {
   if (!input.updateServer?.installable || !input.registryMatch) return "none";
   if (input.locked) return input.updateAvailable ? "update" : "none";
   return "adopt";
+}
+
+function safeConfigTarget(client: ClientName, scope: InstallScope): { file: string } | undefined {
+  try {
+    return resolveConfigTarget(client, scope);
+  } catch {
+    return undefined;
+  }
 }
 
 async function getInstalledLifecycleRow(

@@ -35,7 +35,7 @@ inputs:
     required: false
     default: ""
   toolpin-version:
-    description: Optional npm version specifier for the toolpin package after public npm publish. Leave empty to install from this action source.
+    description: Optional npm version specifier for the @proofofwork-agency/toolpin npm package after public npm publish. Leave empty to install from this action source.
     required: false
     default: ""
   policy:
@@ -69,7 +69,7 @@ runs:
         set -euo pipefail
 
         if [[ -n "${TOOLPIN_VERSION}" ]]; then
-          npm install -g "toolpin@${TOOLPIN_VERSION}"
+          npm install -g "@proofofwork-agency/toolpin@${TOOLPIN_VERSION}"
         else
           npm ci --prefix "$GITHUB_ACTION_PATH"
           npm run --prefix "$GITHUB_ACTION_PATH" build

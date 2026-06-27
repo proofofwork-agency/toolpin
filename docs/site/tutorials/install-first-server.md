@@ -7,30 +7,27 @@ title: Install Your First Server
 This tutorial installs a server into one MCP client and writes the reviewed
 install plan to `mcp-lock.json`.
 
-The public npm package path is prepared, but the first publish may not have
-happened yet. Use the repository development flow until npm ownership, token or
-2FA, and package-name availability are confirmed.
-
 ## Install the CLI
+
+```bash
+npm install -g @proofofwork-agency/toolpin
+toolpin --version
+tpn -v
+```
+
+When developing ToolPin itself from a source checkout, use:
 
 ```bash
 npm ci
 npm test
+npm run build
 node dist/cli.js --version
-```
-
-After npm publish:
-
-```bash
-npm install -g toolpin
-toolpin --version
-tpn -v
 ```
 
 ## Search for a server
 
 ```bash
-node dist/cli.js search github --source all --limit 5 --live
+toolpin search github --source all --limit 5 --live
 ```
 
 `--live` fetches current registry metadata. Without it, ToolPin uses its local
@@ -39,7 +36,7 @@ cache when available.
 ## Review the install plan
 
 ```bash
-node dist/cli.js plan io.github.github/github-mcp-server --client claude --live
+toolpin plan io.github.github/github-mcp-server --client claude --live
 ```
 
 The plan shows the selected package or remote target, generated client config,
@@ -50,7 +47,7 @@ still be capped when artifact proof is missing.
 ## Install and lock
 
 ```bash
-node dist/cli.js install io.github.github/github-mcp-server \
+toolpin install io.github.github/github-mcp-server \
   --client claude \
   --scope project \
   --live \
@@ -80,8 +77,8 @@ install with `--update-lock`.
 ## Check the result
 
 ```bash
-node dist/cli.js doctor --scope project
-node dist/cli.js ci --live
+toolpin doctor --scope project
+toolpin ci --live
 ```
 
 Commit `mcp-lock.json` so teammates and CI can reject drift. Use `--client all`

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyTrust, scoreServer, trustCapExplanation, trustTier } from "../dist/trust.js";
+import { classifyTrust, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustTier } from "../dist/trust.js";
 
 test("repository and namespace trust signals have exact metadata weights", () => {
   const trusted = scoreServer(packageServer());
@@ -225,6 +225,30 @@ test("ToolPin registry evidence can verify artifact integrity without changing m
   assert.equal(ignored.tier, "conditional");
   assert.equal(ignored.capReason, "automated evidence incomplete");
   assert.equal(ignored.badges.includes("npm-integrity-verified"), false);
+});
+
+test("trustedArtifactEvidenceProblem accepts fresh npm integrity evidence", () => {
+  const now = new Date("2026-06-27T20:00:00.000Z");
+  const fresh = {
+    code: "npm_integrity_verified",
+    status: "passed",
+    message: "npm tarball integrity matched registry dist.integrity.",
+    verifiedByToolPin: true,
+    trustedAnchor: true,
+    verifiedAt: "2026-06-27T19:50:00.000Z",
+  };
+  const stale = {
+    ...fresh,
+    verifiedAt: "2026-06-01T00:00:00.000Z",
+  };
+  const untrusted = {
+    ...fresh,
+    trustedAnchor: false,
+  };
+
+  assert.equal(trustedArtifactEvidenceProblem([fresh], now), undefined);
+  assert.equal(trustedArtifactEvidenceProblem([stale], now), "trusted artifact evidence is stale");
+  assert.equal(trustedArtifactEvidenceProblem([untrusted], now), "artifact evidence used an untrusted anchor");
 });
 
 test("trustTier derives legacy lockfile tiers without mutating the report shape", () => {

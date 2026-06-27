@@ -93,6 +93,30 @@ test("loadInstalledServerStates keeps ToolPin-locked rows registry-backed withou
   });
 });
 
+test("loadInstalledServerStates shows lock-only stale rows as deletable", async () => {
+  await withTempHomeAndCwd(async () => {
+    const lockedServer = packageServer({ version: "1.0.0" });
+    const lockfile = await writeLockfile(buildInstallPlan(lockedServer, "claude"));
+
+    const rows = await loadInstalledServerStates({
+      servers: [lockedServer],
+      lockfile,
+      scope: "project",
+    });
+
+    const row = rows.find((entry) => entry.serverName === "io.github/example" && entry.client === "claude");
+    assert.ok(row);
+    assert.equal(row.installed, false);
+    assert.equal(row.locked, true);
+    assert.equal(row.lockDrift, true);
+    assert.equal(row.canDelete, true);
+    assert.equal(row.canTest, false);
+    assert.equal(row.testSource, "none");
+    assert.equal(row.runningStatus, "stale");
+    assert.match(row.issue ?? "", /missing from checked client config/);
+  });
+});
+
 test("loadInstalledServerStates can match unlocked installed aliases to registry packages", async () => {
   await withTempHomeAndCwd(async () => {
     const registryServer = packageServer({
