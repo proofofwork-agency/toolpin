@@ -9,7 +9,7 @@ install plan to `mcp-lock.json`.
 
 ## Install the CLI
 
-After the npm package is published:
+Install ToolPin from npm:
 
 ```bash
 npm install -g @proofofwork-agency/toolpin
@@ -17,7 +17,7 @@ toolpin --version
 tpn -v
 ```
 
-For an unreleased source checkout, use the npm scripts:
+When changing ToolPin itself from a source checkout, use the npm scripts:
 
 ```bash
 npm ci

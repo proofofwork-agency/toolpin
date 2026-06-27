@@ -43,7 +43,7 @@ Legend: ✅ native · (✅) partial/indirect · ❌ absent · — N/A.
 | **Runtime sandbox / enforcement** | ❌ | ❌ | ❌ | (✅) Firecracker (build-time) | ✅ microVM | ✅ container/K8s isolation | ✅ |
 | **Open source** | ✅ Apache-2.0 | ✅ (Go, in-repo LICENSE) | ✅ AGPL-3.0 CLI | ✅ TDQS scoring OSS; gateway closed | ❌ closed | ✅ Apache-2.0 | ❌ closed |
 | **Enterprise readiness** | v1.0 target | infra | mid | high | very high | very high | very high |
-| **Distribution** | Docusaurus docs + TUI + composite Action; scoped npm package pending | hosted API (`registry.modelcontextprotocol.io`) | npm CLI + SaaS | SaaS | Docker Desktop ($24/user/mo Business) | K8s operator + Portal | SaaS / VPC |
+| **Distribution** | Docusaurus docs + TUI + composite Action; scoped npm package | hosted API (`registry.modelcontextprotocol.io`) | npm CLI + SaaS | SaaS | Docker Desktop ($24/user/mo Business) | K8s operator + Portal | SaaS / VPC |
 
 The cell at the intersection of **committed Lockfile = ✅** and **install-time
 Client neutrality = ✅**, in an **open-source CLI**, is ToolPin's alone among
@@ -143,8 +143,8 @@ replacements.
   is `mcptrust` (~6★), which implements lockfile + signing + CEL policy + drift
   as a **runtime proxy** rather than a committed install-time CLI. MCP is where
   npm was before `package-lock.json` (2017) and where cargo was before
-  `cargo-vet`. The lockfile is ToolPin's to define and win if it is published,
-  documented, and adopted beyond this repository.
+  `cargo-vet`. The lockfile is ToolPin's to define and win if it remains
+  documented, published, and adopted beyond this repository.
 - **No cross-client config normalizer as a *locking* product.** `mcpm` (~977★)
   writes config for ~15 clients but does not lock or verify; everything else is
   a toy/desktop app.

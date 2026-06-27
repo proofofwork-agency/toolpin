@@ -61,7 +61,7 @@ as a no-op.
 
 ## Direct CLI
 
-After the npm package is published, install the CLI directly:
+Install the CLI directly from npm:
 
 ```yaml
 name: ToolPin

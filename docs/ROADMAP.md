@@ -51,7 +51,7 @@ Shipped through v0.2.2:
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
 - Lockfile enforcement exists for local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified package/remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation.
 - Public Docusaurus docs and the curated registry mirror are live at `https://proofofwork-agency.github.io/toolpin/`.
-- npm publication is still pending; until publish, install examples keep the source-checkout path first.
+- The scoped npm package is published at `@proofofwork-agency/toolpin`; public install examples use the npm-first path, with source checkout reserved for ToolPin development.
 - Ink TUI (`src/tui.tsx`).
 
 ## Release v0.2 — Trust & Install Foundation (shipped)

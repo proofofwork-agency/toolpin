@@ -217,9 +217,9 @@ jobs:
 ```
 
 The checked-in composite Action builds ToolPin from the action source by
-default, then runs `toolpin ci`. After npm publish, set `toolpin-version` to an
-npm version specifier if you want the Action to install
-`@proofofwork-agency/toolpin` from npm instead.
+default, then runs `toolpin ci`. Set `toolpin-version` to an npm version
+specifier if you want the Action to install `@proofofwork-agency/toolpin` from
+npm instead.
 
 Recommended CI posture for reviewed lockfiles is `toolpin ci --live --verify`
 for capability drift. Use `--skip-live-verification` only as an explicit downgrade
@@ -268,9 +268,10 @@ for the exact scope and limits.
 
 ## Roadmap
 
-The immediate release path is public distribution:
+The first public release path is complete. Near-term work now focuses on
+adoption and evidence quality:
 
-- Publish the npm package with provenance.
+- Keep npm provenance publishing healthy for every release.
 - Keep the GitHub Action pinned and documented for CI adoption.
 - Continue tightening evidence definitions, policy fields, and trust docs.
 
