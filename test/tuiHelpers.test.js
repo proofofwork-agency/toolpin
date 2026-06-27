@@ -28,7 +28,7 @@ import {
   SourcesView,
   sortBrowseResults,
 } from "../dist/tui.js";
-import { HelpView, SelectedServerPanel } from "../dist/tui/views/panels.js";
+import { HelpView, SelectedServerPanel, TrustStateLegend } from "../dist/tui/views/panels.js";
 
 test("TUI command-line rendering quotes values and keeps active source/live flags", () => {
   const state = {
@@ -44,6 +44,18 @@ test("TUI command-line rendering quotes values and keeps active source/live flag
   assert.equal(commandLineFor("install", state, server), 'toolpin install "demo server" --client all --scope global --source docker --live');
   assert.equal(commandLineFor("remove", state, server), 'toolpin remove "demo server" --client all --scope global --file mcp-lock.json');
   assert.equal(commandLineFor("test", state), "toolpin test <server-name> --source docker --live --timeout 15000");
+});
+
+test("TUI command-line rendering does not invent a default search query", () => {
+  const state = {
+    query: "",
+    sourceMode: "all",
+    dataMode: "cache",
+    client: "claude",
+    installScope: "project",
+  };
+
+  assert.equal(commandLineFor("search", state), "toolpin search <query> --source all");
 });
 
 test("TUI all-client selection respects project and global scope support", () => {
@@ -251,6 +263,19 @@ test("TUI browse default source-first sort groups ToolPin before official and Do
   );
 });
 
+test("TUI empty browse query shows registry entries instead of a hidden keyword search", () => {
+  const servers = [
+    serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Server", isLatest: true }),
+    serverFixture({ registrySource: "docker", name: "docker/bravo", title: "Bravo Server", isLatest: true }),
+    serverFixture({ registrySource: "toolpin", name: "toolpin/zulu", title: "Zulu Server", isLatest: true }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "", "latest").map((result) => result.server.registrySource),
+    ["toolpin", "official", "docker"],
+  );
+});
+
 test("TUI browse search text matches registry source ids", () => {
   const servers = [
     serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Server", description: "Mentions toolpin but is not curated" }),
@@ -385,6 +410,19 @@ test("TUI empty browse state renders loader only while initial registry data is 
   assert.match(loading, /registry/);
   assert.doesNotMatch(loading, /No servers found/);
   assert.match(empty, /No servers found/);
+});
+
+test("TUI footer trust legend explains review-state colors", () => {
+  const rendered = renderToString(React.createElement(TrustStateLegend, { width: 130 }));
+
+  assert.match(rendered, /OK/);
+  assert.match(rendered, /verified/);
+  assert.match(rendered, /REVIEW/);
+  assert.match(rendered, /needs-proof/);
+  assert.match(rendered, /UNVERIFIED/);
+  assert.match(rendered, /weak evidence/);
+  assert.match(rendered, /BLOCKED/);
+  assert.match(rendered, /stop/);
 });
 
 test("TUI overview leads with profile score and cap reason instead of capped overall score", () => {

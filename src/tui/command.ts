@@ -18,7 +18,7 @@ export function commandLineFor(commandId: TuiCommandId, state: TuiCommandState, 
     case "sources":
       return "toolpin registry list";
     case "search":
-      return `toolpin search ${shellQuote(state.query || "mcp")} ${source}${live}`;
+      return `toolpin search ${state.query.trim() ? shellQuote(state.query.trim()) : "<query>"} ${source}${live}`;
     case "more-results":
       return "toolpin tui # show more matching results";
     case "reset-view":

@@ -77,7 +77,7 @@ export function MpmTui() {
     entries: [],
     registrySources: REGISTRY_SOURCES,
     servers: [],
-    query: "github",
+    query: "",
     commandQuery: "",
     commandSelected: 0,
     sourceSelected: 0,
@@ -1167,7 +1167,7 @@ export function MpmTui() {
   function resetViewDefaults(): void {
     setState((prev) => ({
       ...prev,
-      query: "github",
+      query: "",
       commandQuery: "",
       commandSelected: 0,
       selected: 0,
@@ -1710,7 +1710,7 @@ export function MpmTui() {
 
   const visibleCommandLog = commandLogForView(state);
   const activityRows = visibleCommandLog?.lines.length ? Math.min(3, visibleCommandLog.lines.length) : 1;
-  const paneHeight = Math.max(8, height - 14 - activityRows);
+  const paneHeight = Math.max(8, height - 15 - activityRows);
   const listHeight = state.view === "discover" || state.view === "installed" ? paneHeight : Math.min(6, Math.max(3, height - 18 - activityRows));
   const modalWidth = Math.min(width - 4, 104);
   const modalContentWidth = Math.max(40, modalWidth - 4);

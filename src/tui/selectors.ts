@@ -4,7 +4,7 @@ import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
 import { compareRegistrySources, latestOnly, normalizeEntries, registrySourceIdRank } from "../registry.js";
 import { searchServers } from "../search.js";
-import { trustRankingScore } from "../trust.js";
+import { scoreServer, trustRankingScore } from "../trust.js";
 import type { FetchOptions } from "../registry.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceInfo, SearchResult, SourceStatus } from "../types.js";
 import { compareVersionStatus, knownVersions } from "../versions.js";
@@ -247,7 +247,10 @@ export function cacheHasSource(entries: RegistryEntry[], source: SourceMode, reg
 
 export function browseSearchResults(servers: NormalizedServer[], query: string, browseVersionMode: BrowseVersionMode, browseSortMode: BrowseSortMode = "source-first"): SearchResult[] {
   const candidates = browseVersionMode === "all" ? servers : latestOnly(servers);
-  return sortBrowseResults(searchServers(candidates, query || "mcp", candidates.length), browseSortMode);
+  if (!query.trim()) {
+    return sortBrowseResults(candidates.map((server) => ({ server, relevance: 0, trust: scoreServer(server) })), browseSortMode);
+  }
+  return sortBrowseResults(searchServers(candidates, query, candidates.length), browseSortMode);
 }
 
 export function sortBrowseResults(results: SearchResult[], mode: BrowseSortMode): SearchResult[] {

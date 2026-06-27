@@ -1188,20 +1188,53 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
   const copyrightWidth = Math.min(copyright.length, Math.max(0, width - 8));
   const hintWidth = Math.max(10, width - copyrightWidth - 8);
   return (
-    <Box paddingX={2} marginTop={1} flexShrink={0} justifyContent="space-between">
-      <Box width={hintWidth}>
-        <Text wrap="truncate">
-          {hints.map(([keyName, label], index) => (
-            <React.Fragment key={keyName}>
-              {index > 0 ? <Text color={CHROME}>  |  </Text> : null}
-              <Text bold color="white">{keyName}</Text>
-              <Text color={MUTED}>:{label}</Text>
-            </React.Fragment>
-          ))}
-        </Text>
+    <Box paddingX={2} marginTop={1} flexShrink={0} flexDirection="column">
+      <TrustStateLegend width={Math.max(1, width - 4)} />
+      <Box justifyContent="space-between">
+        <Box width={hintWidth}>
+          <Text wrap="truncate">
+            {hints.map(([keyName, label], index) => (
+              <React.Fragment key={keyName}>
+                {index > 0 ? <Text color={CHROME}>  |  </Text> : null}
+                <Text bold color="white">{keyName}</Text>
+                <Text color={MUTED}>:{label}</Text>
+              </React.Fragment>
+            ))}
+          </Text>
+        </Box>
+        <Text color={CHROME} wrap="truncate">{truncate(copyright, copyrightWidth)}</Text>
       </Box>
-      <Text color={CHROME} wrap="truncate">{truncate(copyright, copyrightWidth)}</Text>
     </Box>
+  );
+}
+
+export function TrustStateLegend({ width }: { width: number }) {
+  const compact = width < 118;
+  const items = compact
+    ? [
+        { label: "OK", color: OK, text: "verified" },
+        { label: "REVIEW", color: WARN, text: "needs-proof" },
+        { label: "UNVERIFIED", color: ERR, text: "weak" },
+        { label: "BLOCKED", color: ERR, text: "stop" },
+      ]
+    : [
+        { label: "OK", color: OK, text: "verified" },
+        { label: "REVIEW", color: WARN, text: "needs-proof" },
+        { label: "UNVERIFIED", color: ERR, text: "weak evidence" },
+        { label: "BLOCKED", color: ERR, text: "stop" },
+      ];
+  return (
+    <Text wrap="truncate">
+      <Text color={CHROME}>trust </Text>
+      {items.map((item, index) => (
+        <React.Fragment key={item.label}>
+          {index > 0 ? <Text color={CHROME}> </Text> : null}
+          <Text color={item.color}>▓</Text>
+          <Text bold color={item.color}>{item.label}</Text>
+          <Text color={MUTED}> {item.text}</Text>
+        </React.Fragment>
+      ))}
+    </Text>
   );
 }
 
