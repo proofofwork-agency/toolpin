@@ -19,7 +19,7 @@ import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
-import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
+import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustProfileScore, trustTier } from "./trust.js";
 import { localHttpRuntimeAdvisory } from "./runtimeAdvisory.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
@@ -29,6 +29,7 @@ import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourc
 const args = normalizeArgs(process.argv.slice(2));
 type ClientSelection = ClientName | "all";
 const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
+const TOOLPIN_NPM_PACKAGE = "@proofofwork-agency/toolpin";
 const VALUE_FLAGS = new Set([
   "-c",
   "-s",
@@ -207,7 +208,7 @@ async function upgrade(rest: string[]): Promise<void> {
   const packageManager = upgradePackageManager(rest);
   const command = upgradeCommand(packageManager, target);
   const result = {
-    package: "toolpin",
+    package: TOOLPIN_NPM_PACKAGE,
     currentVersion: TOOLPIN_VERSION,
     target,
     packageManager,
@@ -267,7 +268,7 @@ async function search(rest: string[]): Promise<void> {
     printSubhead(`${server.name}@${server.version}`);
     printField("title", server.title);
     if (server.description) printField("about", truncate(server.description, 140));
-    printField("source", `${server.registrySource}  trust ${trustTier(result.trust)} / ${result.trust.score}% complete / ${evidenceStatus(result.trust)}`);
+    printField("source", `${server.registrySource}  trust ${trustTier(result.trust)} / ${trustProfileScore(result.trust)}% profile / ${evidenceStatus(result.trust)}`);
     printField("targets", `packages ${packages}; remotes ${remotes}`);
     printField("evidence", evidenceSummary(result.trust));
     printCapExplanation(result.trust);
@@ -294,7 +295,7 @@ async function info(rest: string[]): Promise<void> {
   printField("remotes", server.remoteTypes.join(", ") || "none");
   printField("registry", server.registrySource);
   if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
-  printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
+  printField("trust", `${trustTier(trust)} / ${trustProfileScore(trust)}% profile / ${evidenceStatus(trust)}`);
   printField("evidence", evidenceSummary(trust));
   printCapExplanation(trust);
   if (trust.gatedBy?.length) printField("gated by", trust.gatedBy.join(", "));
@@ -417,7 +418,7 @@ async function auditServer(rest: string[]): Promise<void> {
     return;
   }
   printHeader(`Server trust report: ${server.name}@${server.version}`);
-  printField("trust", `${trustTier(trust)} / ${trust.score}% complete / ${evidenceStatus(trust)}`);
+  printField("trust", `${trustTier(trust)} / ${trustProfileScore(trust)}% profile / ${evidenceStatus(trust)}`);
   printField("evidence", evidenceSummary(trust));
   printCapExplanation(trust);
 }
@@ -934,7 +935,7 @@ async function install(rest: string[]): Promise<void> {
   printField("registry", server.registrySource, CYAN_COLOR);
   if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
   const installTrust = plans[0]?.trust ?? scoreServer(server);
-  printField("trust", `${trustTier(installTrust)} / ${installTrust.score}% complete / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
+  printField("trust", `${trustTier(installTrust)} / ${trustProfileScore(installTrust)}% profile / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
   printField("evidence", evidenceSummary(installTrust));
   printCapExplanation(installTrust);
   printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? (verificationOutcome(verificationReport) === "verified" ? OK_COLOR : WARN_COLOR) : MUTED_COLOR);
@@ -1644,8 +1645,8 @@ Opens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.
 Browse rows show full evidence labels (REVIEW, UNVERIFIED, BLOCKED, EVIDENCE).
 Browse defaults to source-first ordering: toolpin, official, docker, then other enabled sources.
 Use g for the exact source filter and a to cycle sort modes.
-Overview separates evidence tier, gated overall score, metadata completeness,
-and pillar scores; cap explains why a score was limited.`);
+Overview separates evidence tier, metadata profile score, pillar scores,
+and cap reasons; cap explains the evidence gate limit.`);
 }
 
 function hasFlag(values: string[], flag: string): boolean {
@@ -1758,7 +1759,7 @@ function detectPackageManager(): UpgradePackageManager {
 
 function upgradeCommand(packageManager: UpgradePackageManager, target: string): UpgradeCommand {
   if (!target || target.startsWith("-")) throw new Error("--target requires a package version or dist-tag.");
-  const spec = `toolpin@${target}`;
+  const spec = `${TOOLPIN_NPM_PACKAGE}@${target}`;
   const executable = packageManagerExecutable(packageManager);
   const args = packageManager === "npm"
     ? ["install", "-g", spec]

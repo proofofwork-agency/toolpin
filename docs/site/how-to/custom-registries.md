@@ -20,7 +20,7 @@ ToolPin ships with these source IDs:
 | `toolpin` | installable, pinned | ToolPin hosted curated registry with bundled fallback. |
 | `official` | installable | Official MCP Registry metadata. |
 | `docker` | installable | Docker MCP Catalog metadata. |
-| `pulse` | disabled directory | PulseMCP directory source; auth-gated and opt-in. |
+| `pulsemcp` | disabled directory | PulseMCP directory source; auth-gated and opt-in. |
 | `smithery` | disabled directory | Known marketplace/hosted connector source; hosted targets require `--allow-hosted-directory-targets`. |
 | `glama` | disabled directory | Known broad directory/gateway source; installable only when re-resolved through a matching Official MCP Registry entry. |
 
@@ -209,7 +209,7 @@ The intended shape is:
 ```sh
 toolpin registry add glama --adapter @toolpin/registry-glama
 toolpin registry add smithery --adapter @toolpin/registry-smithery
-toolpin registry add pulse --adapter @toolpin/registry-pulse
+toolpin registry add pulsemcp --adapter @toolpin/registry-pulsemcp
 ```
 
 Adapter modules should require explicit opt-in before ToolPin executes external

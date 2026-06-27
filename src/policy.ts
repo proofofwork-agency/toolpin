@@ -322,10 +322,18 @@ function selectedTarget(plan: InstallPlan): Record<string, unknown> {
 
 function sourceArray(value: unknown, field: string, path: string): RegistrySourceId[] | undefined {
   const values = stringArray(value, field, path);
-  if (values?.some((item) => !["official", "docker", "pulse", "smithery", "glama"].includes(item))) {
+  if (values === undefined) return undefined;
+  const normalized = values.map(normalizePolicySource);
+  if (normalized.some((item) => item === undefined)) {
     throw new Error(`Invalid policy schema in ${path}: ${field} contains an unknown registry source`);
   }
-  return values as RegistrySourceId[] | undefined;
+  return normalized as RegistrySourceId[];
+}
+
+function normalizePolicySource(value: string): RegistrySourceId | undefined {
+  if (value === "pulse") return "pulsemcp";
+  if (["toolpin", "official", "docker", "pulsemcp", "smithery", "glama"].includes(value)) return value;
+  return undefined;
 }
 
 function clientArray(value: unknown, field: string, path: string): ClientName[] | undefined {

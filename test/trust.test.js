@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyTrust, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustTier } from "../dist/trust.js";
+import { classifyTrust, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustProfileScore, trustRankingScore, trustTier } from "../dist/trust.js";
 
 test("repository and namespace trust signals have exact metadata weights", () => {
   const trusted = scoreServer(packageServer());
@@ -26,6 +26,33 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(unnamespaced.score, 68);
   assert.equal(unnamespaced.metadataCompleteness, 68);
   assert.equal(unnamespaced.tier, "conditional");
+});
+
+test("trust presentation helpers use profile score and tier-banded ranking", () => {
+  const conditionalLow = scoreServer(packageServer({ requiresSecrets: true }));
+  const conditionalHigh = scoreServer(packageServer({ pkg: { registryType: "mcpb", identifier: "example.mcpb", version: "1.0.0", fileSha256: "b".repeat(64) } }));
+  const unverifiedHigh = {
+    score: 100,
+    metadataCompleteness: 100,
+    tier: "unverified",
+    badges: [],
+    issues: [],
+  };
+  const blockedHigh = {
+    score: 100,
+    metadataCompleteness: 100,
+    tier: "blocked",
+    badges: [],
+    issues: [],
+  };
+
+  assert.equal(conditionalLow.overallScore, 69);
+  assert.equal(conditionalHigh.overallScore, 69);
+  assert.equal(trustProfileScore(conditionalLow), conditionalLow.metadataCompleteness);
+  assert.equal(trustProfileScore(conditionalHigh), conditionalHigh.metadataCompleteness);
+  assert.ok(trustRankingScore(conditionalHigh) > trustRankingScore(conditionalLow));
+  assert.ok(trustRankingScore(conditionalLow) > trustRankingScore(unverifiedHigh));
+  assert.ok(trustRankingScore(unverifiedHigh) > trustRankingScore(blockedHigh));
 });
 
 test("package type and pinned version signals have exact metadata weights", () => {
@@ -225,6 +252,38 @@ test("ToolPin registry evidence can verify artifact integrity without changing m
   assert.equal(ignored.tier, "conditional");
   assert.equal(ignored.capReason, "automated evidence incomplete");
   assert.equal(ignored.badges.includes("npm-integrity-verified"), false);
+});
+
+test("ToolPin registry evidence with an untrusted anchor cannot reach the verified tier", () => {
+  const bogusAnchor = {
+    code: "npm_integrity_verified",
+    status: "passed",
+    message: "self-declared integrity against a non-allowlisted registry",
+    source: "npm-tarball",
+    claim: "sha512-example",
+    verificationMethod: "npm-packument-sri",
+    verifiedByToolPin: true,
+    trustedAnchor: true,
+    trustAnchor: "registry.evil.example",
+    verifiedAt: new Date().toISOString(),
+  };
+  const missingAnchor = { ...bogusAnchor, trustAnchor: undefined };
+  delete missingAnchor.trustAnchor;
+
+  const bogusReport = scoreServer(packageServer({
+    registrySource: "toolpin",
+    rawMeta: { "dev.toolpin/evidence": [bogusAnchor] },
+  }));
+  const missingReport = scoreServer(packageServer({
+    registrySource: "toolpin",
+    rawMeta: { "dev.toolpin/evidence": [missingAnchor] },
+  }));
+
+  assert.notEqual(bogusReport.tier, "verified");
+  assert.equal(bogusReport.overallScore < 100, true);
+  assert.ok(bogusReport.evidence.some((entry) => entry.code === "npm_integrity_verified" && entry.trustedAnchor === false));
+  assert.notEqual(missingReport.tier, "verified");
+  assert.equal(missingReport.overallScore < 100, true);
 });
 
 test("trustedArtifactEvidenceProblem accepts fresh npm integrity evidence", () => {

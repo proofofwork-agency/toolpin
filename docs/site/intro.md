@@ -45,8 +45,10 @@ tool already gives your team all four in one workflow, use it.
 - Checks declared integrity pins: OCI targets must include `@sha256:` when
   required, and MCPB targets must declare `fileSha256` when required.
 - Separates metadata completeness from evidence tier. `verified` requires a
-  pinned install target plus artifact proof; missing proof caps the overall
-  score and is shown as a `cap` reason in CLI/TUI output.
+  pinned install target plus artifact proof; missing proof caps the
+  machine-readable `overallScore` and is shown as a `cap` reason in CLI/TUI
+  output. Trusted-source conditional entries cap at 69% until artifact proof is
+  verified.
 - Runs `toolpin ci` as a read-only gate for committed lockfiles.
 - Supports optional whole-lock digest pins and detached Ed25519 lockfile
   signatures using keys managed outside ToolPin.

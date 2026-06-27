@@ -4,6 +4,7 @@ import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
 import { compareRegistrySources, latestOnly, normalizeEntries, registrySourceIdRank } from "../registry.js";
 import { searchServers } from "../search.js";
+import { trustRankingScore } from "../trust.js";
 import type { FetchOptions } from "../registry.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceInfo, SearchResult, SourceStatus } from "../types.js";
 import { compareVersionStatus, knownVersions } from "../versions.js";
@@ -284,7 +285,7 @@ function sourceRank(result: SearchResult): number {
 }
 
 function relevanceRank(result: SearchResult): number {
-  return result.relevance + (result.trust.overallScore ?? result.trust.score) / 100;
+  return result.relevance + trustRankingScore(result.trust) / 100;
 }
 
 function compareBrowseName(left: SearchResult, right: SearchResult): number {

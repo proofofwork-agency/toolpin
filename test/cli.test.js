@@ -68,7 +68,9 @@ test("CLI search preserves human output without --json", async () => {
     assert.match(stdout, /Search results for "github"/);
     assert.match(stdout, /io\.github\/example@1\.0\.0/);
     assert.match(stdout, /title\s+GitHub Example Server/);
+    assert.match(stdout, /trust\s+conditional \/ \d+% profile/);
     assert.match(stdout, /evidence\s+declared package_pin/);
+    assert.doesNotMatch(stdout, /\d+% complete/);
   });
 });
 
@@ -358,7 +360,7 @@ test("CLI upgrade help and dry-run expose the package-manager command", async ()
 
   const dry = await execFileAsync(process.execPath, [CLI, "upgrade", "--dry-run", "--target", "latest", "--package-manager", "npm"]);
   assert.match(dry.stdout, /ToolPin Upgrade/);
-  assert.match(dry.stdout, /command\s+npm install -g toolpin@latest/);
+  assert.match(dry.stdout, /command\s+npm install -g @proofofwork-agency\/toolpin@latest/);
   assert.match(dry.stdout, /dry run; no changes made/);
   assert.equal(dry.stderr, "");
 });
@@ -377,10 +379,10 @@ test("CLI upgrade dry-run supports JSON and package-manager selection", async ()
   const parsed = JSON.parse(stdout);
 
   assert.equal(stderr, "");
-  assert.equal(parsed.package, "toolpin");
+  assert.equal(parsed.package, "@proofofwork-agency/toolpin");
   assert.equal(parsed.target, "3.9.2");
   assert.equal(parsed.packageManager, "pnpm");
-  assert.deepEqual(parsed.command.slice(-3), ["add", "-g", "toolpin@3.9.2"]);
+  assert.deepEqual(parsed.command.slice(-3), ["add", "-g", "@proofofwork-agency/toolpin@3.9.2"]);
   assert.equal(parsed.dryRun, true);
 });
 

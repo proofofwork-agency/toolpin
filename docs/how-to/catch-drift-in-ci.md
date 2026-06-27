@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.2
+      - uses: proofofwork-agency/toolpin@v0.2.3
         with:
           file: mcp-lock.json
           live: "true"
@@ -100,7 +100,7 @@ toolpin lock digest --file mcp-lock.json
 Use it in CI:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     file: mcp-lock.json
     live: "true"
@@ -115,14 +115,14 @@ both files would defeat the check.
 ToolPin can verify a detached Ed25519 signature before registry resolution:
 
 ```bash
-toolpin lock sign --key private.pem --file mcp-lock.json --signature mcp-lock.sig
-toolpin lock verify-signature --key public.pem --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock sign --policy .toolpin/policy.json --key private.pem --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem --file mcp-lock.json --signature mcp-lock.sig
 ```
 
 Then in CI:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     file: mcp-lock.json
     live: "true"
@@ -139,7 +139,7 @@ trust root are controlled outside the PR path.
 To enforce a non-default policy path:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     policy: security/toolpin-policy.json
 ```
@@ -147,7 +147,7 @@ To enforce a non-default policy path:
 To make CI skip policy enforcement explicitly:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     no-policy: "true"
 ```
@@ -156,7 +156,7 @@ To re-run verification before comparing locked plans, use the stricter CI
 posture:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     live: "true"
     verify: "true"

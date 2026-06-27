@@ -1,6 +1,7 @@
 import { attestationBadge, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { scanFindingsToTrustIssues, scanServerMetadata } from "./scan.js";
+import { TRUSTED_MCPB_SOURCES, TRUSTED_NPM_PACKUMENT_HOSTS, TRUSTED_NPM_TARBALL_HOSTS, trustedOciRegistry } from "./verificationTrust.js";
 import type { NormalizedServer, RegistryPackage, RegistryRemote, TrustEvidence, TrustGate, TrustIssue, TrustReport, TrustTier } from "./types.js";
 
 const STRONG_PACKAGE_TYPES = new Set(["oci", "mcpb"]);
@@ -149,6 +150,19 @@ export function trustTier(report: Pick<TrustReport, "score" | "issues" | "tier" 
   return report.tier ?? classifyTrust(report.score, report.issues, report.evidence).tier;
 }
 
+export function trustProfileScore(report: Pick<TrustReport, "score" | "metadataCompleteness">): number {
+  return clamp(report.metadataCompleteness ?? report.score);
+}
+
+export function trustRankingScore(report: Pick<TrustReport, "score" | "metadataCompleteness" | "issues" | "tier" | "evidence">): number {
+  const profileScore = trustProfileScore(report);
+  const tier = trustTier(report);
+  if (tier === "verified") return 100;
+  if (tier === "conditional") return bandScore(profileScore, 60, 99);
+  if (tier === "unverified") return bandScore(profileScore, 30, 59);
+  return bandScore(profileScore, 0, 20);
+}
+
 export function regateTrustReport(report: TrustReport): TrustReport {
   const verifiedProvenance = report.verifiedProvenance === true;
   const pillars = report.pillars ?? {
@@ -280,6 +294,10 @@ function gateTrust(
     gates: classified.gates,
     gatedBy: classified.gatedBy,
   };
+}
+
+function bandScore(score: number, min: number, max: number): number {
+  return min + Math.round((clamp(score) / 100) * (max - min));
 }
 
 function packageScore(pkg: RegistryPackage, issues: TrustIssue[], badges: string[], evidence: TrustEvidence[]): number {
@@ -419,6 +437,11 @@ function readToolPinEvidence(server: NormalizedServer): TrustEvidence[] {
     if (!isRecord(entry)) return [];
     if (typeof entry.code !== "string" || typeof entry.status !== "string" || typeof entry.message !== "string") return [];
     if (!["passed", "declared", "failed", "unavailable"].includes(entry.status)) return [];
+    const declaredTrustedAnchor = typeof entry.trustedAnchor === "boolean" ? entry.trustedAnchor : undefined;
+    const trustAnchorHost = typeof entry.trustAnchor === "string" ? entry.trustAnchor : undefined;
+    const trustedAnchor = declaredTrustedAnchor === true
+      ? anchorAllowsEvidenceCode(entry.code, trustAnchorHost)
+      : declaredTrustedAnchor;
     return [{
       code: entry.code,
       status: entry.status as TrustEvidence["status"],
@@ -427,13 +450,22 @@ function readToolPinEvidence(server: NormalizedServer): TrustEvidence[] {
       ...(typeof entry.claim === "string" ? { claim: entry.claim } : {}),
       ...(typeof entry.verificationMethod === "string" ? { verificationMethod: entry.verificationMethod } : {}),
       ...(typeof entry.verifiedByToolPin === "boolean" ? { verifiedByToolPin: entry.verifiedByToolPin } : {}),
-      ...(typeof entry.trustedAnchor === "boolean" ? { trustedAnchor: entry.trustedAnchor } : {}),
-      ...(typeof entry.trustAnchor === "string" ? { trustAnchor: entry.trustAnchor } : {}),
+      ...(trustedAnchor !== undefined ? { trustedAnchor } : {}),
+      ...(trustAnchorHost ? { trustAnchor: trustAnchorHost } : {}),
       ...(typeof entry.verifiedAt === "string" ? { verifiedAt: entry.verifiedAt } : {}),
       ...(typeof entry.failureReason === "string" ? { failureReason: entry.failureReason } : {}),
       ...(typeof entry.required === "boolean" ? { required: entry.required } : {}),
     }];
   });
+}
+
+function anchorAllowsEvidenceCode(code: string, trustAnchor: string | undefined): boolean {
+  if (typeof trustAnchor !== "string") return false;
+  const host = trustAnchor.toLowerCase();
+  if (code === "npm_integrity_verified") return TRUSTED_NPM_PACKUMENT_HOSTS.has(host) || TRUSTED_NPM_TARBALL_HOSTS.has(host);
+  if (code === "oci_digest_verified") return trustedOciRegistry(host);
+  if (code === "mcpb_sha256_verified") return TRUSTED_MCPB_SOURCES.has(host);
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -26,7 +26,9 @@ import {
   selectedClientsForScope,
   sourceCountLabel,
   SourcesView,
+  sortBrowseResults,
 } from "../dist/tui.js";
+import { HelpView, SelectedServerPanel } from "../dist/tui/views/panels.js";
 
 test("TUI command-line rendering quotes values and keeps active source/live flags", () => {
   const state = {
@@ -304,6 +306,26 @@ test("TUI browse source-last reverses source grouping", () => {
   );
 });
 
+test("TUI relevance ranking differentiates conditional entries by metadata profile", () => {
+  const lowProfile = searchResultFixture("example/low", { score: 60, metadataCompleteness: 60, overallScore: 69, tier: "conditional" });
+  const highProfile = searchResultFixture("example/high", { score: 90, metadataCompleteness: 90, overallScore: 69, tier: "conditional" });
+
+  assert.deepEqual(
+    sortBrowseResults([lowProfile, highProfile], "relevance").map((result) => result.server.name),
+    ["example/high", "example/low"],
+  );
+});
+
+test("TUI relevance ranking keeps evidence tier above profile score", () => {
+  const conditional = searchResultFixture("example/conditional", { score: 60, metadataCompleteness: 60, overallScore: 60, tier: "conditional" });
+  const unverified = searchResultFixture("example/unverified", { score: 100, metadataCompleteness: 100, overallScore: 45, tier: "unverified" });
+
+  assert.deepEqual(
+    sortBrowseResults([unverified, conditional], "relevance").map((result) => result.server.name),
+    ["example/conditional", "example/unverified"],
+  );
+});
+
 test("TUI browse sort cycle starts with source-first and reaches relevance", () => {
   assert.equal(nextBrowseSortMode("source-first"), "alpha-asc");
   assert.equal(nextBrowseSortMode("alpha-asc"), "alpha-desc");
@@ -363,6 +385,42 @@ test("TUI empty browse state renders loader only while initial registry data is 
   assert.match(loading, /registry/);
   assert.doesNotMatch(loading, /No servers found/);
   assert.match(empty, /No servers found/);
+});
+
+test("TUI overview leads with profile score and cap reason instead of capped overall score", () => {
+  const server = serverFixture({
+    name: "example/conditional",
+    title: "Conditional Server",
+    repositoryUrl: "https://github.com/example/conditional",
+  });
+  const result = searchResultFixture(server.name, { score: 74, metadataCompleteness: 74, overallScore: 69, tier: "conditional" });
+  result.server = server;
+
+  const rendered = renderToString(React.createElement(SelectedServerPanel, {
+    view: "details",
+    result,
+    server,
+    client: "claude",
+    installScope: "project",
+    width: 110,
+    testing: false,
+  }));
+
+  assert.match(rendered, /evidence\s+REVIEW/);
+  assert.match(rendered, /profile\s+74%/);
+  assert.match(rendered, /cap\s+evidence gate max 69%: automated evidence incomplete/);
+  assert.doesNotMatch(rendered, /overall\s+69%/);
+  assert.doesNotMatch(rendered, /gated trust score/);
+});
+
+test("TUI help explains why conditional trusted entries cap at 69 percent", () => {
+  const rendered = renderToString(React.createElement(HelpView, {
+    width: 120,
+    height: 34,
+  }));
+
+  assert.match(rendered, /69% cap/);
+  assert.match(rendered, /69% until proof verified; proof=npm\/OCI\/MCPB/);
 });
 
 test("Installed server details renders local HTTP endpoint advisory", () => {
@@ -502,6 +560,18 @@ function serverFixture(overrides = {}) {
       packages: [{ registryType: "npm", identifier: "example-server", version }],
     },
     ...overrides,
+  };
+}
+
+function searchResultFixture(name, trust) {
+  return {
+    server: serverFixture({ name, title: "Matching Server", isLatest: true }),
+    relevance: 10,
+    trust: {
+      badges: [],
+      issues: [],
+      ...trust,
+    },
   };
 }
 

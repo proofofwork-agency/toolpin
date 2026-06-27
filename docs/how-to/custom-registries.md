@@ -8,7 +8,7 @@ Built-in sources:
   `curated` trust, pinned, and always enabled.
 - `official`: Official MCP Registry, installable, `canonical` trust.
 - `docker`: Docker MCP Catalog, installable, `curated` trust.
-- `pulse` (PulseMCP), `smithery`, `glama`: known directory sources, disabled by default. Enable one explicitly before it appears in `--source all`, browse, or search. `pulse` is auth-gated, Smithery hosted targets require `--allow-hosted-directory-targets`, and Glama entries become installable only when ToolPin can match their repository to an Official MCP Registry entry with lockable targets.
+- `pulsemcp`, `smithery`, `glama`: known directory sources, disabled by default. Enable one explicitly before it appears in `--source all`, browse, or search. `pulsemcp` is auth-gated, Smithery hosted targets require `--allow-hosted-directory-targets`, and Glama entries become installable only when ToolPin can match their repository to an Official MCP Registry entry with lockable targets.
 
 Use source preferences to turn optional built-ins on or off. The pinned
 `toolpin` source is always enabled:

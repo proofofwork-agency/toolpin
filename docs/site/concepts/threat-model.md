@@ -23,7 +23,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 |---|---|---|
 | Mutable OCI tags | Trust and policy checks can require selected OCI identifiers to include `@sha256:`; `verify` resolves the registry manifest digest against a code-owned registry allowlist. | Manifest-digest resolution (not a full image byte recompute); non-allowlisted hosts are rejected as `unavailable`. |
 | MCPB bundles without declared integrity | Trust and policy checks can require `fileSha256`; `verify` recomputes SHA-256 only when bytes are available from a code-allowlisted HTTPS artifact host. | Local paths, `file://`, HTTP, untrusted hosts, and unavailable bytes are explicit `unavailable` evidence, not a verified result. |
-| Incomplete automated evidence | Trust tiers and cap reasons show when metadata is strong but artifact proof is missing. | A cap is a review signal, not runtime containment. |
+| Incomplete automated evidence | Trust tiers and cap reasons show when metadata is strong but artifact proof is missing. Trusted-source conditional entries are capped at 69% until ToolPin verifies artifact proof such as npm integrity, OCI digest, or MCPB hash evidence. | A cap is a review signal, not runtime containment. |
 | Insecure remotes | Non-HTTPS or invalid remote URLs are critical trust issues. | Runtime behavior after install is outside ToolPin. |
 | Lockfile tampering | Per-entry integrity, whole-lock digest pins, and detached Ed25519 signatures can detect changes. | Signatures depend on out-of-band key management and branch protection. |
 | Install drift | `install` and `ci` compare resolved plans with the lockfile and fail on drift. | Trust-score increases are not treated as a failure. |

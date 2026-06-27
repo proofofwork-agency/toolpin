@@ -167,6 +167,8 @@ toolpin ci --file mcp-lock.json --live --verify
 ### Use the TUI
 
 ```bash
+toolpin tui
+tpn tui
 npm run tui
 ```
 
@@ -207,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.2
+      - uses: proofofwork-agency/toolpin@v0.2.3
         with:
           live: "true"
           verify: "true"
@@ -232,12 +234,14 @@ ToolPin is intentionally conservative:
 - It does not print raw secret values during secret audits.
 - It treats score as triage, not proof.
 - It separates evidence tier from metadata completeness.
+- It caps trusted-source conditional entries at 69% until ToolPin verifies
+  artifact proof, such as npm integrity, OCI digest, or MCPB hash evidence.
 - It rejects lockfile drift unless you deliberately review and update the lock.
 
 Verification currently covers install metadata and selected evidence paths:
 npm tarball SRI verification from `registry.npmjs.org`, OCI manifest digest
-resolution, registry attestations, generated capability manifests, and optional
-live `tools/list` hashes. For MCPB artifacts, ToolPin can
+resolution, declared attestation metadata, generated capability manifests, and
+optional live `tools/list` hashes. For MCPB artifacts, ToolPin can
 recompute MCPB SHA-256 only for allowlisted HTTPS artifact hosts. See the
 [threat model](https://proofofwork-agency.github.io/toolpin/docs/concepts/threat-model)
 for the exact scope and limits.

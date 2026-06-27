@@ -143,6 +143,38 @@ test("readPolicy rejects unknown clients and sources", async () => {
   });
 });
 
+test("readPolicy accepts built-in source ids and normalizes deprecated pulse alias", async () => {
+  await withTempCwd(async () => {
+    await mkdir(".toolpin", { recursive: true });
+    await writeFile(
+      ".toolpin/policy.json",
+      JSON.stringify({
+        allowedSources: ["toolpin", "pulsemcp", "pulse"],
+        deniedSources: ["pulse"],
+      }),
+      "utf8",
+    );
+
+    const policy = await readPolicy(".toolpin/policy.json");
+
+    assert.deepEqual(policy.allowedSources, ["toolpin", "pulsemcp", "pulsemcp"]);
+    assert.deepEqual(policy.deniedSources, ["pulsemcp"]);
+  });
+});
+
+test("evaluatePolicy accepts toolpin and pulsemcp source ids", () => {
+  const toolpin = evaluatePolicy(buildInstallPlan(packageServer({ registrySource: "toolpin" }), "claude"), {
+    allowedSources: ["toolpin"],
+  });
+  const pulsemcp = evaluatePolicy(buildInstallPlan(packageServer({ registrySource: "pulsemcp" }), "claude"), {
+    deniedSources: ["pulsemcp"],
+  });
+
+  assert.equal(toolpin.ok, true);
+  assert.equal(pulsemcp.ok, false);
+  assert.equal(pulsemcp.issues[0].code, "source_denied");
+});
+
 test("enforcePolicy reads .toolpin/policy.json when present", async () => {
   await withTempCwd(async () => {
     await mkdir(".toolpin", { recursive: true });
@@ -217,11 +249,12 @@ function registryEntry(server) {
 }
 
 function packageServer(overrides = {}) {
+  const registrySource = overrides.registrySource ?? "official";
   const registryType = overrides.registryType ?? "npm";
   const identifier = overrides.identifier ?? "@example/server";
   const fileSha256 = overrides.fileSha256;
   return {
-    registrySource: "official",
+    registrySource,
     name: "io.github/example",
     title: "Example Server",
     description: "Synthetic server",

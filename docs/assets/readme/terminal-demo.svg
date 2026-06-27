@@ -132,9 +132,9 @@
     <text x="62" y="226">runtime     npm     transport  stdio     secrets  <tspan class="ok">none declared</tspan></text>
     <text x="62" y="274">evidence    <tspan class="ok">ToolPin-verified npm_integrity_verified</tspan></text>
     <text x="62" y="322">badges      source repo, namespaced, npm, pinned version</text>
-    <text x="62" y="382">overall</text>
+    <text x="62" y="382">profile</text>
     <rect class="bar-ok" x="190" y="360" width="380" height="22" rx="4"/>
-    <text x="596" y="382"><tspan class="ok">100%</tspan> gated trust score</text>
+    <text x="596" y="382"><tspan class="ok">100%</tspan> metadata profile</text>
     <text x="62" y="436">integrity</text>
     <rect class="bar-ok" x="190" y="414" width="380" height="22" rx="4"/>
     <text x="596" y="436"><tspan class="ok">100%</tspan> artifact evidence</text>

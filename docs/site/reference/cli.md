@@ -60,9 +60,13 @@ declared exact versions and drift only; ToolPin does not verify their artifact
 bytes in this release.
 
 Human-readable `search`, `info`, and `install` output separates trust tier from
-metadata completeness. If the overall score is capped, the output includes a
-`cap` line explaining why, for example that automated evidence is incomplete
-because artifact proof is missing.
+metadata/profile completeness. If the evidence-gated `overallScore` is capped,
+the output includes a `cap` line explaining why, for example that automated
+evidence is incomplete because artifact proof is missing. Human-facing numeric
+ranking uses the profile score inside the evidence tier, so conditional entries
+do not all collapse to a visible 69%. A 69% cap means the entry has trusted
+provenance and usable metadata, but ToolPin has not yet verified artifact proof
+such as npm integrity, OCI digest, or MCPB hash evidence.
 
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
@@ -96,8 +100,8 @@ read-only.
 ```text
 toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
 toolpin lock digest [--file mcp-lock.json] [--json]
-toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
+toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
+toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
 ```
@@ -120,9 +124,10 @@ a DLP engine.
 
 The TUI Browse list shows full evidence labels (`REVIEW`, `UNVERIFIED`,
 `BLOCKED`, or `EVIDENCE`) next to the meter. Overview separates the evidence
-tier, gated overall score, metadata completeness, and trust pillars; a red
-evidence row beside green metadata rows means the metadata is strong but
-required automated proof is missing or failed.
+tier, metadata profile score, trust pillars, and cap reason; a red evidence row
+beside green profile rows means the metadata is strong but required automated
+proof is missing or failed. The TUI help screen calls out the 69% cap for
+trusted-source conditional entries.
 
 Browse defaults to source-first ordering: `toolpin`, `official`, `docker`, then
 other enabled sources. Press `a` to cycle source-first, alpha A-Z, alpha Z-A,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3
+
+- Honesty pass: the README "Verification currently covers" line and `docs/site/reference/lockfile-schema.md` now describe attestations as declared metadata, not verified, and `attestation_verified` was removed from the evidence-code list. A `docs:check` regression guard forbids the overclaiming phrasing so it cannot silently return.
+- CI self-check (dogfooding): `toolpin ci` now runs against the repository's own `mcp-lock.json` in CI (`npm run self:ci`) and is chained into `release:check`, so the publish gate enforces the product's own drift check on itself.
+- Curated-evidence trust seam closed: registry evidence sourced from the ToolPin curated registry may only count toward the `verified` tier when its `trustAnchor` host is on the code allowlist for that evidence code (npm packument/tarball hosts, allowlisted OCI registries, allowlisted MCPB sources). A self-declared `trustedAnchor: true` with a missing or non-allowlisted host is downgraded to `trustedAnchor: false`. Regression test added.
+- Policy source normalization: the legacy `pulse` alias in `allowedSources`/`deniedSources` is accepted and normalized to the canonical `pulsemcp`, `toolpin` was added to the source enum, and unknown sources fail closed. Tests added.
+- CLI docs: corrected `toolpin lock sign`/`verify-signature` synopses in the CLI reference and the catch-drift how-tos to include the required `--policy` argument and the `--public-key` flag.
+- Runtime audits: `npm run audit:runtime` (`npm audit --omit=dev`) added to `release:check`.
+- Repo hygiene: stopped tracking the internal `docs/research/mcp-sentiment.md` positioning brief and the `website/CLAUDE-DESIGN-BRIEF.md` design deck (now gitignored); marked the homepage install demo as an illustrative placeholder and surfaced the pre-1.0 beta status on the landing page; restored the honest "npm publish pending" badge until the package is published.
+- Release hygiene: version bump 0.2.2 -> 0.2.3.
+
 ## 0.2.2
 
 - Release positioning: mark ToolPin as pre-1.0 beta software in the README while keeping the package on the normal `0.x` semver release track.

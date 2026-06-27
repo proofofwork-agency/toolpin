@@ -30,6 +30,12 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run ToolPin self-check
+        run: npm run self:ci
+
+      - name: Check docs consistency
+        run: npm run docs:check
+
       - name: Check curated registry
         run: npm run registry:check
 

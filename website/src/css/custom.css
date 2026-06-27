@@ -89,6 +89,24 @@ h3 {
   margin-top: 1rem;
 }
 
+.heroStatus {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+.demoCaption {
+  margin: 0 0 0.6rem;
+  padding: 0 0.2rem;
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+
+.demoCaption code {
+  font-size: 0.78rem;
+}
+
 .homeBand {
   background: var(--toolpin-paper);
   padding: 3rem 0;

@@ -12,6 +12,7 @@ export default function Home() {
           <div className="container">
             <p className="eyebrow">MCP install governance</p>
             <h1 className="hero__title">ToolPin</h1>
+            <p className="heroStatus">Pre-1.0 beta · Apache-2.0 · review aids, not a safety guarantee</p>
             <p className="hero__subtitle">
               The missing review gate between MCP registries and the AI clients
               that run servers with your credentials. Inspect the install,
@@ -33,12 +34,13 @@ export default function Home() {
         </section>
         <section className="demoBand">
           <div className="container demoLayout">
-            <div className="terminalPanel" aria-label="ToolPin install output">
+            <div className="terminalPanel" aria-label="Illustrative ToolPin install output (example, not a real server)">
               <div className="terminalChrome" aria-hidden="true">
                 <span></span>
                 <span></span>
                 <span></span>
               </div>
+              <p className="demoCaption">Illustrative example — <code>io.github.10iii/air</code> is a placeholder server, not a real registry entry.</p>
               <pre>
                 <code>
                   <span className="prompt">$</span> toolpin install io.github.10iii/air --client claude --verify{"\n"}

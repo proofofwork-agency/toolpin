@@ -54,27 +54,6 @@ Shipped through v0.2.2:
 - npm publication is still pending; until publish, install examples keep the source-checkout path first.
 - Ink TUI (`src/tui.tsx`).
 
-## Known-defect fix backlog
-
-Concrete defects in the v0.1 lockfile/install path, each with the fix, release, and
-current status. Rows already surfaced in the v0.2 feature tables are marked (→ Fn);
-closed rows stay listed so the roadmap preserves the security history.
-
-| Defect | Location | Fix | Release | Status |
-|--------|----------|-----|---------|--------|
-| **Silent key collision** — locking same server for claude then cursor destroys the claude entry | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx` | Key entries by `name + client` (→ F3) | v0.2 | Closed in current code |
-| **Unsafe cast on read** — `JSON.parse(raw) as Lockfile` accepts any hand-edited shape | `src/plan.ts` | Real `parseLockfile()` validator; reject malformed entries (→ F3) | v0.2 | Closed in current code |
-| **Records but never enforces** — `install` re-resolves and overwrites the lock without diffing | `src/cli.ts`, `src/tui.tsx`, `src/ci.ts` | Diff resolved vs locked; refuse install on drift unless explicitly updating lock; add frozen `toolpin ci` (→ F3) | v0.2 | Closed in current code |
-| **Trust snapshot is cosmetic** — nothing blocks a downgrade | `src/plan.ts`, `src/cli.ts`, `src/tui.tsx`, `src/policy.ts` | Compare locked trust against resolved trust; refuse when resolved trust decreases; add optional local policy gates for trust/source/client/server/package/transport rules | v0.2 | Closed for install and local policy gates; Cedar/OPA still open |
-| **Remote targets have no integrity pin** — remote entry is just `{kind, type, url}` | `src/plan.ts`, `src/tester.ts`, `src/verify.ts` | Reuse the MCP probe path (`initialize` → `tools/list`) to pin a tool-description hash + capability manifest; diff on install because no content digest exists for a URL (→ F1) | v0.2 | Closed for verified installs |
-| **No remove / unlock** — servers only accumulate; cleanup means hand-editing JSON | `src/cli.ts`, `src/plan.ts`, `src/install.ts`, `src/tui.tsx` | Add `toolpin remove <server> [--client <c>]` that deletes from lock and client config | v0.2 | Closed in current code |
-| **`generatedAt` is global and overwritten** — original creation time and per-server provenance are lost | `src/plan.ts` | Preserve `generatedAt`, add top-level `updatedAt`, add per-entry resolution timestamp | v0.2 | Closed in current code |
-| **Lockfile has no self-integrity** — a tampered lock (downgraded version, stripped digest) is trusted verbatim | `src/plan.ts`, `src/cli.ts`, `src/signing.ts` | Per-entry integrity, whole-lock digest pins, and detached Ed25519 signatures with user-supplied keys are shipped; sigstore transparency/provenance remains open | v0.3 | Closed for local/user-managed trust roots |
-| **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts`, `src/doctor.ts` | Add `toolpin doctor` to reconcile lock ↔ client config and report drift | v0.3 | Closed in current code |
-
-Exit rule: a defect stays "open" until it has both a failing test (reproducing the bad
-behavior) and a passing test after the fix. Every v0.2-row defect is closed in current code.
-
 ## Release v0.2 — Trust & Install Foundation (shipped)
 
 **Goal:** make resolution reviewable, enforceable, and hard to drift silently.
@@ -141,7 +120,7 @@ surface, then verification/CI modules.
 1. `toolpin verify` enforces syntactically valid MCPB `fileSha256` and OCI digest pins; trust report carries evidence and attestation labels.
 2. Correct config generation for every verified client, including Codex TOML.
 3. `mcp-lock.json` v2 keyed by `name+client`, validated on read, enforced by `toolpin ci`.
-4. Every v0.2 row in the [Known-defect fix backlog](#known-defect-fix-backlog) is closed (failing test → passing test).
+4. Every shipped v0.2 lockfile/install defect has a regression test covering the fixed behavior.
 
 ## Release v0.3 — Discovery & Secrets (pillars 4, 5)
 

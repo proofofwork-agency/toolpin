@@ -36,6 +36,10 @@ const forbidden = [
   "by file/HTTP",
   "npm, PyPI, NuGet, and\nCargo package targets are checked for declared exact versions and drift only",
   "npm/PyPI/NuGet/Cargo artifact integrity, OCI image byte recomputation",
+  "registry attestations",
+  "attestation_verified",
+  "toolpin lock sign --key private.pem",
+  "toolpin lock verify-signature --key public.pem",
 ];
 
 const requiredByFile = new Map([
@@ -69,6 +73,27 @@ const requiredByFile = new Map([
       "Use `--skip-live-verification` only as an explicit downgrade",
       "npm tarball SRI verification",
       "recompute MCPB SHA-256 only for allowlisted HTTPS artifact hosts",
+    ],
+  ],
+  [
+    "docs/how-to/catch-drift-in-ci.md",
+    [
+      "toolpin lock sign --policy .toolpin/policy.json --key private.pem",
+      "toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem",
+    ],
+  ],
+  [
+    "docs/site/how-to/catch-drift-in-ci.md",
+    [
+      "toolpin lock sign --policy .toolpin/policy.json --key private.pem",
+      "toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem",
+    ],
+  ],
+  [
+    "docs/site/reference/cli.md",
+    [
+      "toolpin lock sign --policy .toolpin/policy.json --key private.pem",
+      "toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem",
     ],
   ],
 ]);

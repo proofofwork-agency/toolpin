@@ -14,8 +14,8 @@ install plan.
   "minTrustScore": 70,
   "minTrustTier": "conditional",
   "requireToolPinVerifiedEvidence": false,
-  "allowedSources": ["official", "docker"],
-  "deniedSources": ["pulse"],
+  "allowedSources": ["toolpin", "official", "docker"],
+  "deniedSources": ["pulsemcp"],
   "allowedClients": ["claude", "codex", "vscode"],
   "deniedClients": ["generic"],
   "deniedServers": ["io.github/example/unsafe-server"],
@@ -39,7 +39,7 @@ throw `Invalid policy schema ... unknown policy key <name>` before evaluation.
 | `minTrustScore` | number | omitted | Integer/float in the inclusive range `0`-`100`; outside that range the schema is rejected. A plan passes when `trust.score >= minTrustScore`. |
 | `minTrustTier` | string | omitted | Minimum evidence-gated tier: `blocked`, `unverified`, `conditional`, or `verified`. A plan below the tier is denied (`trust_tier_below_minimum`). |
 | `requireToolPinVerifiedEvidence` | boolean | omitted | When true, at least one evidence entry must be `passed` with `verifiedByToolPin: true`, otherwise denied (`toolpin_verified_evidence_required`). |
-| `allowedSources` | string array | omitted | Allow-list of registry sources. Each entry must be one of `official`, `docker`, `pulse`, `smithery`, `glama`; any other value is rejected as an unknown registry source. When non-empty, a plan with no resolved source, or a source not in the list, is denied (`source_not_allowed`). |
+| `allowedSources` | string array | omitted | Allow-list of registry sources. Each entry must be one of `toolpin`, `official`, `docker`, `pulsemcp`, `smithery`, `glama`; any other value is rejected as an unknown registry source. The deprecated v0.2.x alias `pulse` is accepted and normalized to `pulsemcp`. When non-empty, a plan with no resolved source, or a source not in the list, is denied (`source_not_allowed`). |
 | `deniedSources` | string array | omitted | Same enum as `allowedSources`. Denies a plan whose resolved source is listed (`source_denied`). |
 | `allowedClients` | string array | omitted | Allow-list of client names. Each entry must be a known ToolPin client (`claude`, `cursor`, `vscode`, `codex`, `opencode`, `windsurf`, `cline`, `continue`, `gemini`, `zed`, `roo`, `generic`); unknown clients are rejected. When non-empty, a plan whose client is not in the list is denied (`client_not_allowed`). |
 | `deniedClients` | string array | omitted | Same client-name validation as `allowedClients`. Denies a plan whose client is listed (`client_denied`). |

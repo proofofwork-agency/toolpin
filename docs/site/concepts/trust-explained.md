@@ -93,8 +93,12 @@ server `verified` by themselves.
 ## Why a score can be capped
 
 ToolPin computes metadata completeness and pillar scores first, then caps the
-overall score when evidence is missing or a gate fires. This is why the TUI can
-show green metadata/pillar bars while the evidence row is red or yellow.
+machine-readable `overallScore` when evidence is missing or a gate fires. A cap
+such as `69` is an evidence gate limit, not a percentile-like quality score.
+Trusted-source conditional entries are capped at 69% until ToolPin verifies
+artifact proof such as npm integrity, OCI digest, or MCPB hash evidence.
+Human CLI/TUI output uses the metadata/profile score for numeric differentiation
+and shows the evidence tier plus cap reason for verification status.
 
 Common cap reasons:
 
@@ -122,7 +126,7 @@ Critical issues make `toolpin verify` report `ok: false` and can fail installs
 through policy. Warnings and info issues are surfaced for human review and
 policy decisions. `minTrustScore` in `.toolpin/policy.json` (an optional
 0–100 number; there is no built-in default) enforces a numeric floor against
-the final clamped score.
+the metadata/profile score, while `minTrustTier` enforces evidence-gated status.
 
 ## Verification boundaries
 

@@ -1,5 +1,5 @@
 import type { NormalizedServer, SearchResult } from "./types.js";
-import { scoreServer } from "./trust.js";
+import { scoreServer, trustRankingScore } from "./trust.js";
 
 export function searchServers(servers: NormalizedServer[], query: string, limit = 10): SearchResult[] {
   const terms = tokenize(query);
@@ -19,7 +19,7 @@ export function searchServers(servers: NormalizedServer[], query: string, limit 
 }
 
 function trustSortScore(result: SearchResult): number {
-  return result.trust.overallScore ?? result.trust.score;
+  return trustRankingScore(result.trust);
 }
 
 function scoreRelevance(server: NormalizedServer, terms: string[]): number {

@@ -147,9 +147,9 @@ with older lockfiles and score-based policy. Newer entries may also include:
 | Field | Type | Meaning |
 |---|---|---|
 | `tier` | `"verified" \| "conditional" \| "unverified" \| "blocked"` *(optional)* | Evidence-gated trust tier. `verified` means required ToolPin-verified evidence passed, not that the server is safe. |
-| `overallScore` | number *(optional)* | Gated score after provenance/evidence caps. This can be lower than metadata completeness. |
-| `metadataCompleteness` | number *(optional)* | The legacy 0–100 metadata score recorded explicitly for UI/explanations. |
-| `capReason` | string *(optional)* | Reason the overall score was capped, such as `automated evidence incomplete`, `no verified provenance`, or a critical gate code. |
+| `overallScore` | number *(optional)* | Machine-readable gated score after provenance/evidence caps. A capped value such as `69` is an evidence gate limit, not a percentile-like quality score. |
+| `metadataCompleteness` | number *(optional)* | The legacy 0–100 metadata/profile score recorded explicitly for UI/explanations and human-facing numeric differentiation. |
+| `capReason` | string *(optional)* | Reason the evidence gate capped `overallScore`, such as `automated evidence incomplete`, `no verified provenance`, or a critical gate code. |
 | `gatedBy` | string array *(optional)* | Issue or evidence codes that prevented a stronger tier. |
 | `gates` / `vetoes` | object arrays *(optional)* | Non-blocking gates and blocking vetoes derived from critical issues or required evidence failures. |
 | `pillars` | object *(optional)* | Breakdown of provenance, integrity, reputation, and metadata completeness scores. |
@@ -161,8 +161,8 @@ required? }`, where `status` is `passed`, `declared`, `failed`, or
 `unavailable`. Current codes include
 `package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
 `lock_signature`, `oci_digest_verified`, `mcpb_sha256_verified`,
-`npm_integrity_verified`, `attestation_declared`, and `attestation_verified`. Declared pins, hashes, and
-attestations are not treated as ToolPin-verified unless a verifier records
+`npm_integrity_verified`, and `attestation_declared`. Declared pins, hashes, and
+attestations are not treated as ToolPin-verified unless a future verifier records
 `verifiedByToolPin: true` on a passed evidence entry.
 
 `automated evidence incomplete` means the entry has not satisfied all evidence
@@ -214,9 +214,9 @@ metadata-only and downgrades remote tool-description pinning to a
 `remote_probe_skipped` warning rather than a blocker. A successful live probe
 earns `tool-description-pinned` and `tool-manifest-pinned`.
 
-Registry attestations read from `_meta` (`dev.toolpin/attestations`) are surfaced
-in the report and each emit a `<type>-declared` badge; a manifest already pinned
-in `_meta` (`dev.toolpin/capabilities`) earns `capability-pinned`.
+Attestation metadata read from `_meta` (`dev.toolpin/attestations`) is surfaced
+in the report and each entry emits a `<type>-declared` badge; a manifest already
+pinned in `_meta` (`dev.toolpin/capabilities`) earns `capability-pinned`.
 
 ### Advisory tool-description scan
 

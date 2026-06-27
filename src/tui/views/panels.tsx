@@ -6,7 +6,7 @@ import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { compareRegistrySources, REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult, TrustTier } from "../../types.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustTier } from "../../trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustProfileScore, trustTier } from "../../trust.js";
 import { TOOLPIN_VERSION } from "../../version.js";
 import { commandLineFor } from "../command.js";
 import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } from "../constants.js";
@@ -263,7 +263,7 @@ function GroupedOptionRow({ result, selected = false, dimmed, width, category }:
         <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
         <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
-        <TrustTierMeter tier={result.trust.tier} score={result.trust.overallScore ?? result.trust.score} issues={result.trust.issues} cells={meterWidth} />
+        <TrustTierMeter tier={result.trust.tier} score={trustProfileScore(result.trust)} issues={result.trust.issues} cells={meterWidth} />
       </Text>
       <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
         <Text color={CHROME}>    project </Text>
@@ -284,7 +284,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{truncate(server.registrySource, 8).padEnd(8)} </Text>
       <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
       <Text color={CHROME}> </Text>
-      <TrustTierMeter tier={result.trust.tier} score={result.trust.overallScore ?? result.trust.score} issues={result.trust.issues} cells={meterWidth} />
+      <TrustTierMeter tier={result.trust.tier} score={trustProfileScore(result.trust)} issues={result.trust.issues} cells={meterWidth} />
     </Text>
   );
 }
@@ -523,8 +523,8 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
   const dimensions = trustDimensions(trust);
   const trustRowWidth = Math.max(28, width - 6);
   const trustBarCells = Math.max(9, Math.min(16, trustRowWidth - 34));
-  const overallScore = trust.overallScore ?? trust.score;
-  const metadataScore = trust.metadataCompleteness ?? trust.score;
+  const profileScore = trustProfileScore(trust);
+  const capScore = trust.overallScore ?? trust.score;
   const capExplanation = trustCapExplanation(trust);
   return (
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
@@ -556,14 +556,13 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
           label="evidence"
           value={risk.label}
           tier={risk.tier}
-          score={overallScore}
+          score={trustTierScore(trust)}
           issues={trust.issues}
           cells={trustBarCells}
           suffix={`${trustTier(trust)} tier`}
           width={trustRowWidth}
         />
-        <TrustScoreRow label="overall" score={overallScore} cells={trustBarCells} suffix="gated trust score" width={trustRowWidth} />
-        <TrustScoreRow label="metadata" score={metadataScore} cells={trustBarCells} suffix="profile completeness" width={trustRowWidth} />
+        <TrustScoreRow label="profile" score={profileScore} cells={trustBarCells} suffix="metadata profile" width={trustRowWidth} />
         {dimensions.map((dimension) => (
           <TrustScoreRow
             key={dimension.label}
@@ -574,7 +573,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
             width={trustRowWidth}
           />
         ))}
-        {capExplanation ? <Text color={WARN} wrap="wrap">cap note    {truncate(capExplanation, width - 13)}</Text> : null}
+        {capExplanation ? <Text color={WARN} wrap="wrap">cap         {truncate(capLabel(trust.capReason, capScore), width - 12)}</Text> : null}
         {trust.gatedBy?.length ? <Text color={WARN} wrap="truncate">gated by   {truncate(trust.gatedBy.join(", "), width - 12)}</Text> : null}
         {trust.issues.length > 0 ? <IssueRows issues={trust.issues} width={width} rows={Math.min(4, trust.issues.length)} /> : null}
       </Box>
@@ -644,6 +643,14 @@ function TrustScoreRow({ label, score, cells, suffix, width }: { label: string; 
   );
 }
 
+function capLabel(capReason: string | undefined, cappedScore: number): string {
+  if (capReason === "automated evidence incomplete") return "evidence gate max 69%: automated evidence incomplete";
+  if (capReason === "no verified provenance") return "evidence gate max 59%: no verified provenance";
+  if (capReason?.startsWith("veto: ")) return `evidence gate max 20%: ${capReason}`;
+  if (capReason) return `evidence gate max ${Math.round(cappedScore)}%: ${capReason}`;
+  return `evidence gate max ${Math.round(cappedScore)}%`;
+}
+
 function PlanView({ server, client, installScope, width, versionInfo }: { server?: NormalizedServer; client: ClientSelection; installScope: InstallScope; width: number; versionInfo?: TuiVersionInfo }) {
   if (!server) return <EmptyPanel title="Install" />;
   const targetClients = selectedInstallClientsForServerScope(client, installScope, server);
@@ -696,7 +703,7 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
       {versionInfo && versionInfo.versions.length > 1 ? <PlanMetric label="versions" value={`${formatVersionChoices(versionInfo, 8)}  (v/V cycle)`} width={width} /> : null}
       <Spacer />
       <PlanMetric label="tier" value={`${trustTone.label} / ${trustTier(plan.trust)}`} width={width} valueColor={trustColor(trustTierScore(plan.trust))} />
-      <PlanMetric label="metadata" value={`${plan.trust.score}% complete / ${evidenceStatus(plan.trust)}`} width={width} valueColor={trustColor(plan.trust.score)} />
+      <PlanMetric label="profile" value={`${trustProfileScore(plan.trust)}% metadata / ${evidenceStatus(plan.trust)}`} width={width} valueColor={trustColor(trustProfileScore(plan.trust))} />
       <PlanMetric label="evidence" value={evidenceSummary(plan.trust)} width={width} />
       <Spacer />
       <PlanMetric label="writes" value={writeSummary} width={width} />
@@ -803,7 +810,8 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
           <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus artifact proof; conditional means useful metadata exists but proof is incomplete." />
-          <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and explain why the overall score was limited." />
+          <HelpNote width={lineWidth} label="69% cap" text="69% until proof verified; proof=npm/OCI/MCPB." />
+          <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and explain why the evidence gate capped verification." />
           <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>

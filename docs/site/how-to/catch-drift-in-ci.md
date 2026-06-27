@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.2
+      - uses: proofofwork-agency/toolpin@v0.2.3
         with:
           file: mcp-lock.json
           live: "true"
@@ -99,7 +99,7 @@ toolpin lock digest --file mcp-lock.json
 Store the digest as a CI variable or secret, then run:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     file: mcp-lock.json
     live: "true"
@@ -112,14 +112,14 @@ change both.
 ## Signature check
 
 ```bash
-toolpin lock sign --key private.pem --policy .toolpin/policy.json --file mcp-lock.json --signature mcp-lock.sig
-toolpin lock verify-signature --key public.pem --policy .toolpin/policy.json --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock sign --policy .toolpin/policy.json --key private.pem --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem --file mcp-lock.json --signature mcp-lock.sig
 ```
 
 Then in CI:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     file: mcp-lock.json
     live: "true"
@@ -134,7 +134,7 @@ The private key and trust root must be managed outside the pull request path.
 To enforce a non-default policy path:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     policy: security/toolpin-policy.json
 ```
@@ -142,7 +142,7 @@ To enforce a non-default policy path:
 To make CI skip policy enforcement explicitly:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     no-policy: "true"
 ```
@@ -151,7 +151,7 @@ To re-run verification before comparing locked plans, use the stricter CI
 posture:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.2.2
+- uses: proofofwork-agency/toolpin@v0.2.3
   with:
     live: "true"
     verify: "true"
