@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Release hygiene: version bump 0.2.4 -> 0.2.5 for the post-release TUI polish.
+- TUI UX: give trust legend swatches horizontal spacing, add vertical breathing room to the footer hotkey row, and anchor the trust legend at the bottom-right of the footer.
+- Dogfood: keep the release pipeline gated by `toolpin ci` against this repo's own `mcp-lock.json`.
+
 ## 0.2.4
 
 - Release hygiene: version bump 0.2.3 -> 0.2.4 because 0.2.3 was already published.
