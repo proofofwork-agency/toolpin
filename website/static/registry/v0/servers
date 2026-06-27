@@ -32,10 +32,11 @@
           "status": "reviewed",
           "reviewedAt": "2026-06-27T00:00:00.000Z",
           "reviewedBy": "toolpin-maintainers",
-          "reason": "First-party ContextRelay bridge for agent collaboration; Codex can consume it as stdio MCP while Claude support requires project/plugin initialization.",
+          "reason": "First-party ContextRelay bridge for agent collaboration; Codex consumes it as a stdio MCP server, not as a Codex plugin. Claude support requires project/plugin initialization.",
           "evidenceTier": "byte-verified",
           "riskNotes": [
             "Requires Bun to run the npm package through bunx.",
+            "Upstream ContextRelay documents `ctxrelay codex-mcp install` as the canonical global Codex registration; ToolPin direct install writes the equivalent stdio MCP launch command into Codex config.",
             "Claude setup writes project/plugin state and is documented as external setup until ToolPin has an explicit setup flow."
           ],
           "testedClients": [
@@ -70,8 +71,10 @@
               "requirements": [
                 "bun>=1.0.0"
               ],
-              "setupCommands": [],
-              "notes": "Installed as a normal Codex MCP server using `contextrelay codex-mcp server` package arguments."
+              "setupCommands": [
+                "ctxrelay codex-mcp install"
+              ],
+              "notes": "ToolPin direct install writes a Codex stdio MCP config for the same server that `ctxrelay codex-mcp install` registers globally. ContextRelay does not currently ship a Codex plugin manifest."
             },
             "claude": {
               "status": "external-setup",
