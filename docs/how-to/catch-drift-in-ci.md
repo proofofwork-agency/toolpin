@@ -82,8 +82,8 @@ jobs:
       - run: toolpin ci --file mcp-lock.json --live
 ```
 
-For unreleased local development, run `npm ci`, `npm test`, and
-`node dist/cli.js ci --file mcp-lock.json --live` from a source checkout.
+For unreleased source-checkout development, run `npm ci`, `npm test`, and
+`npm run dev -- ci --file mcp-lock.json --live`.
 
 ## Digest Pin
 

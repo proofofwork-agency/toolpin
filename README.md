@@ -122,8 +122,7 @@ npm test
 Build the CLI:
 
 ```bash
-npm run build
-node dist/cli.js --help
+npm run dev -- --help
 ```
 
 ## Usage

@@ -61,7 +61,7 @@ as a no-op.
 
 ## Direct CLI
 
-Before npm publish, run from this repository checkout:
+After the npm package is published, install the CLI directly:
 
 ```yaml
 name: ToolPin
@@ -84,8 +84,8 @@ jobs:
       - run: toolpin ci --file mcp-lock.json --live
 ```
 
-For unreleased local development, run `npm ci`, `npm test`, and
-`node dist/cli.js ci --file mcp-lock.json --live` from a source checkout.
+For unreleased source-checkout development, run `npm ci`, `npm test`, and
+`npm run dev -- ci --file mcp-lock.json --live`.
 
 ## Digest pin
 
@@ -112,8 +112,8 @@ change both.
 ## Signature check
 
 ```bash
-toolpin lock sign --key private.pem --file mcp-lock.json --signature mcp-lock.sig
-toolpin lock verify-signature --key public.pem --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock sign --key private.pem --policy .toolpin/policy.json --file mcp-lock.json --signature mcp-lock.sig
+toolpin lock verify-signature --key public.pem --policy .toolpin/policy.json --file mcp-lock.json --signature mcp-lock.sig
 ```
 
 Then in CI:
