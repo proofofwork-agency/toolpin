@@ -231,7 +231,9 @@ for the exact scope and limits.
 ## What Exists Now
 
 - Official MCP Registry and Docker MCP Catalog ingestion.
-- ToolPin curated registry served from GitHub and GitHub Pages:
+- ToolPin curated registry source of truth in GitHub:
+  <https://github.com/proofofwork-agency/toolpin/blob/main/registry/v0/servers>
+  with a GitHub Pages static mirror for docs/browsing:
   <https://proofofwork-agency.github.io/toolpin/registry/v0>
 - Custom registry configuration via `.toolpin/registries.json`.
 - Search ranking over name, title, description, package type, transport, and

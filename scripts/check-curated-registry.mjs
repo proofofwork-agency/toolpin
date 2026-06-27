@@ -9,6 +9,7 @@ const website = await readJson(websiteUrl);
 
 const errors = [];
 const CLIENT_SUPPORT_META = "dev.toolpin/clientSupport";
+const TOOLPIN_EVIDENCE_META = "dev.toolpin/evidence";
 const CLIENT_SUPPORT_STATUSES = new Set(["toolpin-installable", "external-setup", "unsupported"]);
 
 if (stableJson(canonical) !== stableJson(website)) {
@@ -16,6 +17,7 @@ if (stableJson(canonical) !== stableJson(website)) {
 }
 
 validateRegistry(canonical, "registry/v0/servers", errors);
+await validateToolPinEvidenceClaims(canonical, "registry/v0/servers", errors);
 await validateGithubEnforcement(canonical, "registry/v0/servers", errors);
 
 if (errors.length) {
@@ -154,6 +156,79 @@ function validateEntry(entry, label, output) {
   }
   validateToolPinEnforcement(curation.toolpinEnforcement, label, output);
   validateClientSupport(entry, label, output);
+  validateToolPinEvidence(entry, label, output);
+}
+
+function validateToolPinEvidence(entry, label, output) {
+  const evidence = readToolPinEvidence(entry);
+  if (evidence === undefined) return;
+  if (!Array.isArray(evidence)) {
+    output.push(`${label} _meta["${TOOLPIN_EVIDENCE_META}"] must be an array when present.`);
+    return;
+  }
+  for (const [index, item] of evidence.entries()) {
+    const itemLabel = `${label} evidence[${index}]`;
+    if (!isRecord(item)) {
+      output.push(`${itemLabel} must be an object.`);
+      continue;
+    }
+    for (const field of ["code", "status", "message"]) {
+      if (typeof item[field] !== "string" || !item[field]) output.push(`${itemLabel}.${field} is required.`);
+    }
+    if (!["passed", "declared", "failed", "unavailable"].includes(item.status)) {
+      output.push(`${itemLabel}.status must be passed, declared, failed, or unavailable.`);
+    }
+    if (item.verifiedByToolPin !== undefined && typeof item.verifiedByToolPin !== "boolean") output.push(`${itemLabel}.verifiedByToolPin must be boolean.`);
+    if (item.trustedAnchor !== undefined && typeof item.trustedAnchor !== "boolean") output.push(`${itemLabel}.trustedAnchor must be boolean.`);
+    for (const field of ["source", "claim", "verificationMethod", "trustAnchor", "verifiedAt", "failureReason"]) {
+      if (item[field] !== undefined && typeof item[field] !== "string") output.push(`${itemLabel}.${field} must be a string.`);
+    }
+    if (item.required !== undefined && typeof item.required !== "boolean") output.push(`${itemLabel}.required must be boolean.`);
+    if (item.status === "passed" && item.verifiedByToolPin === true && !item.verifiedAt) {
+      output.push(`${itemLabel}.verifiedAt is required for passed ToolPin-verified evidence.`);
+    }
+  }
+}
+
+async function validateToolPinEvidenceClaims(registry, label, output) {
+  if (!Array.isArray(registry.servers)) return;
+  const verifier = await loadPackageIntegrityVerifier(output);
+  for (const [index, entry] of registry.servers.entries()) {
+    const server = entry.server;
+    const evidence = readToolPinEvidence(entry);
+    if (!Array.isArray(evidence) || !isRecord(server)) continue;
+    for (const item of evidence) {
+      if (!isRecord(item) || item.code !== "npm_integrity_verified" || item.status !== "passed" || item.verifiedByToolPin !== true) continue;
+      const packages = Array.isArray(server.packages) ? server.packages.filter((pkg) => isRecord(pkg) && pkg.registryType === "npm") : [];
+      if (packages.length !== 1) {
+        output.push(`${label} servers[${index}] npm_integrity_verified requires exactly one npm package target.`);
+        continue;
+      }
+      if (!verifier) continue;
+      const pkg = packages[0];
+      const result = await verifier({ identifier: pkg.identifier, version: pkg.version });
+      if (result.status !== "passed") {
+        output.push(`${label} servers[${index}] npm_integrity_verified claim failed live validation: ${result.reason ?? result.status}.`);
+        continue;
+      }
+      if (item.claim !== result.expected) {
+        output.push(`${label} servers[${index}] npm_integrity_verified claim must equal npm dist.integrity ${result.expected}.`);
+      }
+      if (item.trustAnchor !== result.trustAnchor || item.trustedAnchor !== true) {
+        output.push(`${label} servers[${index}] npm_integrity_verified must use trusted npm anchor ${result.trustAnchor}.`);
+      }
+    }
+  }
+}
+
+async function loadPackageIntegrityVerifier(output) {
+  try {
+    const module = await import("../dist/packageIntegrity.js");
+    return module.verifyNpmPackageIntegrity;
+  } catch (error) {
+    output.push(`dist/packageIntegrity.js is required to validate ToolPin evidence; run npm run build first (${error instanceof Error ? error.message : String(error)}).`);
+    return undefined;
+  }
 }
 
 function validateClientSupport(entry, label, output) {
@@ -342,6 +417,12 @@ function readCuration(entry) {
   const serverMeta = isRecord(entry.server?._meta) ? entry.server._meta : {};
   const curation = entryMeta["dev.toolpin/curation"] ?? serverMeta["dev.toolpin/curation"];
   return isRecord(curation) ? curation : undefined;
+}
+
+function readToolPinEvidence(entry) {
+  const entryMeta = isRecord(entry._meta) ? entry._meta : {};
+  const serverMeta = isRecord(entry.server?._meta) ? entry.server._meta : {};
+  return entryMeta[TOOLPIN_EVIDENCE_META] ?? serverMeta[TOOLPIN_EVIDENCE_META];
 }
 
 function stableJson(value) {

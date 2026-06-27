@@ -18,19 +18,20 @@ the curated registry is for entries ToolPin can safely turn into install plans.
 
 ## URLs
 
-Raw GitHub, no deploy required:
+Raw GitHub source of truth, no site deploy required:
 
 ```text
-https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers
 ```
 
-GitHub Pages / Docusaurus:
+GitHub Pages / Docusaurus static mirror:
 
 ```text
-https://proofofwork-agency.github.io/toolpin/registry/v0
+https://proofofwork-agency.github.io/toolpin/registry/v0/servers
 ```
 
-ToolPin appends `/servers` automatically for `official-compatible` registries.
+For custom `official-compatible` registries, ToolPin appends `/servers`
+automatically when configured with a base URL.
 
 ## How the Registry Is Maintained
 

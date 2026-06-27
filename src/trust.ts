@@ -9,6 +9,7 @@ const BLOCKED_TRUST_CODES = new Set(["no_install_target", "insecure_remote", "in
 const UNVERIFIED_TRUST_CODES = new Set(["mutable_oci_tag", "missing_mcpb_hash"]);
 const TRUSTED_ARTIFACT_EVIDENCE_CODES = new Set(["oci_digest_verified", "mcpb_sha256_verified", "npm_integrity_verified"]);
 const VERIFIED_EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const TOOLPIN_EVIDENCE_META = "dev.toolpin/evidence";
 
 interface TrustPillars {
   provenance: number;
@@ -77,6 +78,14 @@ export function scoreServer(server: NormalizedServer): TrustReport {
     });
   }
 
+  const registryEvidence = readToolPinEvidence(server);
+  if (registryEvidence.length) {
+    evidence.push(...registryEvidence);
+    if (registryEvidence.some((entry) => entry.code === "npm_integrity_verified" && entry.status === "passed")) badges.push("npm-integrity-verified");
+    if (registryEvidence.some((entry) => entry.code === "oci_digest_verified" && entry.status === "passed")) badges.push("oci-digest-verified");
+    if (registryEvidence.some((entry) => entry.code === "mcpb_sha256_verified" && entry.status === "passed")) badges.push("mcpb-sha256-verified");
+  }
+
   const metadataScan = scanServerMetadata(server);
   if (metadataScan.findings.length) {
     badges.push("description-scan-advisory");
@@ -86,7 +95,10 @@ export function scoreServer(server: NormalizedServer): TrustReport {
   const metadataCompleteness = clamp(score);
   const uniqueEvidence = dedupeEvidence(evidence);
   const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "toolpin" || server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
-  const pillars = trustPillars(server, metadataCompleteness, issues, integritySignals, verifiedProvenance);
+  const pillars = {
+    ...trustPillars(server, metadataCompleteness, issues, integritySignals, verifiedProvenance),
+    ...(hasFreshTrustedArtifactEvidence(uniqueEvidence) ? { integrity: 100 } : {}),
+  };
   const gated = gateTrust(metadataCompleteness, issues, uniqueEvidence, pillars, verifiedProvenance);
   return {
     score: metadataCompleteness,
@@ -250,10 +262,12 @@ function gateTrust(
   if (vetoes.length) {
     overallScore = Math.min(overallScore, 20);
     capReason = `veto: ${vetoes.map((gate) => gate.code).join(", ")}`;
+  } else if (classified.tier === "verified") {
+    overallScore = 100;
   } else if (unverifiedGates.length) {
     overallScore = Math.min(overallScore, 45);
     capReason = unverifiedGates.map((gate) => gate.code).join(", ");
-  } else if (classified.tier !== "verified") {
+  } else {
     const cap = verifiedProvenance ? 69 : 59;
     if (overallScore > cap) overallScore = cap;
     capReason = verifiedProvenance ? "automated evidence incomplete" : "no verified provenance";
@@ -395,6 +409,35 @@ function remoteScore(remote: RegistryRemote, issues: TrustIssue[], badges: strin
 
 function countIntegrityBadges(badges: string[]): number {
   return badges.filter((badge) => ["pinned version", "digest-pinned", "fileSha256", "https remote"].includes(badge)).length;
+}
+
+function readToolPinEvidence(server: NormalizedServer): TrustEvidence[] {
+  if (server.registrySource !== "toolpin") return [];
+  const rawValue = server.raw._meta?.[TOOLPIN_EVIDENCE_META] ?? server.registryMeta?.[TOOLPIN_EVIDENCE_META];
+  if (!Array.isArray(rawValue)) return [];
+  return rawValue.flatMap((entry): TrustEvidence[] => {
+    if (!isRecord(entry)) return [];
+    if (typeof entry.code !== "string" || typeof entry.status !== "string" || typeof entry.message !== "string") return [];
+    if (!["passed", "declared", "failed", "unavailable"].includes(entry.status)) return [];
+    return [{
+      code: entry.code,
+      status: entry.status as TrustEvidence["status"],
+      message: entry.message,
+      ...(typeof entry.source === "string" ? { source: entry.source } : {}),
+      ...(typeof entry.claim === "string" ? { claim: entry.claim } : {}),
+      ...(typeof entry.verificationMethod === "string" ? { verificationMethod: entry.verificationMethod } : {}),
+      ...(typeof entry.verifiedByToolPin === "boolean" ? { verifiedByToolPin: entry.verifiedByToolPin } : {}),
+      ...(typeof entry.trustedAnchor === "boolean" ? { trustedAnchor: entry.trustedAnchor } : {}),
+      ...(typeof entry.trustAnchor === "string" ? { trustAnchor: entry.trustAnchor } : {}),
+      ...(typeof entry.verifiedAt === "string" ? { verifiedAt: entry.verifiedAt } : {}),
+      ...(typeof entry.failureReason === "string" ? { failureReason: entry.failureReason } : {}),
+      ...(typeof entry.required === "boolean" ? { required: entry.required } : {}),
+    }];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function clamp(value: number): number {

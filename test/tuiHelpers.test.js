@@ -7,6 +7,7 @@ import {
   browseSearchResults,
   buildTuiVersionInfo,
   cacheCoverage,
+  clientSupportSummary,
   commandLineFor,
   commandLogForView,
   configTargetLabel,
@@ -14,7 +15,9 @@ import {
   initialInstallVersionIndex,
   InstalledServerDetails,
   installClientChoicesForScope,
+  installClientChoicesForServerScope,
   InstallWizard,
+  nextClientForServerScope,
   nextBrowseSortMode,
   nextSource,
   nextResultLimit,
@@ -51,6 +54,35 @@ test("TUI install wizard puts the selected client first when it is valid for sco
   assert.deepEqual(installClientChoicesForScope("project", "opencode").slice(0, 3), ["opencode", "claude", "cursor"]);
   assert.deepEqual(installClientChoicesForScope("global", "all").slice(0, 3), ["all", "cursor", "vscode"]);
   assert.deepEqual(installClientChoicesForScope("project", "windsurf").slice(0, 3), ["claude", "cursor", "vscode"]);
+});
+
+test("TUI client choices honor server-declared support metadata", () => {
+  const contextRelay = serverFixture({
+    registrySource: "toolpin",
+    name: "@proofofwork-agency/contextrelay",
+    title: "ContextRelay",
+    raw: {
+      name: "@proofofwork-agency/contextrelay",
+      title: "ContextRelay",
+      description: "ContextRelay",
+      version: "3.9.2",
+      packages: [{ registryType: "npm", identifier: "@proofofwork-agency/contextrelay", version: "3.9.2" }],
+      _meta: {
+        "dev.toolpin/clientSupport": {
+          default: "unsupported",
+          clients: {
+            codex: { status: "toolpin-installable" },
+            claude: { status: "external-setup" },
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(installClientChoicesForServerScope("project", "claude", contextRelay), ["codex"]);
+  assert.equal(nextClientForServerScope("claude", "project", contextRelay), "codex");
+  assert.equal(nextClientForServerScope("codex", "project", contextRelay), "all");
+  assert.equal(clientSupportSummary(contextRelay, "project"), "direct codex; external claude; unsupported cursor, vscode, opencode, gemini, roo");
 });
 
 test("TUI install wizard starts on selected version when v/V picked one", () => {

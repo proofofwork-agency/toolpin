@@ -7,7 +7,7 @@ It is intentionally GitHub-native:
 - entries are reviewed through pull requests;
 - CI validates the registry shape before merge;
 - no database or hosted backend is required;
-- the same payload can be served through GitHub Pages or raw GitHub.
+- raw GitHub is the runtime source of truth, with GitHub Pages only as a static mirror.
 
 ## Endpoints
 
@@ -20,17 +20,17 @@ registry/v0/servers
 Raw GitHub URL after merge to `main`:
 
 ```text
-https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers
 ```
 
-GitHub Pages / Docusaurus URL after the website is deployed:
+GitHub Pages / Docusaurus mirror after the website is deployed:
 
 ```text
-https://toolpin.dev/registry/v0
+https://proofofwork-agency.github.io/toolpin/registry/v0/servers
 ```
 
-ToolPin appends `/servers`, so configure the registry URL without the trailing
-`/servers`.
+For custom official-compatible registries, ToolPin appends `/servers`, so
+configure the registry base URL without the trailing `/servers`.
 
 ## Built-In CLI Source
 

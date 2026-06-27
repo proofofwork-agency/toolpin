@@ -11,25 +11,26 @@ a broad directory.
 
 ## URLs
 
-Raw GitHub, no deploy required:
+Raw GitHub source of truth, no site deploy required:
 
 ```text
-https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
+https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers
 ```
 
-GitHub Pages / Docusaurus:
+GitHub Pages / Docusaurus static mirror:
 
 ```text
-https://proofofwork-agency.github.io/toolpin/registry/v0
+https://proofofwork-agency.github.io/toolpin/registry/v0/servers
 ```
 
-ToolPin appends `/servers` automatically for `official-compatible` registries.
+For custom `official-compatible` registries, ToolPin appends `/servers`
+automatically when configured with a base URL.
 
 ## Built-In Source
 
-ToolPin ships this registry as the built-in `toolpin` source: a hosted curated
-registry with bundled fallback. It is first in the source list, enabled by
-default, and pinned. Users can filter to another source, but `toolpin` cannot be
+ToolPin ships this registry as the built-in `toolpin` source: a GitHub-backed
+curated registry with bundled fallback. It is first in the source list, enabled
+by default, and pinned. Users can filter to another source, but `toolpin` cannot be
 disabled through `.toolpin/registries.json`, `toolpin registry disable`, or the
 TUI source selector.
 

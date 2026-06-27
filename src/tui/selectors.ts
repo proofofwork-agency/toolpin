@@ -1,4 +1,5 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
+import { clientSupportBlock, clientSupportFor, type ToolPinClientSupportStatus } from "../clientSupport.js";
 import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
 import { compareRegistrySources, latestOnly, normalizeEntries, registrySourceIdRank } from "../registry.js";
@@ -54,6 +55,54 @@ export function installClientChoicesForScope(scope: InstallScope, preferredClien
   const choices: ClientSelection[] = [...clientsForScope(scope), "all"];
   if (!choices.includes(preferredClient)) return choices;
   return [preferredClient, ...choices.filter((client) => client !== preferredClient)];
+}
+
+export function installClientChoicesForServerScope(scope: InstallScope, preferredClient: ClientSelection, server?: NormalizedServer): ClientSelection[] {
+  const clients = directInstallClientsForServerScope(scope, server);
+  const choices: ClientSelection[] = [...clients, ...(clients.length > 1 ? ["all" as const] : [])];
+  if (!choices.includes(preferredClient)) return choices;
+  return [preferredClient, ...choices.filter((client) => client !== preferredClient)];
+}
+
+export function nextClientForServerScope(client: ClientSelection, scope: InstallScope, server?: NormalizedServer): ClientSelection {
+  const supported = supportedClientsForServerScope(scope, server);
+  const choices: ClientSelection[] = supported.length
+    ? [...supported, ...(supported.length > 1 ? ["all" as const] : [])]
+    : installClientChoicesForScope(scope, client);
+  return choices[(choices.indexOf(client) + 1) % choices.length] ?? nextClient(client);
+}
+
+export function selectedInstallClientsForServerScope(client: ClientSelection, scope: InstallScope, server?: NormalizedServer): ClientName[] {
+  const installable = directInstallClientsForServerScope(scope, server);
+  if (client === "all") return installable;
+  return installable.includes(client) ? [client] : [];
+}
+
+export function directInstallClientsForServerScope(scope: InstallScope, server?: NormalizedServer): ClientName[] {
+  const candidates = clientsForScope(scope);
+  if (!server || !clientSupportBlock(server)) return candidates;
+  return candidates.filter((client) => clientSupportFor(server, client)?.status === "toolpin-installable");
+}
+
+export function supportedClientsForServerScope(scope: InstallScope, server?: NormalizedServer): ClientName[] {
+  const candidates = clientsForScope(scope);
+  if (!server || !clientSupportBlock(server)) return candidates;
+  return candidates.filter((client) => clientSupportFor(server, client)?.status !== "unsupported");
+}
+
+export function clientSupportSummary(server: NormalizedServer, scope: InstallScope): string {
+  if (!clientSupportBlock(server)) return "not declared; ToolPin will try standard MCP config";
+  const clients = clientsForScope(scope);
+  const groups: Partial<Record<ToolPinClientSupportStatus, ClientName[]>> = {};
+  for (const client of clients) {
+    const status = clientSupportFor(server, client)?.status ?? "unsupported";
+    groups[status] = [...(groups[status] ?? []), client];
+  }
+  return [
+    groups["toolpin-installable"]?.length ? `direct ${groups["toolpin-installable"].join(", ")}` : "",
+    groups["external-setup"]?.length ? `external ${groups["external-setup"].join(", ")}` : "",
+    groups.unsupported?.length ? `unsupported ${groups.unsupported.join(", ")}` : "",
+  ].filter(Boolean).join("; ");
 }
 
 export function selectedServerVersion(servers: NormalizedServer[], defaultServer: NormalizedServer, selectedVersion?: string): NormalizedServer {
@@ -235,7 +284,7 @@ function sourceRank(result: SearchResult): number {
 }
 
 function relevanceRank(result: SearchResult): number {
-  return result.relevance + result.trust.score / 100;
+  return result.relevance + (result.trust.overallScore ?? result.trust.score) / 100;
 }
 
 function compareBrowseName(left: SearchResult, right: SearchResult): number {

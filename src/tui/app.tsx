@@ -28,10 +28,12 @@ import {
   browseSortLabel,
   cacheCoverage,
   commandLogForView,
+  directInstallClientsForServerScope,
   filterByEnabledSources,
-  installClientChoicesForScope,
+  installClientChoicesForServerScope,
   installClientLabel,
   initialInstallVersionIndex,
+  nextClientForServerScope,
   nextBrowseSortMode,
   nextResultLimit,
   nextClient,
@@ -41,6 +43,7 @@ import {
   scopeLabel,
   selectedClients,
   selectedClientsForScope,
+  selectedInstallClientsForServerScope,
   selectedServerVersion,
   switchView,
 } from "./selectors.js";
@@ -322,7 +325,9 @@ export function MpmTui() {
     if (!selectedServer) return;
     try {
       let lockfile: Lockfile | undefined;
-      for (const client of selectedClients(state.client)) {
+      const clients = selectedInstallClientsForServerScope(state.client, state.installScope, selectedServer);
+      if (!clients.length) throw new Error(`${selectedServer.name}@${selectedServer.version} is not directly installable for ${state.client} in ${scopeLabel(state.installScope)}.`);
+      for (const client of clients) {
         lockfile = await writeLockfile(
           buildInstallPlan(selectedServer, client, { scope: state.installScope }),
           "mcp-lock.json",
@@ -356,7 +361,9 @@ export function MpmTui() {
     try {
       await mkdir(".toolpin", { recursive: true });
       const files: string[] = [];
-      for (const client of selectedClients(state.client)) {
+      const clients = selectedInstallClientsForServerScope(state.client, state.installScope, selectedServer);
+      if (!clients.length) throw new Error(`${selectedServer.name}@${selectedServer.version} is not directly installable for ${state.client} in ${scopeLabel(state.installScope)}.`);
+      for (const client of clients) {
         const exported = exportClientConfig(selectedServer, client);
         const formatted = formatClientConfigSnippet(client, exported.config);
         const file = path.join(".toolpin", `${safeFileName(selectedServer.name)}.${client}.${formatted.extension}`);
@@ -384,14 +391,15 @@ export function MpmTui() {
       return;
     }
     const scope = opts?.scope ?? state.installScope;
-    const targetClients = opts?.clients ?? selectedClientsForScope(state.client, scope);
+    const requestedClient = opts?.client ?? state.client;
+    const targetClients = opts?.clients ?? selectedInstallClientsForServerScope(requestedClient, scope, server);
     const clientLabel = opts?.clientLabel ?? installClientLabel(opts?.client ?? state.client, targetClients);
     const command = commandLineFor("install", { ...state, client: opts?.client ?? state.client, installScope: scope }, server);
     if (!targetClients.length) {
       setState((prev) => ({
         ...prev,
-        error: `no client available for ${scopeLabel(scope)} scope`,
-        commandLog: { title: "install", command, ok: false, lines: [`No client is available for ${scopeLabel(scope)} scope.`] },
+        error: `${server.name}@${server.version} is not directly installable for ${requestedClient} in ${scopeLabel(scope)}`,
+        commandLog: { title: "install", command, ok: false, lines: [`No direct ToolPin install target for ${requestedClient} in ${scopeLabel(scope)}.`] },
       }));
       return;
     }
@@ -1233,7 +1241,7 @@ export function MpmTui() {
         setState((prev) => ({ ...prev, installFlow: undefined, lastAction: "install cancelled" }));
         return;
       }
-      const clientChoices = installClientChoicesForScope(flow.scope ?? "project", flow.preferredClient);
+      const clientChoices = installClientChoicesForServerScope(flow.scope ?? "project", flow.preferredClient, flow.server);
       const optionCount = flow.step === "version" ? flow.versions.length : flow.step === "scope" ? 2 : flow.step === "client" ? clientChoices.length : 1;
       if (key.upArrow || input === "k") {
         setState((prev) => (prev.installFlow ? { ...prev, installFlow: { ...prev.installFlow, selected: Math.max(0, prev.installFlow.selected - 1) } } : prev));
@@ -1264,8 +1272,8 @@ export function MpmTui() {
           setState((prev) => (prev.installFlow ? { ...prev, installFlow: { ...prev.installFlow, step: "client", scope, selected: 0 } } : prev));
         } else if (flow.step === "client") {
           const scope = flow.scope ?? "project";
-          const client = clientChoices[Math.min(flow.selected, clientChoices.length - 1)];
-          const clients = client === "all" ? selectedClientsForScope("all", scope) : [client];
+          const client = clientChoices[Math.min(flow.selected, clientChoices.length - 1)] ?? directInstallClientsForServerScope(scope, flow.server)[0] ?? "codex";
+          const clients = client === "all" ? selectedInstallClientsForServerScope("all", scope, flow.server) : selectedInstallClientsForServerScope(client, scope, flow.server);
           const clientLabel = installClientLabel(client, clients);
           setState((prev) => (prev.installFlow
             ? { ...prev, installFlow: { ...prev.installFlow, step: "installing", selected: 0 }, client, installScope: scope }
@@ -1519,7 +1527,7 @@ export function MpmTui() {
         else cycleSelectedVersion(-1);
         break;
       case "c":
-        setState((prev) => ({ ...prev, client: nextClient(prev.client), pendingRemove: undefined }));
+        setState((prev) => ({ ...prev, client: nextClientForServerScope(prev.client, prev.installScope, selectedServer), pendingRemove: undefined }));
         break;
       case "o":
         setState((prev) => ({ ...prev, client: "opencode", pendingRemove: undefined }));

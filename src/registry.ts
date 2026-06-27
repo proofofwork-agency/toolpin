@@ -36,7 +36,7 @@ export const BUILTIN_REGISTRY_SOURCES: RegistrySourceInfo[] = [
     pinned: true,
     authRequired: false,
     url: TOOLPIN_REGISTRY_URL,
-    description: "Hosted ToolPin curated registry with bundled fallback. This source is pinned, PR-reviewed, and cannot be disabled.",
+    description: "GitHub-backed ToolPin curated registry with bundled fallback. This source is pinned, PR-reviewed, and cannot be disabled.",
   },
   {
     id: "official",

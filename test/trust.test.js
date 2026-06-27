@@ -191,6 +191,42 @@ test("verified requires provenance plus fresh trusted artifact evidence, not hig
   );
 });
 
+test("ToolPin registry evidence can verify artifact integrity without changing metadata completeness", () => {
+  const evidence = {
+    code: "npm_integrity_verified",
+    status: "passed",
+    message: "npm tarball integrity matched registry dist.integrity.",
+    source: "npm-tarball",
+    claim: "sha512-example",
+    verificationMethod: "npm-packument-sri",
+    verifiedByToolPin: true,
+    trustedAnchor: true,
+    trustAnchor: "registry.npmjs.org",
+    verifiedAt: new Date().toISOString(),
+  };
+  const verified = scoreServer(packageServer({
+    registrySource: "toolpin",
+    rawMeta: { "dev.toolpin/evidence": [evidence] },
+  }));
+  const ignored = scoreServer(packageServer({
+    registrySource: "official",
+    rawMeta: { "dev.toolpin/evidence": [evidence] },
+  }));
+
+  assert.equal(verified.score, 74);
+  assert.equal(verified.metadataCompleteness, 74);
+  assert.equal(verified.overallScore, 100);
+  assert.equal(verified.tier, "verified");
+  assert.equal(verified.capReason, undefined);
+  assert.ok(verified.badges.includes("npm-integrity-verified"));
+  assert.equal(trustCapExplanation(verified), undefined);
+
+  assert.equal(ignored.overallScore, 69);
+  assert.equal(ignored.tier, "conditional");
+  assert.equal(ignored.capReason, "automated evidence incomplete");
+  assert.equal(ignored.badges.includes("npm-integrity-verified"), false);
+});
+
 test("trustTier derives legacy lockfile tiers without mutating the report shape", () => {
   const legacyReport = {
     score: 80,

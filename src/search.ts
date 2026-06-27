@@ -14,8 +14,12 @@ export function searchServers(servers: NormalizedServer[], query: string, limit 
       return { server, relevance, trust: scoreServer(server) };
     })
     .filter((result) => result.relevance > 0)
-    .sort((a, b) => b.relevance + b.trust.score / 100 - (a.relevance + a.trust.score / 100))
+    .sort((a, b) => b.relevance + trustSortScore(b) / 100 - (a.relevance + trustSortScore(a) / 100))
     .slice(0, limit);
+}
+
+function trustSortScore(result: SearchResult): number {
+  return result.trust.overallScore ?? result.trust.score;
 }
 
 function scoreRelevance(server: NormalizedServer, terms: string[]): number {

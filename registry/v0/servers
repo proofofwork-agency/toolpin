@@ -33,7 +33,7 @@
           "reviewedAt": "2026-06-27T00:00:00.000Z",
           "reviewedBy": "toolpin-maintainers",
           "reason": "First-party ContextRelay bridge for agent collaboration; Codex can consume it as stdio MCP while Claude support requires project/plugin initialization.",
-          "evidenceTier": "metadata-only",
+          "evidenceTier": "byte-verified",
           "riskNotes": [
             "Requires Bun to run the npm package through bunx.",
             "Claude setup writes project/plugin state and is documented as external setup until ToolPin has an explicit setup flow."
@@ -47,6 +47,20 @@
             "notes": "Repository branch protection and ToolPin CI enforcement have not been verified for this entry."
           }
         },
+        "dev.toolpin/evidence": [
+          {
+            "code": "npm_integrity_verified",
+            "status": "passed",
+            "message": "npm tarball integrity matched registry dist.integrity for @proofofwork-agency/contextrelay@3.9.2.",
+            "source": "npm-tarball",
+            "claim": "sha512-zUmS+iLWX/uRha5wzO8AdxSHUrOvXy8MOx+JHdMBRDRvMU+wS6jtQn0beWRUjRdMKN2RDZ0WRzxoHlDtEBmQYQ==",
+            "verificationMethod": "npm-packument-sri",
+            "verifiedByToolPin": true,
+            "trustedAnchor": true,
+            "trustAnchor": "registry.npmjs.org",
+            "verifiedAt": "2026-06-27T19:50:00.000Z"
+          }
+        ],
         "dev.toolpin/clientSupport": {
           "default": "unsupported",
           "clients": {

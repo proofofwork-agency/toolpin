@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { clientsForScope, exportClientConfig, PROJECT_CLIENTS } from "../../config.js";
+import { exportClientConfig } from "../../config.js";
 import { type InstallScope } from "../../install.js";
 import { buildInstallPlan, type InstallPlan } from "../../plan.js";
 import { compareRegistrySources, REGISTRY_SOURCES } from "../../registry.js";
@@ -13,7 +13,17 @@ import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } fro
 import { formatClientConfigSnippet } from "../configSnippet.js";
 import { asObject, safeJson, shortPath, truncate } from "../format.js";
 import { computeMenuLayout, listWindowStart } from "../layout.js";
-import { browseSortLabel, commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
+import {
+  browseSortLabel,
+  clientSupportSummary,
+  commandLogForView,
+  configTargetLabel,
+  formatVersionChoices,
+  installClientChoicesForServerScope,
+  installClientLabel,
+  scopeLabel,
+  selectedInstallClientsForServerScope,
+} from "../selectors.js";
 import type { BrowseLayout, BrowseSortMode, ClientSelection, CommandLog, InstallFlow, SourceMode, TuiState, TuiVersionInfo, View } from "../types.js";
 import { trustBarCells, trustDimensions, trustRiskTone, trustTierScore } from "../ui/trust.js";
 
@@ -253,7 +263,7 @@ function GroupedOptionRow({ result, selected = false, dimmed, width, category }:
         <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{selected ? "> " : ": "}</Text>
         <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
         <Text color={CHROME}> </Text>
-        <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={meterWidth} />
+        <TrustTierMeter tier={result.trust.tier} score={result.trust.overallScore ?? result.trust.score} issues={result.trust.issues} cells={meterWidth} />
       </Text>
       <Text color={dimmed ? CHROME : MUTED} wrap="truncate">
         <Text color={CHROME}>    project </Text>
@@ -274,7 +284,7 @@ function OptionRow({ result, selected = false, dimmed, width }: { result: Search
       <Text color={selected ? BLUE : dimmed ? CHROME : BLUE}>{truncate(server.registrySource, 8).padEnd(8)} </Text>
       <Text bold={selected} color={dimmed ? MUTED : "white"}>{truncate(server.title || server.name, titleWidth).padEnd(titleWidth)}</Text>
       <Text color={CHROME}> </Text>
-      <TrustTierMeter tier={result.trust.tier} score={result.trust.score} issues={result.trust.issues} cells={meterWidth} />
+      <TrustTierMeter tier={result.trust.tier} score={result.trust.overallScore ?? result.trust.score} issues={result.trust.issues} cells={meterWidth} />
     </Text>
   );
 }
@@ -526,6 +536,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
       <Metric label="registry" value={server.registrySource} valueColor={server.registrySource === "docker" ? WARN : OK} />
       <Metric label="runtime" value={server.packageTypes.join(", ") || server.remoteTypes.join(", ") || "none"} />
       <Metric label="transport" value={server.transports.join(", ") || "none"} />
+      <Metric label="clients" value={clientSupportSummary(server, "project")} />
       <Metric label="secrets" value={server.requiresSecrets ? "declared" : "none declared"} valueColor={server.requiresSecrets ? WARN : OK} />
       {versionInfo ? (
         <>
@@ -545,7 +556,7 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
           label="evidence"
           value={risk.label}
           tier={risk.tier}
-          score={trust.score}
+          score={overallScore}
           issues={trust.issues}
           cells={trustBarCells}
           suffix={`${trustTier(trust)} tier`}
@@ -635,12 +646,15 @@ function TrustScoreRow({ label, score, cells, suffix, width }: { label: string; 
 
 function PlanView({ server, client, installScope, width, versionInfo }: { server?: NormalizedServer; client: ClientSelection; installScope: InstallScope; width: number; versionInfo?: TuiVersionInfo }) {
   if (!server) return <EmptyPanel title="Install" />;
-  const planClient = client === "all" ? PROJECT_CLIENTS[0] ?? "claude" : client;
+  const targetClients = selectedInstallClientsForServerScope(client, installScope, server);
+  const planClient = targetClients[0] ?? (client === "all" ? "codex" : client);
   const content = safeJson(() => buildInstallPlan(server, planClient));
   if ("error" in asObject(content)) {
     return (
       <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
         <ModalTitle title="install" file="plan" />
+        <Text color={MUTED}>support     <Text color="white">{truncate(clientSupportSummary(server, installScope), width - 17)}</Text></Text>
+        <Spacer />
         <Text color={ERR}>{String(asObject(content).error)}</Text>
       </Box>
     );
@@ -654,7 +668,6 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
   const targetLocator = targetKind === "remote"
     ? String(target.url ?? "")
     : String(target.identifier ?? "");
-  const targetClients = selectedClientsForScope(client, installScope);
   const clientLabel = installClientLabel(client, targetClients);
   const trustTone = trustRiskTone(plan.trust);
   const writeSummary = client === "all"
@@ -665,6 +678,7 @@ function PlanView({ server, client, installScope, width, versionInfo }: { server
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
       <ModalTitle title="install" file="plan" />
       <Text color={MUTED}>client      <Text color="white">{clientLabel}</Text></Text>
+      <Text color={MUTED}>support     <Text color="white">{truncate(clientSupportSummary(server, installScope), width - 17)}</Text></Text>
       <Text color={MUTED}>scope       <Text color="white">{scopeLabel(installScope)}</Text></Text>
       <Text color={MUTED}>actions     <Text color="white">i install</Text>  <Text color="white">w lock</Text></Text>
       <Spacer />
@@ -703,7 +717,7 @@ function ConfigView({ server, client, installScope, width }: { server?: Normaliz
         <ModalTitle title="config" file="targets" />
         <Text color={MUTED}>client <Text color="white">all</Text>  scope <Text color="white">{installScope}</Text></Text>
         <Spacer />
-        {clientsForScope(installScope).map((targetClient) => (
+        {selectedInstallClientsForServerScope("all", installScope, server).map((targetClient) => (
           <PlanMetric key={targetClient} label={targetClient} value={configTargetLabel(targetClient, installScope)} width={width} />
         ))}
       </Box>
@@ -882,7 +896,7 @@ export function InstallWizard({ flow, width, height }: { flow: InstallFlow; widt
     { id: "project", label: "folder (project)", hint: "config in this folder" },
     { id: "global", label: "global (user)", hint: "current-user config" },
   ];
-  const clientOptions = installClientChoicesForScope(flow.scope ?? "project", flow.preferredClient).map((client) => ({
+  const clientOptions = installClientChoicesForServerScope(flow.scope ?? "project", flow.preferredClient, flow.server).map((client) => ({
     id: client,
     label: client,
     hint: client === "all" ? "every supported client for the chosen scope" : "",
