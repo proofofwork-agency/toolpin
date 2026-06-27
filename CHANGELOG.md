@@ -2,6 +2,7 @@
 
 ## 0.2.2
 
+- Release positioning: mark ToolPin as pre-1.0 beta software in the README while keeping the package on the normal `0.x` semver release track.
 - Distribution: switch the npm package target to `@proofofwork-agency/toolpin` while keeping the `toolpin` and `tpn` CLI binaries.
 - README/docs: lead with npm-first install and CI examples, add TUI screenshots to the README, and keep source-checkout commands as development-only fallbacks.
 - Curated ContextRelay verification: accept ToolPin-owned npm tarball integrity evidence from the curated registry, validate it against `registry.npmjs.org`, and show verified curated entries as evidence-complete without overriding ordinary registry metadata rules.
