@@ -29,8 +29,11 @@ The audit is intentionally conservative:
   disk.
 - **Implicit runtime brokering**: rejected because ToolPin currently writes config; it does
   not spawn MCP servers for clients.
-- **Automatic blocking policy**: deferred. A future policy rule such as
-  ToolPin 0.2.0 shipped an opt-in `denyRequiredSecrets` policy rule that blocks installs requiring secret inputs; a broader `denyPlaintextSecrets` (flagging plaintext values rather than required-secret declarations) remains future work after the read-only audit has proven useful.
+- **Plaintext-secret blocking policy**: deferred. ToolPin 0.2.0 shipped the
+  opt-in `denyRequiredSecrets` policy rule for installs whose selected target
+  declares required secrets. A broader `denyPlaintextSecrets` rule that blocks
+  actual plaintext values in client config remains future work after the
+  read-only audit has proven useful.
 - **Merge-time placeholder preservation**: deferred. Preserving a user's edited
   reference across reinstall is useful, but it changes config merge semantics and needs a
   separate review.

@@ -23,7 +23,7 @@ Raw GitHub, no deploy required:
 https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
 ```
 
-GitHub Pages / Docusaurus, after the site is deployed:
+GitHub Pages / Docusaurus:
 
 ```text
 https://proofofwork-agency.github.io/toolpin/registry/v0
@@ -45,9 +45,9 @@ The same payload is copied to the Docusaurus static directory:
 website/static/registry/v0/servers
 ```
 
-That second copy makes the registry available at
-`https://proofofwork-agency.github.io/toolpin/registry/v0` after the
-documentation site is deployed. CI rejects the change if the two files drift.
+That second copy makes the registry available on the published documentation
+site at `https://proofofwork-agency.github.io/toolpin/registry/v0`. CI rejects
+the change if the two files drift.
 
 Maintainers review registry changes like code:
 

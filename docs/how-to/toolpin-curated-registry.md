@@ -15,7 +15,7 @@ Raw GitHub, no deploy required:
 https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0
 ```
 
-GitHub Pages / Docusaurus, after the site is deployed:
+GitHub Pages / Docusaurus:
 
 ```text
 https://proofofwork-agency.github.io/toolpin/registry/v0

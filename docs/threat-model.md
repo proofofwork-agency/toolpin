@@ -4,11 +4,12 @@
 > defense begins and ends. Audience: security reviewers, enterprise
 > evaluators, and contributors. Status: scoped to v0.2.0 — future capabilities
 > (sigstore, Cedar, runtime brokering) are noted as roadmap, not claims.
-> Last reviewed: 2026-06-26.
+> Last reviewed: 2026-06-27.
 
 This document consolidates the security scope statements scattered across the
-README (Quick Start, Commands, "What Exists Now", Secret Hygiene, and Product
-Direction) into one authoritative reference. It is intentionally honest about gaps.
+README (Highlights, Usage, Safety Model, What Exists Now, and Roadmap) and the
+Docusaurus documentation into one authoritative reference. It is intentionally
+honest about gaps.
 
 ---
 
@@ -62,14 +63,15 @@ flagged here so users do not infer stronger guarantees than the code provides.
   require a gateway (Glama, Docker AI Governance, Stacklok ToolHive) or the
   dual-LLM/CaMeL pattern.
 - **Not sigstore, provenance, or SLSA.** The whole-lock digest is explicitly
-  "not a signature, provenance, sigstore, or self-protecting lockfile" (see the
-  digest and signature notes in README's *What Exists Now*).
+  "not a signature, provenance, sigstore, or self-protecting lockfile" (see
+  [docs/site/reference/lockfile-schema.md](site/reference/lockfile-schema.md)).
   Detached Ed25519 signing binds lockfile contents to a user-managed key but
   has no transparency log, no identity binding, and no replay defense. There
   is no SBOM emission (CycloneDX/SPDX) today.
 - **Not a Cedar/OPA engine.** `.toolpin/policy.json` is a local JSON gate
-  (see README's *Local Policy* section). It cannot express relational rules ("server A may not
-  co-exist with server B") or produce auditable signed policy bundles.
+  (see [docs/site/reference/policy-schema.md](site/reference/policy-schema.md)).
+  It cannot express relational rules ("server A may not co-exist with server B")
+  or produce auditable signed policy bundles.
 - **Not secret brokering.** ToolPin generates placeholders/references
   (`<TOKEN>`, `${env:TOKEN}`, `op://`, `vault://`, `doppler://`) and never
   resolves them. Runtime brokering is a design-gated future feature

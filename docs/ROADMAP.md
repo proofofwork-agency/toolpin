@@ -38,17 +38,20 @@ because nothing else matters if the resolution is unsafe or the config is wrong.
 audit trail) is the paid tier on top of pillars 1-3, targeted at v1.0. It is the SOC 2
 evidence layer security teams must buy before agents touch production.
 
-## Current state (baseline)
+## Current state (public docs launch, pre-npm publish)
 
-Shipped in v0.1:
+Shipped through v0.2.0:
 
 - Official MCP Registry + Docker catalog ingestion (`src/registry.ts`), local cache.
 - Normalized package/remote metadata; multi-source scaffold (pulse/smithery/glama disabled).
 - Search ranking over name, title, description, type, transport, repo (`src/search.ts`).
-- **Heuristic** trust scoring only (`src/trust.ts`) — repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
+- Metadata trust scoring (`src/trust.ts`) remains triage, not proof: repo, namespace, pinned versions, OCI digests, MCPB hashes, HTTPS, secrets, legacy transports.
+- Evidence-gated trust tiers require ToolPin-verified evidence such as OCI registry digest resolution, trusted-host MCPB byte hashing, npm SRI verification, or future verified attestations.
 - Config export for all 12 clients (`src/config.ts`): Claude/Cursor `mcpServers`, VS Code `servers`, Codex TOML `[mcp_servers.*]` tables (`src/codexToml.ts`), OpenCode, Windsurf/Cascade, Cline, Continue YAML, Gemini CLI, Zed `context_servers`, Roo, and Generic.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement is **partial**: local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation exist; sigstore/transparency, runtime secret brokering, and enterprise policy controls are still open.
+- Lockfile enforcement exists for local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation.
+- Public Docusaurus docs and the curated registry mirror are live at `https://proofofwork-agency.github.io/toolpin/`.
+- npm publication is still pending; until publish, install examples keep the source-checkout path first.
 - Ink TUI (`src/tui.tsx`).
 
 ## Known-defect fix backlog
@@ -70,12 +73,13 @@ closed rows stay listed so the roadmap preserves the security history.
 | **Duplicated config drifts from client file** — `config` field in lock can diverge from the real client config | `src/plan.ts`, `src/install.ts`, `src/doctor.ts` | Add `toolpin doctor` to reconcile lock ↔ client config and report drift | v0.3 | Closed in current code |
 
 Exit rule: a defect stays "open" until it has both a failing test (reproducing the bad
-behavior) and a passing test after the fix. v0.2 ships when every v0.2-row defect is closed.
+behavior) and a passing test after the fix. Every v0.2-row defect is closed in current code.
 
-## Release v0.2 — Trust & Install Foundation
+## Release v0.2 — Trust & Install Foundation (shipped)
 
-**Goal:** make resolution provably safe and the install layer undeniably the best.
-Ships pillars 1, 2, and 3. This is the release that makes ToolPin credible.
+**Goal:** make resolution reviewable, enforceable, and hard to drift silently.
+This release shipped pillars 1, 2, and 3, while leaving runtime brokering,
+sigstore transparency, and enterprise policy engines for later releases.
 
 ### Feature 1 — Trust as the product
 
@@ -83,14 +87,16 @@ Ships pillars 1, 2, and 3. This is the release that makes ToolPin credible.
 |------|------|--------|
 | Add capability + attestation types | `src/types.ts` | `CapabilityManifest`, `Attestation`, `ToolDescriptionHash`. Carry via existing `_meta` (`types.ts:58`) under `dev.toolpin/capabilities`, `dev.toolpin/attestations`. |
 | Capability derivation | **new** `src/capabilities.ts`, `src/tester.ts` | Normalize a `CapabilityManifest` from a `NormalizedServer`: declared env vars, transport, remote URL host (egress target), package type, secrets required. For remotes, build the tool-description hash from a live MCP probe (`initialize` → `tools/list`) rather than static registry metadata. |
-| Metadata pin enforcement | `src/verify.ts` | Now fails closed when an OCI target is not digest-pinned or an MCPB target lacks declared `fileSha256` (implemented in `src/verify.ts`; the matching score adjustments live in `src/trust.ts`). **Shipped in v0.1.** Byte-level MCPB/image verification and full sigstore/cosign are later verification work. |
+| Metadata and artifact evidence gates | `src/verify.ts` | Fails closed when an OCI target is not digest-pinned or an MCPB target lacks declared `fileSha256`; resolves OCI registry manifest digests when reachable; recomputes MCPB SHA-256 only from code-allowlisted HTTPS artifact hosts; verifies npm tarballs against `registry.npmjs.org` SRI. Full OCI image byte recomputation, PyPI/NuGet/Cargo artifact integrity, and sigstore/cosign remain later verification work. |
 | Extend trust report | `src/trust.ts` | Keep heuristic `scoreServer`; add attestation-derived badges (`sigstore-signed`, `provenance`, `sbom`, `capability-pinned`). |
 | CLI surface | `src/cli.ts` | `toolpin verify <server>`; `--verify` flag on `install`. |
 
 **Acceptance:** `toolpin verify` fails closed on mutable OCI tags and MCPB packages missing
-declared `fileSha256`; a clean server produces a capability manifest recorded in the
-lockfile. Remote capability pins require a successful MCP tools/list probe; unreachable
-servers fail verification unless the user explicitly skips live verification.
+declared `fileSha256`; trusted evidence can include reachable OCI manifest digest
+resolution, trusted-host MCPB byte hashing, npm SRI verification, and capability
+manifests recorded in the lockfile. Remote capability pins require a successful MCP
+`tools/list` probe; unreachable servers fail verification unless the user explicitly
+skips live verification.
 
 ### Feature 2 — Own the multi-client config layer
 
@@ -122,17 +128,17 @@ clobbering unrelated keys.
 ### v0.2 out of scope
 - Semantic / task-first search (v0.3).
 - Secret broker integrations — 1Password / Vault / Doppler (v0.3).
-- Byte-level MCPB/image verification and full sigstore/cosign implementation (metadata pin enforcement only in v0.2; full verification in v0.3).
+- OCI image byte recomputation, broad non-npm package artifact integrity, and full sigstore/cosign implementation.
 - Policy-as-code engine, private registry, audit log (v1.0).
 
-### v0.2 implementation order
+### v0.2 implementation order (historical)
 `src/plan.ts`, `src/config.ts`, `src/install.ts`, `src/cli.ts`, and `src/tui.tsx` share
 the lock/config contracts and must change together. Implement in this order:
 types/capability metadata, client serializers and paths, lockfile v2, CLI/TUI command
 surface, then verification/CI modules.
 
-### v0.2 exit criteria
-1. `toolpin verify` enforces syntactically valid MCPB `fileSha256` and OCI digest pins; trust report carries attestation badges.
+### v0.2 exit criteria (met)
+1. `toolpin verify` enforces syntactically valid MCPB `fileSha256` and OCI digest pins; trust report carries evidence and attestation labels.
 2. Correct config generation for every verified client, including Codex TOML.
 3. `mcp-lock.json` v2 keyed by `name+client`, validated on read, enforced by `toolpin ci`.
 4. Every v0.2 row in the [Known-defect fix backlog](#known-defect-fix-backlog) is closed (failing test → passing test).
@@ -141,13 +147,9 @@ surface, then verification/CI modules.
 
 - **Task-first semantic search**: embed registry metadata; `toolpin find "read Postgres and summarize"` returns ranked matches with confidence.
 - **Eval-gated listings**: optional per-server agent-eval pass rates published as a trust input — the signal npm structurally cannot offer.
-- **Tool-description scan**: deterministic advisory scans for agent-directed instructions, hidden/control characters, and tool-name shadowing in server-supplied and verified live tool descriptions. Shipped as warnings for human review, not as prompt-injection detection or an install blocker.
-- **Secret hygiene audit**: `toolpin secrets audit` is shipped as a read-only advisory guardrail. It flags likely plaintext env/header secrets in installed config using registry `isSecret` metadata and known token prefixes, and never prints raw secret values.
 - **Secret brokering**: real `op://`, `vault://`, or `doppler://` resolution remains design-gated. Install-time resolution is rejected because it writes plaintext to disk; spawn-time resolution requires a ToolPin launcher/runtime model.
 - **Full sigstore/cosign** verification for OCI + provenance attestations.
 - **Local policy hardening**: `.toolpin/policy.json` is shipped as the first enforcement gate; future work should add richer predicates and signed policy bundles without breaking the local JSON format.
-- **Whole-lock digest pins**: `toolpin lock digest` and `toolpin ci --expect-digest` provide a canonical set-level lockfile pin for CI systems holding the expected digest out-of-band. The digest excludes top-level file timestamps but includes per-entry timestamps. This is not signing or provenance.
-- **User-supplied-key lock signatures**: `toolpin lock sign`, `toolpin lock verify-signature`, and `toolpin ci --signature ... --public-key ...` provide detached Ed25519 signatures over the canonical whole-lock digest. ToolPin does not generate or store keys; security depends on the private key and public trust root being managed outside the repo/lockfile trust path.
 
 ### v0.3 design gates
 

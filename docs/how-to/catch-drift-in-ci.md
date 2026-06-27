@@ -47,7 +47,7 @@ jobs:
           live: "true"
 ```
 
-action builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
+The action builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
 
 ```bash
 toolpin ci --file mcp-lock.json --source all --live --policy .toolpin/policy.json
