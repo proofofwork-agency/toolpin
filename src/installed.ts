@@ -342,6 +342,7 @@ async function buildCheckedPlan(
   if (options.verify) {
     verification = await verifyServer(server, {
       liveRemoteProbe: true,
+      livePackageProbe: true,
       timeoutMs: options.timeoutMs ?? 15000,
       requireVerified: options.requireVerified === true,
     });

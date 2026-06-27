@@ -67,6 +67,7 @@ const RULES: SarifRule[] = [
   rule("no_install_target", "No install target", "The server has no installable package or remote target.", "verify", "error"),
   rule("mutable_oci_tag", "Mutable OCI tag", "An OCI package is not pinned by digest.", "verify", "error"),
   rule("missing_mcpb_hash", "Missing MCPB hash", "An MCPB package is missing fileSha256.", "verify", "error"),
+  rule("package_probe_failed", "Package probe failed", "Live package capability verification failed.", "verify", "error"),
   rule("remote_probe_failed", "Remote probe failed", "Live remote capability verification failed.", "verify", "error"),
   rule("remote_probe_skipped", "Remote probe skipped", "Live remote capability verification was skipped.", "verify", "warning"),
   rule("ci_lock_drift", "CI lock drift", "Frozen install verification found lockfile drift or resolver failures.", "ci", "error"),

@@ -120,7 +120,7 @@ on read but `ci` will reject entries missing `integrity`.
 | `trust` | object | Metadata completeness score, optional tier/gating/evidence, badges, and review issues at lock time. |
 | `config` | any JSON value | Generated client config fragment. |
 | `notes` | string array | Human-readable install notes. |
-| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash` and `toolDescriptionScan` appear only after a successful `--verify` live probe of a remote target. |
+| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash` and `toolDescriptionScan` appear only after a successful `--verify` live probe of the selected MCP launch target. |
 | `resolvedAt` | string | Time the entry was resolved. Included in per-entry integrity and whole-lock digest calculations. |
 | `lockedAt` | string *(optional)* | Time the entry was written. Included in per-entry integrity and whole-lock digest calculations. |
 | `resolved` | object *(synthesized)* | Registry source, name, and version resolved by ToolPin. |
@@ -168,9 +168,10 @@ npm tarball integrity, or verify an attestation.
 ## Capability manifest
 
 The optional `capabilityManifest` object is derived by `toolpin verify` (and
-persisted by `toolpin install --verify`) from normalized registry metadata and,
-for remote targets, an optional live `tools/list` probe. Array fields are
-de-duplicated and sorted deterministically.
+persisted by `toolpin install --verify` or `toolpin lock --verify`) from
+normalized registry metadata and an optional live `tools/list` probe of the
+selected package or remote launch target. Array fields are de-duplicated and
+sorted deterministically.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -183,7 +184,7 @@ de-duplicated and sorted deterministically.
 | `remoteHosts` | string array | Sorted unique egress hosts parsed from remote URLs. |
 | `secrets` | object array | Sorted declared secret inputs. Each entry is `{ name, source: "env" \| "header", required }`, covering package environment variables and remote headers marked `isSecret` or `isRequired`. |
 | `generatedAt` | string | ISO timestamp the manifest was generated. Required. |
-| `toolDescriptionHash` | object *(optional)* | Present only after a successful live `tools/list` probe of a remote target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted `name`/`description` pairs returned by the probe. |
+| `toolDescriptionHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted `name`/`description` pairs returned by the probe. |
 | `toolDescriptionScan` | object *(optional)* | Present only after a successful live `tools/list` probe. `{ version: 1, generatedAt, scannedDescriptions, findings }` of advisory review signals (see below). |
 
 ### Verification rules
@@ -194,15 +195,17 @@ report is not `ok`) when:
 - an OCI package identifier is not pinned by digest (`@sha256:`) — code `mutable_oci_tag`;
 - an MCPB package is missing `fileSha256` — code `missing_mcpb_hash`;
 - a remote live probe is enabled but fails to connect or list tools — code `remote_probe_failed`;
+- a package live probe is enabled but fails to start or list tools — code `package_probe_failed`;
 - no install target (package or remote) is available — code `no_install_target`.
 
 A valid OCI digest pin earns the `digest-pinned` badge and is required before
 ToolPin attempts best-effort registry digest verification. A valid MCPB
 `fileSha256` earns the `fileSha256` badge and is required before ToolPin attempts
-best-effort byte hashing from code-allowlisted HTTPS artifact hosts. Skipping the live probe
-(`--skip-live-verification`) downgrades remote tool-description pinning to a
-`remote_probe_skipped` warning rather than a blocker, leaving the manifest
-metadata-only. A successful live probe earns `tool-description-pinned`.
+best-effort byte hashing from code-allowlisted HTTPS artifact hosts. Skipping
+the live probe (`--skip-live-verification`) leaves package manifests
+metadata-only and downgrades remote tool-description pinning to a
+`remote_probe_skipped` warning rather than a blocker. A successful live probe
+earns `tool-description-pinned`.
 
 Registry attestations read from `_meta` (`dev.toolpin/attestations`) are surfaced
 in the report and each emit a `<type>-declared` badge; a manifest already pinned

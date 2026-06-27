@@ -163,11 +163,11 @@ posture:
     timeout: "15000"
 ```
 
-`verify: "true"` can require network access and server credentials for live MCP
-probes. Use `skip-live-verification: "true"` when you want package/metadata
-verification without live `tools/list` probing. Treat that as a conscious
-downgrade: it skips capability hashing and CI rejects it for entries that
-already have live capability pins.
+`verify: "true"` can require network access, local runtimes, and server
+credentials for live MCP probes. Use `skip-live-verification: "true"` when you
+want artifact/metadata verification without live `tools/list` probing. Treat
+that as a conscious downgrade: it skips capability hashing and CI rejects it for
+entries that already have live capability pins.
 
 ## What Fails the Build
 

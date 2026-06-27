@@ -49,7 +49,7 @@ Shipped through v0.2.0:
 - Evidence-gated trust tiers require ToolPin-verified evidence such as OCI registry digest resolution, trusted-host MCPB byte hashing, npm SRI verification, or future verified attestations.
 - Config export for all 12 clients (`src/config.ts`): Claude/Cursor `mcpServers`, VS Code `servers`, Codex TOML `[mcp_servers.*]` tables (`src/codexToml.ts`), OpenCode, Windsurf/Cascade, Cline, Continue YAML, Gemini CLI, Zed `context_servers`, Roo, and Generic.
 - Install writes + `mcp-lock.json` v2 (`src/plan.ts`, `src/install.ts`) with server/client keys, read validation, preserved creation time, per-entry resolution time, integrity metadata, and install drift refusal.
-- Lockfile enforcement exists for local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation.
+- Lockfile enforcement exists for local drift, trust downgrade checks, per-entry integrity, whole-lock digest pins, user-supplied-key detached signatures, frozen `toolpin ci`, verified package/remote capability pins, advisory tool-description scans, redacted secret hygiene audits, local JSON policy gates, and client-config reconciliation.
 - Public Docusaurus docs and the curated registry mirror are live at `https://proofofwork-agency.github.io/toolpin/`.
 - npm publication is still pending; until publish, install examples keep the source-checkout path first.
 - Ink TUI (`src/tui.tsx`).
@@ -86,10 +86,10 @@ sigstore transparency, and enterprise policy engines for later releases.
 | Task | File | Detail |
 |------|------|--------|
 | Add capability + attestation types | `src/types.ts` | `CapabilityManifest`, `Attestation`, `ToolDescriptionHash`. Carry via existing `_meta` (`types.ts:58`) under `dev.toolpin/capabilities`, `dev.toolpin/attestations`. |
-| Capability derivation | **new** `src/capabilities.ts`, `src/tester.ts` | Normalize a `CapabilityManifest` from a `NormalizedServer`: declared env vars, transport, remote URL host (egress target), package type, secrets required. For remotes, build the tool-description hash from a live MCP probe (`initialize` → `tools/list`) rather than static registry metadata. |
+| Capability derivation | **new** `src/capabilities.ts`, `src/tester.ts` | Normalize a `CapabilityManifest` from a `NormalizedServer`: declared env vars, transport, remote URL host (egress target), package type, secrets required. For package and remote launch targets, build the tool-description hash from a live MCP probe (`initialize` → `tools/list`) rather than static registry metadata. |
 | Metadata and artifact evidence gates | `src/verify.ts` | Fails closed when an OCI target is not digest-pinned or an MCPB target lacks declared `fileSha256`; resolves OCI registry manifest digests when reachable; recomputes MCPB SHA-256 only from code-allowlisted HTTPS artifact hosts; verifies npm tarballs against `registry.npmjs.org` SRI. Full OCI image byte recomputation, PyPI/NuGet/Cargo artifact integrity, and sigstore/cosign remain later verification work. |
 | Extend trust report | `src/trust.ts` | Keep heuristic `scoreServer`; add attestation-derived badges (`sigstore-signed`, `provenance`, `sbom`, `capability-pinned`). |
-| CLI surface | `src/cli.ts` | `toolpin verify <server>`; `--verify` flag on `install`. |
+| CLI surface | `src/cli.ts` | `toolpin verify <server>`; `--verify` flag on `install` and `lock`. |
 
 **Acceptance:** `toolpin verify` fails closed on mutable OCI tags and MCPB packages missing
 declared `fileSha256`; trusted evidence can include reachable OCI manifest digest

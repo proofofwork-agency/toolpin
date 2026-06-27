@@ -12,6 +12,7 @@ import { TRUSTED_MCPB_SOURCES, canonicalizeOciRef, trustedMcpbSourceHost, truste
 
 export interface VerificationOptions {
   liveRemoteProbe?: boolean;
+  livePackageProbe?: boolean;
   timeoutMs?: number;
   requireVerified?: boolean;
   fetch?: SafeFetchOptions["fetch"];
@@ -60,40 +61,15 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     });
   } else if (launch.kind === "package") {
     await verifyPackagePins(launch.pkg, issues, badges, evidence, generatedAt, options);
+    if (options.livePackageProbe === true) {
+      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package");
+      if (pinned) capabilityManifest = pinned;
+    }
   } else {
     badges.push("remote-target");
     if (options.liveRemoteProbe !== false) {
-      const result = await testServer(server, options.timeoutMs);
-      if (result.ok) {
-        const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
-        const toolManifestHash = hashToolManifests(result.tools, generatedAt);
-        const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
-        capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
-        capabilityManifest.toolManifestHash = toolManifestHash;
-        badges.push("tool-description-pinned");
-        badges.push("tool-manifest-pinned");
-        evidence.push({
-          code: "tool_description_hash",
-          status: "passed",
-          message: "Live tools/list descriptions were hashed into the capability manifest.",
-        });
-        if (toolDescriptionScan.findings.length) {
-          badges.push("tool-description-scan-advisory");
-          issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));
-        }
-      } else {
-        issues.push({
-          severity: "critical",
-          code: "remote_probe_failed",
-          message: `Remote capability verification failed: ${result.message}`,
-        });
-        evidence.push({
-          code: "tool_description_hash",
-          status: "failed",
-          message: `Remote tools/list descriptions were not hashed: ${result.message}`,
-          required: true,
-        });
-      }
+      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "remote", options.timeoutMs);
+      if (pinned) capabilityManifest = pinned;
     } else {
       issues.push({
         severity: "warning",
@@ -131,6 +107,51 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     issues,
     verifiedProvenance,
   };
+}
+
+async function verifyLiveToolManifest(
+  server: NormalizedServer,
+  generatedAt: string,
+  issues: TrustIssue[],
+  badges: string[],
+  evidence: TrustEvidence[],
+  targetKind: "remote" | "package",
+  timeoutMs?: number,
+): Promise<CapabilityManifest | undefined> {
+  const result = await testServer(server, timeoutMs);
+  if (!result.ok) {
+    const label = targetKind === "remote" ? "Remote" : "Package";
+    issues.push({
+      severity: "critical",
+      code: targetKind === "remote" ? "remote_probe_failed" : "package_probe_failed",
+      message: `${label} capability verification failed: ${result.message}`,
+    });
+    evidence.push({
+      code: "tool_description_hash",
+      status: "failed",
+      message: `Live tools/list descriptions were not hashed: ${result.message}`,
+      required: true,
+    });
+    return undefined;
+  }
+
+  const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
+  const toolManifestHash = hashToolManifests(result.tools, generatedAt);
+  const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
+  const capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
+  capabilityManifest.toolManifestHash = toolManifestHash;
+  badges.push("tool-description-pinned");
+  badges.push("tool-manifest-pinned");
+  evidence.push({
+    code: "tool_description_hash",
+    status: "passed",
+    message: "Live tools/list descriptions were hashed into the capability manifest.",
+  });
+  if (toolDescriptionScan.findings.length) {
+    badges.push("tool-description-scan-advisory");
+    issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));
+  }
+  return capabilityManifest;
 }
 
 async function verifyPackagePins(

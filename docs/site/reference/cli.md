@@ -48,8 +48,9 @@ toolpin export-config <server-name> --client <client|all> [--version <server-ver
 
 `scan` runs advisory description checks against registry metadata and, with
 `--live`, the returned `tools/list` descriptions when the probe succeeds.
-Findings do not make `scan` fail. `verify` checks registry metadata and optional
-live MCP tool metadata. For packages, OCI verification requires a valid digest
+Findings do not make `scan` fail. `verify` checks registry metadata and, unless
+skipped, live MCP tool metadata for the selected package or remote launch
+target. For packages, OCI verification requires a valid digest
 pin and best-effort resolves the registry manifest digest when reachable; MCPB
 verification requires a valid `fileSha256` and best-effort recomputes bytes when
 the bundle is available from a code-allowlisted HTTPS artifact host. npm package
@@ -93,7 +94,7 @@ read-only.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live]
+toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]

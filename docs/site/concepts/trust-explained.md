@@ -76,7 +76,7 @@ signal there.
 | `mcpb_sha256_verified` | `passed` / `failed` / `unavailable` | ToolPin read MCPB bytes from a code-allowlisted HTTPS artifact host and recomputed SHA-256, or could not. |
 | `npm_integrity_verified` | `passed` / `failed` / `unavailable` | ToolPin fetched the npm packument from `registry.npmjs.org`, required exact version `dist.integrity`, fetched a trusted npm tarball, and compared SHA-512 SRI. |
 | `lock_integrity` | `passed` | New lock entries include an integrity digest over the reviewed install plan, including entry timestamps. |
-| `tool_description_hash` | `passed` / `failed` / `unavailable` | Live remote `tools/list` descriptions were hashed, failed, or were skipped. |
+| `tool_description_hash` | `passed` / `failed` / `unavailable` | Live package or remote `tools/list` descriptions were hashed, failed, or were skipped. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
 Tiering is conservative:

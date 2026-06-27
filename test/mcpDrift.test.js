@@ -1,0 +1,481 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import test from "node:test";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { readLockfile } from "../dist/plan.js";
+import { verifyServer } from "../dist/verify.js";
+
+const execFileAsync = promisify(execFile);
+const CLI = path.resolve("dist", "cli.js");
+const TEST_SOURCE = "tpn-test";
+const SERVER_NAME = "dev.toolpin/tpn-test-mcp-server";
+const publicLookup = async () => [{ address: "93.184.216.34" }];
+
+test("CLI detects remote MCP tool drift against live capability pins", async () => {
+  await withTempCwd(async (dir) => {
+    let tools = [tool("alpha", "Alpha remote tool")];
+    const remote = await startRemoteMcpFixture(() => tools);
+    try {
+      await writeRegistryConfig();
+      await writeRegistryCache([remoteServer(remote.url)]);
+
+      await execFileAsync(process.execPath, [
+        CLI,
+        "lock",
+        SERVER_NAME,
+        "--client",
+        "claude",
+        "--source",
+        TEST_SOURCE,
+        "--verify",
+        "--timeout",
+        "5000",
+      ], { env: isolatedHomeEnv(dir) });
+
+      const before = await readFile("mcp-lock.json", "utf8");
+      const lockfile = await readLockfile();
+      const locked = lockfile.servers[`${SERVER_NAME}:claude`];
+      assert.equal(locked.capabilityManifest.toolDescriptionHash.toolCount, 1);
+      assert.equal(locked.capabilityManifest.toolManifestHash.toolCount, 1);
+
+      tools = [
+        tool("alpha", "Alpha remote tool with changed behavior"),
+        tool("beta", "Beta remote tool"),
+      ];
+
+      await assert.rejects(
+        () => execFileAsync(process.execPath, [
+          CLI,
+          "ci",
+          "--file",
+          "mcp-lock.json",
+          "--source",
+          TEST_SOURCE,
+          "--verify",
+          "--no-policy",
+          "--timeout",
+          "5000",
+        ], { env: isolatedHomeEnv(dir) }),
+        (error) => {
+          const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+          assert.match(stderr, /tool-description hash changed/);
+          assert.match(stderr, /tool-manifest hash changed/);
+          return true;
+        },
+      );
+      assert.equal(await readFile("mcp-lock.json", "utf8"), before);
+    } finally {
+      await remote.close();
+    }
+  });
+});
+
+test("CLI detects stdio package MCP tool drift against live capability pins", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha stdio package tool")]);
+    await writeRegistryConfig();
+    await writeRegistryCache([packageServer("cargo", { identifier: "tpn-cargo-fixture" })]);
+    const env = fixtureEnv(dir, fixture);
+
+    await execFileAsync(process.execPath, [
+      CLI,
+      "install",
+      SERVER_NAME,
+      "--client",
+      "claude",
+      "--scope",
+      "project",
+      "--source",
+      TEST_SOURCE,
+      "--verify",
+      "--update-lock",
+      "--no-policy",
+      "--timeout",
+      "5000",
+    ], { env });
+
+    const before = await readFile("mcp-lock.json", "utf8");
+    const installed = JSON.parse(await readFile(".mcp.json", "utf8"));
+    assert.equal(installed.mcpServers[SERVER_NAME].command, "tpn-cargo-fixture");
+    const locked = (await readLockfile()).servers[`${SERVER_NAME}:claude`];
+    assert.equal(locked.capabilityManifest.toolDescriptionHash.toolCount, 1);
+    assert.equal(locked.capabilityManifest.toolManifestHash.toolCount, 1);
+
+    await writeToolState(fixture.toolsPath, [
+      tool("alpha", "Alpha stdio package tool with changed behavior"),
+      tool("beta", "Beta stdio package tool"),
+    ]);
+
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [
+        CLI,
+        "ci",
+        "--file",
+        "mcp-lock.json",
+        "--source",
+        TEST_SOURCE,
+        "--verify",
+        "--no-policy",
+        "--timeout",
+        "5000",
+      ], { env }),
+      (error) => {
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        assert.match(stderr, /tool-description hash changed/);
+        assert.match(stderr, /tool-manifest hash changed/);
+        return true;
+      },
+    );
+    assert.equal(await readFile("mcp-lock.json", "utf8"), before);
+  });
+});
+
+test("verifyServer live-probes every supported stdio package launcher", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha package tool")]);
+    const originalPath = process.env.PATH;
+    const originalToolsPath = process.env.TOOLPIN_TEST_TOOLS;
+    const originalInvocationsPath = process.env.TOOLPIN_TEST_INVOCATIONS;
+    process.env.PATH = `${fixture.binDir}${path.delimiter}${originalPath ?? ""}`;
+    process.env.TOOLPIN_TEST_TOOLS = fixture.toolsPath;
+    process.env.TOOLPIN_TEST_INVOCATIONS = fixture.invocationsPath;
+    try {
+      const cases = [
+        ["npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }],
+        ["pypi", { identifier: "toolpin-test-mcp-server", version: "1.0.0" }],
+        ["nuget", { identifier: "ToolPin.TestMcpServer", version: "1.0.0" }],
+        ["cargo", { identifier: "tpn-cargo-fixture", version: "1.0.0" }],
+        ["oci", { identifier: `127.0.0.1:5000/toolpin/test-mcp-server@sha256:${"a".repeat(64)}` }],
+        ["mcpb", { identifier: path.join(dir, "tpn-test.mcpb"), version: "1.0.0", fileSha256: "b".repeat(64) }],
+      ];
+
+      for (const [registryType, overrides] of cases) {
+        const report = await verifyServer(packageServer(registryType, overrides), {
+          livePackageProbe: true,
+          timeoutMs: 5000,
+          lookup: publicLookup,
+          fetch: npmIntegrityFetch,
+        });
+
+        assert.equal(report.ok, true, `${registryType}: ${report.issues.map((issue) => issue.message).join("; ")}`);
+        assert.equal(report.capabilityManifest.toolDescriptionHash.toolCount, 1, registryType);
+        assert.equal(report.capabilityManifest.toolManifestHash.toolCount, 1, registryType);
+        assert.ok(report.badges.includes("tool-description-pinned"), registryType);
+        assert.ok(report.badges.includes("tool-manifest-pinned"), registryType);
+      }
+
+      const invocations = await readInvocations(fixture.invocationsPath);
+      assert.deepEqual(
+        invocations.map((entry) => entry.command).sort(),
+        ["dnx", "docker", "mcpb", "npx", "tpn-cargo-fixture", "uvx"],
+      );
+      assert.deepEqual(invocations.find((entry) => entry.command === "npx").args, ["-y", "@toolpin/test-mcp-server@1.0.0"]);
+      assert.deepEqual(invocations.find((entry) => entry.command === "uvx").args, ["toolpin-test-mcp-server==1.0.0"]);
+      assert.deepEqual(invocations.find((entry) => entry.command === "dnx").args, ["ToolPin.TestMcpServer@1.0.0"]);
+      assert.deepEqual(invocations.find((entry) => entry.command === "docker").args, ["run", "--rm", "-i", `127.0.0.1:5000/toolpin/test-mcp-server@sha256:${"a".repeat(64)}`]);
+      assert.deepEqual(invocations.find((entry) => entry.command === "mcpb").args, ["run", path.join(dir, "tpn-test.mcpb")]);
+    } finally {
+      restoreEnv("PATH", originalPath);
+      restoreEnv("TOOLPIN_TEST_TOOLS", originalToolsPath);
+      restoreEnv("TOOLPIN_TEST_INVOCATIONS", originalInvocationsPath);
+    }
+  });
+});
+
+async function startRemoteMcpFixture(getTools) {
+  const listener = createServer(async (req, res) => {
+    if (!req.url?.startsWith("/mcp")) {
+      res.writeHead(404).end();
+      return;
+    }
+
+    const server = new Server(
+      { name: "tpn-test-mcp-server", version: "1.0.0" },
+      { capabilities: { tools: {} } },
+    );
+    server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: getTools() }));
+    server.setRequestHandler(CallToolRequestSchema, (request) => ({
+      content: [{ type: "text", text: `called ${request.params.name}` }],
+    }));
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    res.on("close", () => {
+      void server.close().catch(() => undefined);
+    });
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
+    } catch (error) {
+      if (!res.headersSent) {
+        res.writeHead(500).end(error instanceof Error ? error.message : String(error));
+      } else {
+        res.end();
+      }
+    }
+  });
+
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const address = listener.address();
+  assert.equal(typeof address, "object");
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    close: () => new Promise((resolve) => listener.close(resolve)),
+  };
+}
+
+async function writeStdioFixture(dir) {
+  const binDir = path.join(dir, "bin");
+  const toolsPath = path.join(dir, "tools.json");
+  const invocationsPath = path.join(dir, "invocations.jsonl");
+  const serverPath = path.join(dir, "mcp-stdio-fixture.mjs");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(serverPath, `
+import { readFileSync } from "node:fs";
+
+process.stdin.setEncoding("utf8");
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  for (;;) {
+    const index = buffer.indexOf("\\n");
+    if (index < 0) break;
+    const line = buffer.slice(0, index).trim();
+    buffer = buffer.slice(index + 1);
+    if (!line) continue;
+    const message = JSON.parse(line);
+    if (message.method === "initialize") {
+      respond(message.id, {
+        protocolVersion: message.params.protocolVersion,
+        capabilities: { tools: {} },
+        serverInfo: { name: "tpn-test-mcp-server", version: "1.0.0" }
+      });
+    } else if (message.method === "tools/list") {
+      respond(message.id, { tools: JSON.parse(readFileSync(process.env.TOOLPIN_TEST_TOOLS, "utf8")) });
+    } else if (message.method === "tools/call") {
+      respond(message.id, { content: [{ type: "text", text: "ok" }] });
+    }
+  }
+});
+
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
+}
+`, "utf8");
+
+  for (const command of ["npx", "uvx", "dnx", "docker", "mcpb", "tpn-cargo-fixture"]) {
+    const commandPath = path.join(binDir, command);
+    await writeFile(commandPath, `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { basename } from "node:path";
+import { spawn } from "node:child_process";
+
+appendFileSync(process.env.TOOLPIN_TEST_INVOCATIONS, JSON.stringify({
+  command: basename(process.argv[1]),
+  args: process.argv.slice(2)
+}) + "\\n");
+const child = spawn(process.execPath, [${JSON.stringify(serverPath)}], {
+  stdio: "inherit",
+  env: process.env
+});
+child.on("exit", (code, signal) => {
+  if (signal) process.kill(process.pid, signal);
+  process.exit(code ?? 0);
+});
+`, "utf8");
+    await chmod(commandPath, 0o755);
+  }
+
+  return { binDir, toolsPath, invocationsPath };
+}
+
+async function writeRegistryConfig() {
+  await mkdir(".toolpin", { recursive: true });
+  await writeFile(".toolpin/registries.json", JSON.stringify({
+    registries: [
+      {
+        id: TEST_SOURCE,
+        type: "official-compatible",
+        url: "https://example.invalid/registry/v0",
+        mode: "installable",
+        trust: "private",
+      },
+    ],
+  }, null, 2), "utf8");
+}
+
+async function writeRegistryCache(servers) {
+  await mkdir(".toolpin", { recursive: true });
+  await writeFile(".toolpin/registry-cache.json", JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    entries: servers.map((server) => ({
+      source: TEST_SOURCE,
+      server: server.raw,
+      _meta: {
+        "io.modelcontextprotocol.registry/official": {
+          isLatest: true,
+        },
+      },
+    })),
+  }, null, 2), "utf8");
+}
+
+async function writeToolState(file, tools) {
+  await writeFile(file, JSON.stringify(tools, null, 2), "utf8");
+}
+
+async function readInvocations(file) {
+  const raw = await readFile(file, "utf8");
+  return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function tool(name, description) {
+  return {
+    name,
+    description,
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  };
+}
+
+function remoteServer(url) {
+  return normalizedServer({
+    packageTypes: [],
+    remoteTypes: ["streamable-http"],
+    transports: ["streamable-http"],
+    raw: {
+      ...baseRawServer(),
+      remotes: [{ type: "streamable-http", url }],
+    },
+  });
+}
+
+function packageServer(registryType, overrides = {}) {
+  const identifier = overrides.identifier ?? `toolpin-${registryType}-fixture`;
+  const version = overrides.version ?? "1.0.0";
+  return normalizedServer({
+    packageTypes: [registryType],
+    remoteTypes: [],
+    transports: ["stdio"],
+    raw: {
+      ...baseRawServer(),
+      packages: [
+        {
+          registryType,
+          identifier,
+          version,
+          fileSha256: overrides.fileSha256,
+          transport: { type: "stdio" },
+        },
+      ],
+    },
+  });
+}
+
+function normalizedServer(overrides) {
+  return {
+    registrySource: TEST_SOURCE,
+    registryMode: "installable",
+    name: SERVER_NAME,
+    title: "Tpn Test MCP Server",
+    description: "Synthetic MCP server for ToolPin live drift tests.",
+    version: "1.0.0",
+    isLatest: true,
+    installable: true,
+    repositoryUrl: "https://github.com/proofofwork-agency/toolpin",
+    requiresSecrets: false,
+    ...overrides,
+  };
+}
+
+function baseRawServer() {
+  return {
+    name: SERVER_NAME,
+    title: "Tpn Test MCP Server",
+    description: "Synthetic MCP server for ToolPin live drift tests.",
+    version: "1.0.0",
+    repository: {
+      url: "https://github.com/proofofwork-agency/toolpin",
+      source: "github",
+    },
+  };
+}
+
+function npmIntegrityFetch(url) {
+  const key = String(url);
+  const tarball = Buffer.from("tpn npm fixture bytes");
+  const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+  if (key === "https://registry.npmjs.org/%40toolpin%2Ftest-mcp-server") {
+    return Promise.resolve(jsonResponse({
+      versions: {
+        "1.0.0": {
+          dist: {
+            integrity,
+            tarball: "https://registry.npmjs.org/@toolpin/test-mcp-server/-/test-mcp-server-1.0.0.tgz",
+          },
+        },
+      },
+    }));
+  }
+  if (key === "https://registry.npmjs.org/@toolpin/test-mcp-server/-/test-mcp-server-1.0.0.tgz") {
+    return Promise.resolve(new Response(tarball));
+  }
+  return Promise.reject(new Error(`Unexpected fetch ${key}`));
+}
+
+function jsonResponse(body) {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function withTempCwd(fn) {
+  const originalCwd = process.cwd();
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-mcp-drift-"));
+  try {
+    process.chdir(tempDir);
+    await fn(tempDir);
+  } finally {
+    process.chdir(originalCwd);
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function fixtureEnv(dir, fixture) {
+  return {
+    ...isolatedHomeEnv(dir),
+    PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+    TOOLPIN_TEST_TOOLS: fixture.toolsPath,
+    TOOLPIN_TEST_INVOCATIONS: fixture.invocationsPath,
+  };
+}
+
+function isolatedHomeEnv(dir) {
+  return {
+    ...process.env,
+    HOME: dir,
+    USERPROFILE: dir,
+  };
+}
+
+function restoreEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}

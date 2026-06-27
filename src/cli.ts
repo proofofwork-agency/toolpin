@@ -359,8 +359,10 @@ async function audit(rest: string[]): Promise<void> {
       if (hasFlag(rest, "--verify")) {
         try {
           const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
+          const liveVerification = liveVerificationEnabled(rest);
           const verification = await verifyServer(server, {
-            liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+            liveRemoteProbe: liveVerification,
+            livePackageProbe: liveVerification,
             timeoutMs: numberFlag(rest, "--timeout", 15000),
             requireVerified: hasFlag(rest, "--require-verified"),
           });
@@ -469,8 +471,10 @@ async function verify(rest: string[]): Promise<void> {
   if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
 
   const server = await findServer(rest, name);
+  const liveVerification = liveVerificationEnabled(rest);
   const report = await verifyServer(server, {
-    liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+    liveRemoteProbe: liveVerification,
+    livePackageProbe: liveVerification,
     timeoutMs: numberFlag(rest, "--timeout", 15000),
     requireVerified: hasFlag(rest, "--require-verified"),
   });
@@ -638,19 +642,38 @@ async function lock(rest: string[]): Promise<void> {
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock key-fingerprint --public-key public.pem [--json]\n       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
+  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock key-fingerprint --public-key public.pem [--json]\n       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const scope = scopeFlag(rest, "project") as InstallScope;
   const server = await findServer(rest, name);
+  let verifiedCapabilityManifest: CapabilityManifest | undefined;
+  let verificationReport: VerificationReport | undefined;
+  if (hasFlag(rest, "--verify")) {
+    const liveVerification = liveVerificationEnabled(rest);
+    const report = await verifyServer(server, {
+      liveRemoteProbe: liveVerification,
+      livePackageProbe: liveVerification,
+      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      requireVerified: hasFlag(rest, "--require-verified"),
+    });
+    if (!report.ok) {
+      throw new Error([
+        "Lock refused because verification failed.",
+        ...report.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
+      ].join("\n"));
+    }
+    verifiedCapabilityManifest = report.capabilityManifest;
+    verificationReport = report;
+  }
   let lockfile;
   if (client === "all") {
     for (const targetClient of PROJECT_CLIENTS) {
-      lockfile = await writeLockfile(buildInstallPlan(server, targetClient, { scope }), path);
+      lockfile = await writeLockfile(buildInstallPlan(server, targetClient, { scope, capabilityManifest: verifiedCapabilityManifest, verificationReport }), path);
     }
   } else {
-    lockfile = await writeLockfile(buildInstallPlan(server, client, { scope }), path);
+    lockfile = await writeLockfile(buildInstallPlan(server, client, { scope, capabilityManifest: verifiedCapabilityManifest, verificationReport }), path);
   }
   printHeader("Lockfile updated");
   printField("server", `${server.name}@${server.version}`);
@@ -840,8 +863,10 @@ async function install(rest: string[]): Promise<void> {
   let verifiedCapabilityManifest: CapabilityManifest | undefined;
   let verificationReport: VerificationReport | undefined;
   if (verifyBeforeInstall) {
+    const liveVerification = liveVerificationEnabled(rest);
     const report = await verifyServer(server, {
-      liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+      liveRemoteProbe: liveVerification,
+      livePackageProbe: liveVerification,
       timeoutMs: numberFlag(rest, "--timeout", 15000),
       requireVerified,
     });
@@ -1163,8 +1188,10 @@ async function ci(rest: string[]): Promise<void> {
       throw new Error(`${locked.name} has live capability pins in ${path}; --skip-live-verification is not allowed for pinned CI entries.`);
     }
     if (verifyBeforeUse) {
+      const liveVerification = liveVerificationEnabled(rest);
       verification = await verifyServer(server, {
-        liveRemoteProbe: !hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]),
+        liveRemoteProbe: liveVerification,
+        livePackageProbe: liveVerification,
         timeoutMs: numberFlag(rest, "--timeout", 15000),
         requireVerified,
       });
@@ -1361,7 +1388,7 @@ function commandHelp(command: string): void {
       console.log(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
       return;
     case "lock":
-      console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json]
+      console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
        toolpin lock digest [--file mcp-lock.json] [--json]
        toolpin lock key-fingerprint --public-key public.pem [--json]
        toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]
@@ -1767,6 +1794,10 @@ function positional(values: string[]): string[] {
 
 function lockedHasLivePins(locked: { capabilityManifest?: CapabilityManifest }): boolean {
   return Boolean(locked.capabilityManifest?.toolDescriptionHash || locked.capabilityManifest?.toolManifestHash);
+}
+
+function liveVerificationEnabled(values: string[]): boolean {
+  return !hasAnyFlag(values, ["--skip-live-verification", "--skip-live-verify"]);
 }
 
 function truncate(value: string, maxLength: number): string {
