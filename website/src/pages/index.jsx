@@ -116,8 +116,9 @@ export default function Home() {
             <article>
               <h2>Honest trust checks</h2>
               <p>
-                ToolPin checks declared pins and metadata. It does not claim
-                byte-level OCI or MCPB verification.
+                ToolPin separates metadata completeness from evidence-gated
+                verification, including npm integrity, OCI digest, and
+                allowlisted MCPB hash checks.
               </p>
             </article>
             <article>
