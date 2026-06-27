@@ -5,9 +5,7 @@ const root = new URL("../", import.meta.url);
 const files = [
   "README.md",
   "docs/threat-model.md",
-  "docs/strategy-and-moat.md",
   "docs/ROADMAP.md",
-  "docs/SAAS_ROADMAP.md",
   "docs/how-to/catch-drift-in-ci.md",
   "docs/site/how-to/catch-drift-in-ci.md",
   "docs/site/reference/lockfile-schema.md",
