@@ -1189,8 +1189,7 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
   const hintWidth = Math.max(10, width - copyrightWidth - 8);
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0} flexDirection="column">
-      <TrustStateLegend width={Math.max(1, width - 4)} />
-      <Box justifyContent="space-between">
+      <Box width={Math.max(1, width - 4)} justifyContent="space-between" marginTop={1} marginBottom={1}>
         <Box width={hintWidth}>
           <Text wrap="truncate">
             {hints.map(([keyName, label], index) => (
@@ -1203,6 +1202,9 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
           </Text>
         </Box>
         <Text color={CHROME} wrap="truncate">{truncate(copyright, copyrightWidth)}</Text>
+      </Box>
+      <Box width={Math.max(1, width - 4)} justifyContent="flex-end">
+        <TrustStateLegend width={Math.max(1, width - 4)} />
       </Box>
     </Box>
   );
@@ -1224,17 +1226,20 @@ export function TrustStateLegend({ width }: { width: number }) {
         { label: "BLOCKED", color: ERR, text: "stop" },
       ];
   return (
-    <Text wrap="truncate">
-      <Text color={CHROME}>trust </Text>
-      {items.map((item, index) => (
-        <React.Fragment key={item.label}>
-          {index > 0 ? <Text color={CHROME}> </Text> : null}
-          <Text color={item.color}>▓</Text>
-          <Text bold color={item.color}>{item.label}</Text>
-          <Text color={MUTED}> {item.text}</Text>
-        </React.Fragment>
-      ))}
-    </Text>
+    <Box flexDirection="column" alignItems="flex-end" marginTop={1} marginBottom={1}>
+      <Text color={CHROME}>trust legend</Text>
+      <Box marginTop={1} marginBottom={1} flexDirection={compact ? "column" : "row"} alignItems="flex-end">
+        {items.map((item, index) => (
+          <Box key={item.label} marginLeft={index > 0 && !compact ? 2 : 0} marginTop={compact && index > 0 ? 1 : 0}>
+            <Box marginRight={1}>
+              <Text color={item.color}>▓</Text>
+            </Box>
+            <Text bold color={item.color}>{item.label}</Text>
+            <Text color={MUTED}> {item.text}</Text>
+          </Box>
+        ))}
+      </Box>
+    </Box>
   );
 }
 
