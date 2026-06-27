@@ -27,6 +27,7 @@ export interface RegistryPackage {
   identifier: string;
   version?: string;
   runtimeHint?: string;
+  packageArguments?: string[];
   fileSha256?: string;
   transport?: RegistryTransport;
   environmentVariables?: RegistryEnvironmentVariable[];
@@ -98,7 +99,7 @@ export interface NormalizedServer {
 
 export type RegistrySourceId = string;
 export type RegistrySourceMode = "installable" | "discovery";
-export type SourceKind = "official" | "docker" | "glama" | "smithery" | "pulsemcp" | "custom";
+export type SourceKind = "toolpin" | "official" | "docker" | "glama" | "smithery" | "pulsemcp" | "custom";
 export type SourceStatus = "ready" | "disabled" | "auth-missing" | "discovery-only" | "fetch-error" | "stale";
 export type RegistrySourceType = SourceKind | "official-compatible" | "http-json" | "known";
 export type RegistryAdapterKind = "official-compatible" | "http-json" | "glama" | "smithery" | "pulsemcp";
@@ -111,6 +112,7 @@ export interface RegistrySourceInfo {
   mode: RegistrySourceMode;
   trust: "canonical" | "curated" | "directory" | "private";
   enabled: boolean;
+  pinned?: boolean;
   authRequired: boolean;
   description: string;
   url?: string;

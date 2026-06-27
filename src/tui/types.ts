@@ -11,6 +11,7 @@ export type SourceMode = RegistrySourceId | "all";
 export type ClientSelection = ClientName | "all";
 export type BrowseLayout = "flat" | "project" | "category";
 export type BrowseVersionMode = "latest" | "all";
+export type BrowseSortMode = "source-first" | "alpha-asc" | "alpha-desc" | "source-last" | "relevance";
 export type TuiCommandId =
   | "ingest"
   | "installed"
@@ -63,6 +64,7 @@ export interface TuiState {
   sourceMode: SourceMode;
   browseLayout: BrowseLayout;
   browseVersionMode: BrowseVersionMode;
+  browseSortMode: BrowseSortMode;
   resultLimit: number;
   client: ClientSelection;
   installScope: InstallScope;
@@ -86,6 +88,7 @@ export interface TuiState {
     client: ClientName;
     scope: InstallScope;
     selected: "no" | "yes";
+    runtimeAdvisory?: string;
   };
 }
 

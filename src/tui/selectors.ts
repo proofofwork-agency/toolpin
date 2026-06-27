@@ -1,14 +1,14 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
 import { resolveConfigTarget, type InstallScope } from "../install.js";
 import { lockKey, type InstallPlan, type Lockfile } from "../plan.js";
-import { latestOnly, normalizeEntries } from "../registry.js";
+import { compareRegistrySources, latestOnly, normalizeEntries, registrySourceIdRank } from "../registry.js";
 import { searchServers } from "../search.js";
 import type { FetchOptions } from "../registry.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceInfo, SearchResult, SourceStatus } from "../types.js";
 import { compareVersionStatus, knownVersions } from "../versions.js";
 import { CLIENTS, RESULT_LIMIT_STEP, VIEWS } from "./constants.js";
 import { asObject, safeJson, shortPath, unique } from "./format.js";
-import type { ClientSelection, CommandLog, SourceMode, TuiState, TuiVersionInfo, View } from "./types.js";
+import type { BrowseSortMode, BrowseVersionMode, ClientSelection, CommandLog, SourceMode, TuiState, TuiVersionInfo, View } from "./types.js";
 
 export function nextView(view: View): View {
   return VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length] ?? "discover";
@@ -142,9 +142,27 @@ export function configTargetLabel(client: ClientName, scope: InstallScope): stri
   return shortPath((target as ReturnType<typeof resolveConfigTarget>).file);
 }
 
-export function nextSource(source: SourceMode): SourceMode {
-  const sources: SourceMode[] = ["all", "official", "docker"];
+export function nextSource(source: SourceMode, registrySources: RegistrySourceInfo[] = []): SourceMode {
+  const enabled = registrySources
+    .filter((entry) => entry.enabled)
+    .sort(compareRegistrySources)
+    .map((entry) => entry.id);
+  const sources: SourceMode[] = ["all", ...(enabled.length ? enabled : ["toolpin", "official", "docker"])];
   return sources[(sources.indexOf(source) + 1) % sources.length] ?? "all";
+}
+
+const BROWSE_SORT_MODES: BrowseSortMode[] = ["source-first", "alpha-asc", "alpha-desc", "source-last", "relevance"];
+
+export function nextBrowseSortMode(mode: BrowseSortMode): BrowseSortMode {
+  return BROWSE_SORT_MODES[(BROWSE_SORT_MODES.indexOf(mode) + 1) % BROWSE_SORT_MODES.length] ?? "source-first";
+}
+
+export function browseSortLabel(mode: BrowseSortMode): string {
+  if (mode === "source-first") return "source-first";
+  if (mode === "alpha-asc") return "alpha A-Z";
+  if (mode === "alpha-desc") return "alpha Z-A";
+  if (mode === "source-last") return "source-last";
+  return "relevance";
 }
 
 export function filterBySource(servers: NormalizedServer[], source: SourceMode): NormalizedServer[] {
@@ -177,9 +195,55 @@ export function cacheHasSource(entries: RegistryEntry[], source: SourceMode, reg
   return cacheCoverage(entries, source, registrySources).covered;
 }
 
-export function browseSearchResults(servers: NormalizedServer[], query: string, browseVersionMode: "latest" | "all"): SearchResult[] {
+export function browseSearchResults(servers: NormalizedServer[], query: string, browseVersionMode: BrowseVersionMode, browseSortMode: BrowseSortMode = "source-first"): SearchResult[] {
   const candidates = browseVersionMode === "all" ? servers : latestOnly(servers);
-  return searchServers(candidates, query || "mcp", candidates.length);
+  return sortBrowseResults(searchServers(candidates, query || "mcp", candidates.length), browseSortMode);
+}
+
+export function sortBrowseResults(results: SearchResult[], mode: BrowseSortMode): SearchResult[] {
+  return [...results].sort((left, right) => compareBrowseResult(left, right, mode));
+}
+
+function compareBrowseResult(left: SearchResult, right: SearchResult, mode: BrowseSortMode): number {
+  if (mode === "source-first") {
+    return sourceRank(left) - sourceRank(right)
+      || relevanceRank(right) - relevanceRank(left)
+      || compareBrowseName(left, right);
+  }
+  if (mode === "source-last") {
+    return sourceRank(right) - sourceRank(left)
+      || relevanceRank(right) - relevanceRank(left)
+      || compareBrowseName(left, right);
+  }
+  if (mode === "alpha-asc") {
+    return compareBrowseName(left, right)
+      || sourceRank(left) - sourceRank(right)
+      || relevanceRank(right) - relevanceRank(left);
+  }
+  if (mode === "alpha-desc") {
+    return compareBrowseName(right, left)
+      || sourceRank(left) - sourceRank(right)
+      || relevanceRank(right) - relevanceRank(left);
+  }
+  return relevanceRank(right) - relevanceRank(left)
+    || sourceRank(left) - sourceRank(right)
+    || compareBrowseName(left, right);
+}
+
+function sourceRank(result: SearchResult): number {
+  return registrySourceIdRank(result.server.registrySource);
+}
+
+function relevanceRank(result: SearchResult): number {
+  return result.relevance + result.trust.score / 100;
+}
+
+function compareBrowseName(left: SearchResult, right: SearchResult): number {
+  const leftLabel = left.server.title || left.server.name;
+  const rightLabel = right.server.title || right.server.name;
+  return leftLabel.localeCompare(rightLabel)
+    || left.server.name.localeCompare(right.server.name)
+    || left.server.version.localeCompare(right.server.version);
 }
 
 export function nextResultLimit(currentLimit: number, totalMatches: number): number {

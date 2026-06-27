@@ -139,6 +139,82 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
   });
 });
 
+test("CLI detects tool-manifest drift without description drift", async () => {
+  await withTempCwd(async (dir) => {
+    let tools = [tool("alpha", "Stable remote tool", { type: "object", properties: { before: { type: "string" } } })];
+    const remote = await startRemoteMcpFixture(() => tools);
+    try {
+      await writeRegistryConfig();
+      await writeRegistryCache([remoteServer(remote.url)]);
+
+      await execFileAsync(process.execPath, [
+        CLI,
+        "lock",
+        SERVER_NAME,
+        "--client",
+        "claude",
+        "--source",
+        TEST_SOURCE,
+        "--verify",
+        "--timeout",
+        "5000",
+      ], { env: isolatedHomeEnv(dir) });
+
+      tools = [tool("alpha", "Stable remote tool", { type: "object", properties: { after: { type: "number" } } })];
+
+      await assert.rejects(
+        () => execFileAsync(process.execPath, [
+          CLI,
+          "ci",
+          "--file",
+          "mcp-lock.json",
+          "--source",
+          TEST_SOURCE,
+          "--verify",
+          "--no-policy",
+          "--timeout",
+          "5000",
+        ], { env: isolatedHomeEnv(dir) }),
+        (error) => {
+          const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+          assert.doesNotMatch(stderr, /tool-description hash changed/);
+          assert.match(stderr, /tool-manifest hash changed/);
+          return true;
+        },
+      );
+    } finally {
+      await remote.close();
+    }
+  });
+});
+
+test("verifyServer package live probe honors timeoutMs", async () => {
+  await withTempCwd(async (dir) => {
+    const binDir = path.join(dir, "bin");
+    await mkdir(binDir, { recursive: true });
+    const commandPath = path.join(binDir, "tpn-slow-fixture");
+    await writeFile(commandPath, `#!/usr/bin/env node
+setTimeout(() => process.exit(0), 250);
+`, "utf8");
+    await chmod(commandPath, 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+    try {
+      const started = Date.now();
+      const report = await verifyServer(packageServer("cargo", { identifier: "tpn-slow-fixture" }), {
+        livePackageProbe: true,
+        timeoutMs: 25,
+      });
+
+      assert.equal(report.ok, false);
+      assert.ok(Date.now() - started < 1000);
+      assert.ok(report.issues.some((issue) => issue.code === "package_probe_failed" && /Timed out/.test(issue.message)));
+    } finally {
+      restoreEnv("PATH", originalPath);
+    }
+  });
+});
+
 test("verifyServer live-probes every supported stdio package launcher", async () => {
   await withTempCwd(async (dir) => {
     const fixture = await writeStdioFixture(dir);
@@ -340,15 +416,15 @@ async function readInvocations(file) {
   return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 
-function tool(name, description) {
+function tool(name, description, inputSchema = {
+  type: "object",
+  properties: {},
+  additionalProperties: false,
+}) {
   return {
     name,
     description,
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
+    inputSchema,
   };
 }
 

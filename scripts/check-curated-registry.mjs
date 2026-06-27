@@ -8,6 +8,8 @@ const canonical = await readJson(canonicalUrl);
 const website = await readJson(websiteUrl);
 
 const errors = [];
+const CLIENT_SUPPORT_META = "dev.toolpin/clientSupport";
+const CLIENT_SUPPORT_STATUSES = new Set(["toolpin-installable", "external-setup", "unsupported"]);
 
 if (stableJson(canonical) !== stableJson(website)) {
   errors.push("registry/v0/servers and website/static/registry/v0/servers must stay identical.");
@@ -151,6 +153,76 @@ function validateEntry(entry, label, output) {
     output.push(`${label} curation.evidenceTier must be metadata-only, digest-pinned, byte-verified, or provenance-attested.`);
   }
   validateToolPinEnforcement(curation.toolpinEnforcement, label, output);
+  validateClientSupport(entry, label, output);
+}
+
+function validateClientSupport(entry, label, output) {
+  const support = entry?._meta?.[CLIENT_SUPPORT_META] ?? entry?.server?._meta?.[CLIENT_SUPPORT_META];
+  if (!isRecord(support)) {
+    output.push(`${label} must include _meta["${CLIENT_SUPPORT_META}"].`);
+    return;
+  }
+  if (!CLIENT_SUPPORT_STATUSES.has(support.default)) {
+    output.push(`${label} clientSupport.default must be toolpin-installable, external-setup, or unsupported.`);
+  }
+  if (!isRecord(support.clients)) {
+    output.push(`${label} clientSupport.clients must be an object.`);
+    return;
+  }
+  const server = entry.server;
+  for (const [client, config] of Object.entries(support.clients)) {
+    const clientLabel = `${label} clientSupport.clients.${client}`;
+    validateClientSupportEntry(config, clientLabel, server, output);
+  }
+  if (support.default === "toolpin-installable" && !hasInstallTarget(server)) {
+    output.push(`${label} clientSupport.default toolpin-installable requires package or remote install metadata.`);
+  }
+}
+
+function validateClientSupportEntry(config, label, server, output) {
+  if (!isRecord(config)) {
+    output.push(`${label} must be an object.`);
+    return;
+  }
+  if (!CLIENT_SUPPORT_STATUSES.has(config.status)) {
+    output.push(`${label}.status must be toolpin-installable, external-setup, or unsupported.`);
+    return;
+  }
+  if (config.installMode !== undefined && (typeof config.installMode !== "string" || !config.installMode)) {
+    output.push(`${label}.installMode must be a non-empty string when present.`);
+  }
+  for (const field of ["requirements", "setupCommands"]) {
+    if (config[field] !== undefined && (!Array.isArray(config[field]) || config[field].some((item) => typeof item !== "string" || !item))) {
+      output.push(`${label}.${field} must be an array of non-empty strings when present.`);
+    }
+  }
+  if (config.notes !== undefined && (typeof config.notes !== "string" || !config.notes)) {
+    output.push(`${label}.notes must be a non-empty string when present.`);
+  }
+  if (config.status === "toolpin-installable") {
+    if (!hasInstallTarget(server)) {
+      output.push(`${label} is toolpin-installable but the server has no package or remote install metadata.`);
+    }
+    if (!config.installMode) {
+      output.push(`${label}.installMode is required when status is toolpin-installable.`);
+    }
+  }
+  if (config.status === "external-setup") {
+    if (!Array.isArray(config.requirements) || config.requirements.length === 0) {
+      output.push(`${label}.requirements is required when status is external-setup.`);
+    }
+    if (!Array.isArray(config.setupCommands) || config.setupCommands.length === 0) {
+      output.push(`${label}.setupCommands is required when status is external-setup.`);
+    }
+    if (typeof config.notes !== "string" || !config.notes) {
+      output.push(`${label}.notes is required when status is external-setup.`);
+    }
+  }
+}
+
+function hasInstallTarget(server) {
+  return (Array.isArray(server?.packages) && server.packages.length > 0)
+    || (Array.isArray(server?.remotes) && server.remotes.length > 0);
 }
 
 function validateToolPinEnforcement(enforcement, label, output) {

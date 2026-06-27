@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { canonicalRepoUrl, dedupeRegistryEntries, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, fetchRegistryResult, listRegistrySources, normalizeEntry, readCache, readCacheMetadata, refreshCache, retryAfterDelayMs, updateRegistrySourceEnabled } from "../dist/registry.js";
+import { buildInstallPlan } from "../dist/plan.js";
+import { canonicalRepoUrl, compareRegistrySources, dedupeRegistryEntries, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, fetchRegistryResult, listRegistrySources, normalizeEntry, readCache, readCacheMetadata, refreshCache, retryAfterDelayMs, updateRegistrySourceEnabled } from "../dist/registry.js";
+
+const TOOLPIN_REGISTRY_URL = "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers";
 
 test("fetchRegistry retries one 429 response with an injected fetch", async () => {
   const calls = [];
@@ -31,6 +34,9 @@ test("directory sources are disabled by default and can be enabled in source pre
     const configPath = path.join(tempDir, "registries.json");
     const defaults = await listRegistrySources({ registryConfigPath: configPath });
 
+    assert.equal(defaults[0].id, "toolpin");
+    assert.equal(defaults.find((source) => source.id === "toolpin")?.enabled, true);
+    assert.equal(defaults.find((source) => source.id === "toolpin")?.pinned, true);
     assert.equal(defaults.find((source) => source.id === "official")?.enabled, true);
     assert.equal(defaults.find((source) => source.id === "docker")?.enabled, true);
     assert.equal(defaults.find((source) => source.id === "glama")?.enabled, false);
@@ -42,6 +48,112 @@ test("directory sources are disabled by default and can be enabled in source pre
     assert.equal(enabled.find((source) => source.id === "glama")?.enabled, true);
     assert.equal(enabled.find((source) => source.id === "smithery")?.enabled, false);
   });
+});
+
+test("pinned ToolPin source cannot be disabled by source preferences or registry commands", async () => {
+  await withTempDir(async (tempDir) => {
+    const configPath = path.join(tempDir, "registries.json");
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await writeFile(configPath, JSON.stringify({
+      registries: [],
+      sources: {
+        toolpin: { enabled: false },
+      },
+    }), "utf8");
+
+    const sources = await listRegistrySources({ registryConfigPath: configPath });
+    assert.equal(sources[0].id, "toolpin");
+    assert.equal(sources[0].enabled, true);
+    await assert.rejects(() => updateRegistrySourceEnabled("toolpin", false, configPath), /toolpin is pinned and cannot be disabled/);
+  });
+});
+
+test("ToolPin curated registry fetches the hosted registry and uses hosted entries first", async () => {
+  const calls = [];
+  const entries = await fetchRegistry({
+    source: "toolpin",
+    fetch: async (url) => {
+      calls.push(String(url));
+      return jsonResponse(200, { servers: [toolpinRegistryEntry("io.github.hosted/server")] });
+    },
+  });
+
+  assert.deepEqual(calls, [TOOLPIN_REGISTRY_URL]);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].source, "toolpin");
+  assert.equal(entries[0].server.name, "io.github.hosted/server");
+});
+
+test("ToolPin curated registry falls back to bundled snapshot when hosted fetch fails", async () => {
+  const result = await fetchRegistryResult({
+    source: "toolpin",
+    search: "contextrelay",
+    retryBackoffMs: 0,
+    fetch: async (url) => {
+      assert.equal(String(url), TOOLPIN_REGISTRY_URL);
+      return jsonResponse(503, { error: "unavailable" }, "Service Unavailable");
+    },
+  });
+  const servers = result.entries.map(normalizeEntry);
+  const contextRelay = servers.find((server) => server.name === "@proofofwork-agency/contextrelay");
+
+  assert.equal(result.status, "stale");
+  assert.match(result.lastError, /ToolPin hosted registry fetch failed; using bundled fallback snapshot/);
+  assert.equal(result.entries[0].source, "toolpin");
+  assert.ok(contextRelay);
+  assert.equal(contextRelay.registrySource, "toolpin");
+  assert.equal(contextRelay.raw.packages?.[0]?.runtimeHint, "bun");
+});
+
+test("ToolPin curated registry falls back to bundled snapshot when hosted schema is invalid", async () => {
+  const result = await fetchRegistryResult({
+    source: "toolpin",
+    search: "contextrelay",
+    fetch: async () => jsonResponse(200, { items: [] }),
+  });
+  const servers = result.entries.map(normalizeEntry);
+  const contextRelay = servers.find((server) => server.name === "@proofofwork-agency/contextrelay");
+
+  assert.equal(result.status, "stale");
+  assert.match(result.lastError, /expected ToolPin curated registry to include a servers array/);
+  assert.ok(contextRelay);
+});
+
+test("refreshCache caches hosted ToolPin registry results", async () => {
+  await withTempDir(async (tempDir) => {
+    const cachePath = path.join(tempDir, "registry-cache.json");
+    const result = await refreshCache({
+      source: "toolpin",
+      cachePath,
+      fetch: async (url) => {
+        assert.equal(String(url), TOOLPIN_REGISTRY_URL);
+        return jsonResponse(200, { servers: [toolpinRegistryEntry("io.github.cache/server")] });
+      },
+    });
+    const cache = await readCacheMetadata(cachePath);
+
+    assert.equal(result.status, "ready");
+    assert.equal(cache.sources.toolpin.status, "ready");
+    assert.equal(cache.sources.toolpin.entries[0].server.name, "io.github.cache/server");
+  });
+});
+
+test("ContextRelay is ToolPin-installable for Codex and external setup for Claude", async () => {
+  const entries = await fetchRegistry({
+    source: "toolpin",
+    search: "contextrelay",
+    retryBackoffMs: 0,
+    fetch: async () => jsonResponse(503, { error: "unavailable" }, "Service Unavailable"),
+  });
+  const contextRelay = entries.map(normalizeEntry).find((server) => server.name === "@proofofwork-agency/contextrelay");
+  assert.ok(contextRelay);
+
+  const codex = buildInstallPlan(contextRelay, "codex");
+  const config = codex.config.mcp_servers["@proofofwork-agency/contextrelay"];
+  assert.equal(config.command, "bunx");
+  assert.deepEqual(config.args, [`@proofofwork-agency/contextrelay@${contextRelay.version}`, "codex-mcp", "server"]);
+  assert.throws(() => buildInstallPlan(contextRelay, "claude"), /external setup/);
+  assert.throws(() => buildInstallPlan(contextRelay, "generic"), /not supported/);
 });
 
 test("fetchRegistry all skips disabled directory sources and explicit disabled source fails", async () => {
@@ -56,13 +168,16 @@ test("fetchRegistry all skips disabled directory sources and explicit disabled s
       fetch: async (url) => {
         const href = String(url);
         calls.push(href);
+        if (href === TOOLPIN_REGISTRY_URL) return jsonResponse(200, { servers: [toolpinRegistryEntry()] });
         if (href.includes("registry.modelcontextprotocol.io")) return jsonResponse(200, { servers: [registryEntry()] });
         if (href.includes("api.github.com/repos/docker/mcp-registry")) return jsonResponse(200, { tree: [] });
         throw new Error(`Unexpected disabled source fetch ${href}`);
       },
     });
 
-    assert.equal(entries.length, 1);
+    assert.ok(entries.some((entry) => entry.source === "toolpin"));
+    assert.ok(entries.some((entry) => entry.source === "official"));
+    assert.ok(calls.some((url) => url === TOOLPIN_REGISTRY_URL));
     assert.ok(calls.some((url) => url.includes("registry.modelcontextprotocol.io")));
     assert.ok(calls.some((url) => url.includes("api.github.com/repos/docker/mcp-registry")));
     assert.equal(calls.some((url) => url.includes("glama.ai")), false);
@@ -603,6 +718,7 @@ test("refreshCache isolates source failures and writes successful partitions", a
         retryBackoffMs: 0,
         fetch: async (url) => {
           const href = String(url);
+          if (href === TOOLPIN_REGISTRY_URL) return jsonResponse(200, { servers: [toolpinRegistryEntry()] });
           if (href.includes("github.com/docker/mcp-registry")) throw new Error("docker unavailable");
           if (href.includes("glama.ai")) return jsonResponse(200, { servers: [] });
           if (href.includes("smithery.ai")) return jsonResponse(200, { servers: [] });
@@ -624,6 +740,14 @@ test("refreshCache isolates source failures and writes successful partitions", a
 });
 
 test("dedupeRegistryEntries prefers trusted built-ins for duplicate repository entries", () => {
+  const toolpin = {
+    source: "toolpin",
+    server: {
+      name: "example/server",
+      version: "1.0.0",
+      repository: { url: "https://github.com/example/server" },
+    },
+  };
   const official = {
     source: "official",
     server: {
@@ -642,7 +766,39 @@ test("dedupeRegistryEntries prefers trusted built-ins for duplicate repository e
   };
 
   assert.deepEqual(dedupeRegistryEntries([glama, official]), [official]);
+  assert.deepEqual(dedupeRegistryEntries([official, toolpin, glama]), [toolpin]);
 });
+
+test("shared registry source comparator keeps pinned ToolPin first", () => {
+  const sources = [
+    sourceInfo("official", { trust: "canonical" }),
+    sourceInfo("docker", { trust: "curated" }),
+    sourceInfo("toolpin", { trust: "curated", pinned: true }),
+  ];
+
+  assert.deepEqual([...sources].sort(compareRegistrySources).map((source) => source.id), ["toolpin", "official", "docker"]);
+});
+
+test("bundled curated registry entries rely on ToolPin source tagging", async () => {
+  const bundled = JSON.parse(await readFile(path.resolve("registry/v0/servers"), "utf8"));
+
+  assert.ok(bundled.servers.length > 0);
+  assert.equal(bundled.servers.some((entry) => Object.hasOwn(entry, "source")), false);
+});
+
+function sourceInfo(id, overrides = {}) {
+  return {
+    id,
+    label: id,
+    type: id,
+    mode: "installable",
+    trust: "private",
+    enabled: true,
+    authRequired: false,
+    description: id,
+    ...overrides,
+  };
+}
 
 function jsonResponse(status, body, statusText = "OK", headers = {}) {
   return {
@@ -684,6 +840,24 @@ function registryEntry() {
       title: "Example Server",
       description: "Synthetic server",
       version: "1.0.0",
+    },
+  };
+}
+
+function toolpinRegistryEntry(name = "io.github.toolpin/server") {
+  return {
+    server: {
+      name,
+      title: "ToolPin Hosted Server",
+      description: "Synthetic hosted ToolPin curated entry",
+      version: "1.0.0",
+      repository: { url: `https://github.com/${name.replace(/^[^/]+\//, "example/")}` },
+      packages: [{
+        registryType: "npm",
+        identifier: "@example/toolpin-hosted-server",
+        version: "1.0.0",
+        transport: { type: "stdio" },
+      }],
     },
   };
 }

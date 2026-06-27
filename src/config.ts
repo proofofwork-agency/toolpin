@@ -1,4 +1,5 @@
 import type { ClientConfig, NormalizedServer, RegistryPackage, RegistryRemote } from "./types.js";
+import { assertToolPinInstallableForClient } from "./clientSupport.js";
 
 export type ClientName =
   | "claude"
@@ -35,6 +36,7 @@ export const GLOBAL_CLIENTS: ClientName[] = ["cursor", "vscode", "codex", "openc
 export type LaunchTarget = { kind: "remote"; remote: RegistryRemote } | { kind: "package"; pkg: RegistryPackage };
 
 export function exportClientConfig(server: NormalizedServer, client: ClientName): ClientConfig {
+  assertToolPinInstallableForClient(server, client);
   const notes: string[] = [];
   const launch = selectLaunchTarget(server);
 
@@ -80,12 +82,22 @@ export function selectLaunchTarget(server: NormalizedServer): LaunchTarget | und
 
 function packageToLocalConfig(pkg: RegistryPackage, notes: string[], client: ClientName): Record<string, unknown> {
   const env = environmentToPlaceholders(pkg, client);
+  const explicitCommand = typeof pkg.command === "string" ? pkg.command : undefined;
+  const explicitArgs = Array.isArray(pkg.args) ? pkg.args.filter((arg): arg is string => typeof arg === "string") : undefined;
+  if (explicitCommand) {
+    notes.push(runtimeRequirementNote(pkg));
+    return { command: explicitCommand, args: explicitArgs ?? [], env };
+  }
 
   switch (pkg.registryType) {
     case "npm": {
       const spec = pkg.version ? `${pkg.identifier}@${pkg.version}` : pkg.identifier;
+      if (pkg.runtimeHint === "bun") {
+        notes.push("Requires Bun and bunx on PATH.");
+        return { command: "bunx", args: [spec, ...packageArguments(pkg)], env };
+      }
       notes.push("Requires Node.js and npm/npx on PATH.");
-      return { command: "npx", args: ["-y", spec], env };
+      return { command: "npx", args: ["-y", spec, ...packageArguments(pkg)], env };
     }
     case "pypi": {
       const spec = pkg.version ? `${pkg.identifier}==${pkg.version}` : pkg.identifier;
@@ -111,8 +123,19 @@ function packageToLocalConfig(pkg: RegistryPackage, notes: string[], client: Cli
     }
     default:
       notes.push(`Unknown registry type ${pkg.registryType}; generated a placeholder command.`);
-      return { command: pkg.identifier, args: [], env };
+      return { command: pkg.identifier, args: packageArguments(pkg), env };
   }
+}
+
+function packageArguments(pkg: RegistryPackage): string[] {
+  return Array.isArray(pkg.packageArguments) ? pkg.packageArguments.filter((arg): arg is string => typeof arg === "string") : [];
+}
+
+function runtimeRequirementNote(pkg: RegistryPackage): string {
+  if (pkg.runtimeHint === "bun") return "Requires Bun on PATH.";
+  if (pkg.runtimeHint === "docker") return "Requires Docker-compatible runtime. Review mounts and network policy before running.";
+  if (pkg.runtimeHint) return `Requires ${pkg.runtimeHint} on PATH.`;
+  return "Uses the command declared by registry metadata; review generated arguments before running.";
 }
 
 function dockerEnvArgs(pkg: RegistryPackage): string[] {

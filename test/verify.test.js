@@ -193,6 +193,22 @@ test("remote probe skip is warning-only", async () => {
   assert.ok(report.evidence.some((entry) => entry.code === "tool_description_hash" && entry.status === "unavailable"));
 });
 
+test("verifyServer rejects non-loopback HTTP remote metadata as insecure", async () => {
+  const report = await verifyServer(remoteServer({ url: "http://example.com/mcp" }), { liveRemoteProbe: false });
+
+  assert.equal(report.ok, false);
+  assert.ok(report.issues.some((issue) => issue.severity === "critical" && issue.code === "insecure_remote"));
+  assert.ok(report.evidence.some((entry) => entry.code === "remote_transport_trust" && entry.status === "failed" && entry.required === true));
+});
+
+test("verifyServer treats loopback HTTP remotes as local advisory metadata", async () => {
+  const report = await verifyServer(remoteServer({ url: "http://127.0.0.1:3333/mcp" }), { liveRemoteProbe: false });
+
+  assert.equal(report.ok, true);
+  assert.ok(report.issues.some((issue) => issue.severity === "warning" && issue.code === "local_http_remote"));
+  assert.ok(report.evidence.some((entry) => entry.code === "remote_transport_trust" && entry.status === "unavailable"));
+});
+
 test("tool-description hash is stable across order and generatedAt", () => {
   const left = hashToolDescriptions(
     [
@@ -277,7 +293,7 @@ function packageServer(registryType, overrides = {}) {
   };
 }
 
-function remoteServer() {
+function remoteServer(overrides = {}) {
   return {
     registrySource: "official",
     name: "example/remote",
@@ -295,7 +311,7 @@ function remoteServer() {
       title: "Example Remote",
       description: "Synthetic remote server",
       version: "1.0.0",
-      remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+      remotes: [{ type: "streamable-http", url: overrides.url ?? "https://example.com/mcp" }],
     },
   };
 }

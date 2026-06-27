@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { installServerConfig, removeServerConfig } from "../dist/install.js";
 import { buildInstallPlan, readLockfile, removeLockfileEntry, writeLockfile } from "../dist/plan.js";
+import { localHttpEndpoint } from "../dist/runtimeAdvisory.js";
 
 test("removeServerConfig removes JSON client entries and preserves siblings", async () => {
   await withTempCwd(async () => {
@@ -93,6 +94,27 @@ test("removeLockfileEntry rejects malformed lockfiles before rewriting", async (
     await assert.rejects(() => removeLockfileEntry("io.github/example", "claude"), /Invalid lockfile schema/);
     assert.equal(await readFile("mcp-lock.json", "utf8"), before);
   });
+});
+
+test("localHttpEndpoint identifies only explicit loopback HTTP ports", () => {
+  assert.deepEqual(localHttpEndpoint({ url: "http://localhost:3333/mcp" }), {
+    url: "http://localhost:3333/mcp",
+    host: "localhost",
+    port: 3333,
+  });
+  assert.deepEqual(localHttpEndpoint({ httpUrl: "http://127.0.0.1:4545/sse" }), {
+    url: "http://127.0.0.1:4545/sse",
+    host: "127.0.0.1",
+    port: 4545,
+  });
+  assert.deepEqual(localHttpEndpoint({ serverUrl: "http://[::1]:8080/mcp" }), {
+    url: "http://[::1]:8080/mcp",
+    host: "::1",
+    port: 8080,
+  });
+  assert.equal(localHttpEndpoint({ url: "https://example.com:443/mcp" }), undefined);
+  assert.equal(localHttpEndpoint({ url: "http://localhost/mcp" }), undefined);
+  assert.equal(localHttpEndpoint({ command: "npx", args: ["server"] }), undefined);
 });
 
 async function withTempCwd(fn) {

@@ -6,6 +6,9 @@ import { safeFetchJson } from "./safeFetch.js";
 import { compareVersionish } from "./versions.js";
 
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
+const TOOLPIN_REGISTRY_FILE = new URL("../registry/v0/servers", import.meta.url);
+const TOOLPIN_REGISTRY_URL = "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers";
+const TOOLPIN_FALLBACK_ERROR = "ToolPin hosted registry fetch failed; using bundled fallback snapshot";
 const DEFAULT_CACHE_PATH = path.join(process.cwd(), ".toolpin", "registry-cache.json");
 const DEFAULT_REGISTRY_CONFIG_PATH = path.join(process.cwd(), ".toolpin", "registries.json");
 const DOCKER_TREE_URL = "https://api.github.com/repos/docker/mcp-registry/git/trees/main?recursive=1";
@@ -22,6 +25,19 @@ const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_OFFICIAL_MAX_PAGES = 25;
 
 export const BUILTIN_REGISTRY_SOURCES: RegistrySourceInfo[] = [
+  {
+    id: "toolpin",
+    label: "ToolPin Curated Registry",
+    type: "toolpin",
+    adapter: "http-json",
+    mode: "installable",
+    trust: "curated",
+    enabled: true,
+    pinned: true,
+    authRequired: false,
+    url: TOOLPIN_REGISTRY_URL,
+    description: "Hosted ToolPin curated registry with bundled fallback. This source is pinned, PR-reviewed, and cannot be disabled.",
+  },
   {
     id: "official",
     label: "Official MCP Registry",
@@ -246,8 +262,12 @@ export async function readRegistryConfig(configPath = DEFAULT_REGISTRY_CONFIG_PA
 export async function updateRegistrySourceEnabled(sourceId: string, enabled: boolean, configPath = DEFAULT_REGISTRY_CONFIG_PATH): Promise<RegistryConfig> {
   const config = await readRegistryConfig(configPath);
   const known = await listRegistrySources({ registryConfigPath: configPath });
-  if (!known.some((source) => source.id === sourceId)) {
+  const source = known.find((entry) => entry.id === sourceId);
+  if (!source) {
     throw new Error(`Unknown registry source: ${sourceId}. Run \`toolpin registry list\` to see available sources.`);
+  }
+  if (source.pinned && !enabled) {
+    throw new Error(`Registry source ${sourceId} is pinned and cannot be disabled.`);
   }
   const next: RegistryConfig = {
     registries: config.registries,
@@ -269,18 +289,20 @@ async function registryAdapters(configPath?: string): Promise<RegistryAdapter[]>
   const builtins: RegistryAdapter[] = BUILTIN_REGISTRY_SOURCES.map((baseInfo) => {
     const info = applySourcePreference(baseInfo, config.sources?.[baseInfo.id]);
     return {
-    info,
-    fetch: info.id === "official"
-      ? (options) => fetchOfficialRegistry({ ...options, sourceInfo: info })
-      : info.id === "docker"
-        ? (options) => fetchDockerRegistry({ ...options, sourceInfo: info })
-        : info.id === "glama"
-          ? (options) => fetchGlamaRegistry(info, options)
-          : info.id === "smithery"
-            ? (options) => fetchSmitheryRegistry(info, options)
-            : info.id === "pulsemcp"
-              ? (options) => fetchPulseMcpRegistry(info, options)
-              : async () => emptyResult(info, sourceStatus(info)),
+      info,
+      fetch: info.id === "toolpin"
+        ? (options) => fetchToolPinRegistry({ ...options, sourceInfo: info })
+        : info.id === "official"
+          ? (options) => fetchOfficialRegistry({ ...options, sourceInfo: info })
+          : info.id === "docker"
+            ? (options) => fetchDockerRegistry({ ...options, sourceInfo: info })
+            : info.id === "glama"
+              ? (options) => fetchGlamaRegistry(info, options)
+              : info.id === "smithery"
+                ? (options) => fetchSmitheryRegistry(info, options)
+                : info.id === "pulsemcp"
+                  ? (options) => fetchPulseMcpRegistry(info, options)
+                  : async () => emptyResult(info, sourceStatus(info)),
     };
   });
 
@@ -289,7 +311,7 @@ async function registryAdapters(configPath?: string): Promise<RegistryAdapter[]>
 }
 
 function applySourcePreference(source: RegistrySourceInfo, preference: SourcePreference | undefined): RegistrySourceInfo {
-  const enabled = preference?.enabled ?? source.enabled;
+  const enabled = source.pinned ? true : preference?.enabled ?? source.enabled;
   return {
     ...source,
     enabled,
@@ -328,6 +350,64 @@ function configuredRegistryAdapter(config: ConfiguredRegistrySource): RegistryAd
             ? (options) => fetchPulseMcpRegistry(info, options)
             : (options) => fetchOfficialRegistry({ ...options, registryUrl: requiredUrl(url, info), sourceInfo: info }),
   };
+}
+
+async function fetchToolPinRegistry(options: FetchOptions & { sourceInfo?: RegistrySourceInfo } = {}): Promise<RegistryFetchResult> {
+  const sourceInfo = options.sourceInfo ?? BUILTIN_REGISTRY_SOURCES.find((source) => source.id === "toolpin")!;
+  try {
+    const response = await fetchWithRetry(TOOLPIN_REGISTRY_URL, { headers: githubHeaders() }, options, "ToolPin hosted registry request");
+    if (!response.ok) {
+      throw new Error(`ToolPin hosted registry request failed: ${response.status} ${response.statusText}`);
+    }
+    const body = await responseJson(response, "ToolPin hosted registry response");
+    return parseToolPinRegistryResult(body, sourceInfo, options);
+  } catch (error) {
+    const fallback = await readBundledToolPinRegistry(sourceInfo, options);
+    return {
+      ...fallback,
+      source: { ...fallback.source, status: "stale" },
+      status: "stale",
+      failed: Math.max(1, fallback.failed),
+      lastError: error instanceof Error ? `${TOOLPIN_FALLBACK_ERROR}: ${error.message}` : TOOLPIN_FALLBACK_ERROR,
+    };
+  }
+}
+
+async function readBundledToolPinRegistry(
+  sourceInfo: RegistrySourceInfo,
+  options: FetchOptions,
+): Promise<RegistryFetchResult> {
+  const raw = await readFile(TOOLPIN_REGISTRY_FILE, "utf8");
+  let body: unknown;
+  try {
+    body = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(`Invalid ToolPin curated registry JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return parseToolPinRegistryResult(body, sourceInfo, options);
+}
+
+function parseToolPinRegistryResult(
+  body: unknown,
+  sourceInfo: RegistrySourceInfo,
+  options: FetchOptions,
+): RegistryFetchResult {
+  const parsed = extractHttpJsonEntries(body);
+  if (!parsed) {
+    throw new Error("Registry schema drift: expected ToolPin curated registry to include a servers array.");
+  }
+
+  const search = options.search?.trim().toLowerCase();
+  const limit = Math.max(1, options.limit ?? 500);
+  const matched = parsed.entries.filter((entry) => !search || searchableText(entry.server).includes(search));
+  const entries = matched.slice(0, limit).map((entry) => tagRegistryEntry(entry, sourceInfo));
+  return successResult(sourceInfo, entries, {
+    accepted: entries.length,
+    skipped: parsed.report.skipped,
+    malformed: parsed.report.malformed,
+    failed: parsed.report.failed,
+    pageInfo: { fetchedPages: 1, maxPages: 1, hasMore: matched.length > entries.length, total: matched.length },
+  });
 }
 
 async function fetchOfficialRegistry(options: FetchOptions & { sourceInfo?: RegistrySourceInfo } = {}): Promise<RegistryFetchResult> {
@@ -926,9 +1006,9 @@ function v1CacheToV2(cache: { generatedAt: string; ttlMs?: number; entries: Regi
     const source = sources[sourceId]?.source ?? {
       id: sourceId,
       label: sourceId,
-      type: sourceId === "official" ? "official" : sourceId === "docker" ? "docker" : "custom",
+      type: sourceId === "toolpin" ? "toolpin" : sourceId === "official" ? "official" : sourceId === "docker" ? "docker" : "custom",
       mode: "installable",
-      trust: sourceId === "official" ? "canonical" : sourceId === "docker" ? "curated" : "private",
+      trust: sourceId === "official" ? "canonical" : sourceId === "toolpin" || sourceId === "docker" ? "curated" : "private",
       enabled: true,
       authRequired: false,
       description: "Registry source migrated from v1 cache.",
@@ -1132,7 +1212,7 @@ function isRegistryConfig(value: unknown): value is RegistryConfig {
       typeof entry.id === "string" &&
       entry.id.length > 0 &&
       (entry.url === undefined || (typeof entry.url === "string" && entry.url.length > 0)) &&
-      (entry.type === undefined || ["official-compatible", "http-json", "official", "docker", "glama", "smithery", "pulsemcp", "custom"].includes(String(entry.type))) &&
+      (entry.type === undefined || ["official-compatible", "http-json", "toolpin", "official", "docker", "glama", "smithery", "pulsemcp", "custom"].includes(String(entry.type))) &&
       (entry.adapter === undefined || ["official-compatible", "http-json", "glama", "smithery", "pulsemcp"].includes(String(entry.adapter))) &&
       (entry.mode === undefined || entry.mode === "installable" || entry.mode === "discovery") &&
       (entry.enabled === undefined || typeof entry.enabled === "boolean")
@@ -1422,7 +1502,7 @@ export function dedupeRegistryEntries(entries: RegistryEntry[]): RegistryEntry[]
   for (const entry of entries) {
     const key = registryEntryKey(entry);
     const existing = byKey.get(key);
-    if (!existing || sourceRank(entry.source) < sourceRank(existing.source)) {
+    if (!existing || registrySourceIdRank(entry.source) < registrySourceIdRank(existing.source)) {
       byKey.set(key, entry);
     }
   }
@@ -1435,15 +1515,47 @@ function registryEntryKey(entry: RegistryEntry): string {
   return `name:${entry.server.name}:${entry.server.version}`;
 }
 
-function sourceRank(source: string | undefined): number {
-  if (source === "official") return 0;
-  if (source === "docker") return 1;
-  return 2;
+export function compareRegistrySources(left: RegistrySourceInfo, right: RegistrySourceInfo): number {
+  return Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
+    || Number(right.enabled) - Number(left.enabled)
+    || registrySourceTrustRank(left.trust) - registrySourceTrustRank(right.trust)
+    || registrySourceModeRank(left.mode) - registrySourceModeRank(right.mode)
+    || registrySourceIdRank(left.id) - registrySourceIdRank(right.id)
+    || left.label.localeCompare(right.label);
+}
+
+export function registrySourceTrustRank(trust: RegistrySourceInfo["trust"]): number {
+  if (trust === "canonical") return 0;
+  if (trust === "curated") return 1;
+  if (trust === "directory") return 2;
+  return 3;
+}
+
+export function registrySourceModeRank(mode: RegistrySourceInfo["mode"]): number {
+  return mode === "installable" ? 0 : 1;
+}
+
+export function registrySourceIdRank(source: string | undefined): number {
+  if (source === "toolpin") return 0;
+  if (source === "official") return 1;
+  if (source === "docker") return 2;
+  return 3;
 }
 
 function normalizeUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return value.replace(/\.git$/, "").replace(/\/$/, "").toLowerCase();
+}
+
+function searchableText(server: RegistryServer): string {
+  return [
+    server.name,
+    server.title,
+    server.description,
+    server.repository?.url,
+    ...((server.packages ?? []).map((pkg) => pkg.identifier)),
+    ...((server.remotes ?? []).map((remote) => remote.url)),
+  ].filter(Boolean).join("\n").toLowerCase();
 }
 
 async function mapConcurrent<T, R>(

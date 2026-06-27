@@ -19,31 +19,31 @@ for the same cleanup action.
 ## Discovery
 
 ```text
-toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
+toolpin ingest [--source toolpin|official|docker|all|custom-id] [--limit 100] [--pages 10]
 toolpin registry list [--json]
 toolpin registry enable <source-id>
 toolpin registry disable <source-id>
 toolpin sources [--json]
-toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
-toolpin info <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--json] [--live]
+toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
+toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
 toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
-toolpin audit server <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json]
-toolpin scan <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
-toolpin versions <server-name> [--source official|docker|all|custom-id] [--live] [--limit 10] [--json]
+toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
+toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
-toolpin test <server-name> [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
+toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin test <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
-toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
-toolpin adopt <installed-name> --client <client> --scope project|global [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
-toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
-toolpin update --all [--scope all|project|global] [--client <client|all>] [--source official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
-toolpin export-config <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--live]
+toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin adopt <installed-name> --client <client> --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+toolpin update --all [--scope all|project|global] [--client <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
+toolpin export-config <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
 ```
 
 `scan` runs advisory description checks against registry metadata and, with
@@ -94,12 +94,12 @@ read-only.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
-toolpin outdated [--file mcp-lock.json] [--source official|docker|all|custom-id] [--live] [--json]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
@@ -111,7 +111,7 @@ output with `--sarif`.
 
 ```text
 toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
-toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source official|docker|all|custom-id] [--live]
+toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source toolpin|official|docker|all|custom-id] [--live]
 toolpin tui
 ```
 
@@ -123,6 +123,12 @@ The TUI Browse list shows full evidence labels (`REVIEW`, `UNVERIFIED`,
 tier, gated overall score, metadata completeness, and trust pillars; a red
 evidence row beside green metadata rows means the metadata is strong but
 required automated proof is missing or failed.
+
+Browse defaults to source-first ordering: `toolpin`, `official`, `docker`, then
+other enabled sources. Press `a` to cycle source-first, alpha A-Z, alpha Z-A,
+source-last, and relevance ordering. Press `g` to cycle the exact source filter.
+In the search box, exact source IDs such as `toolpin`, `official`, and `docker`
+act as source-narrowing terms without changing the exact filter.
 
 ## Common options and values
 
@@ -136,8 +142,8 @@ required automated proof is missing or failed.
                             all|project|global for list/doctor/secrets audit.
 --global, -g                Shortcut for --scope global.
 --project, -p               Shortcut for --scope project.
---source <id>               Registry source: official, docker, all, or a custom
-                            registry id configured in .toolpin/registries.json.
+--source <id>               Registry source: toolpin, official, docker, all, or
+                            a custom registry id configured in .toolpin/registries.json.
                             all means every enabled source.
 --live                      Fetch from the registry instead of the local cache.
 --json                      Machine-readable output where listed.

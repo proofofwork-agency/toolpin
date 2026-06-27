@@ -168,6 +168,8 @@ Useful keys:
 | `r` or `: ingest` | Persistently refresh registry cache |
 | `l` | Toggle live/cache view for the session |
 | `m` or `+` | Show more Browse results |
+| `a` | Cycle Browse sort: source-first, alpha A-Z, alpha Z-A, source-last, relevance |
+| `g` | Cycle the exact source filter (`all`, then enabled sources such as `toolpin`, `official`, `docker`) |
 | `S` | Show sources |
 | `I` | Show installed inventory |
 | `q` | Quit |

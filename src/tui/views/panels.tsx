@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import { clientsForScope, exportClientConfig, PROJECT_CLIENTS } from "../../config.js";
 import { type InstallScope } from "../../install.js";
 import { buildInstallPlan, type InstallPlan } from "../../plan.js";
-import { REGISTRY_SOURCES } from "../../registry.js";
+import { compareRegistrySources, REGISTRY_SOURCES } from "../../registry.js";
 import type { ServerTestResult } from "../../tester.js";
 import type { NormalizedServer, RegistryEntry, RegistrySourceId, RegistrySourceInfo, SearchResult, TrustTier } from "../../types.js";
 import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustTier } from "../../trust.js";
@@ -13,14 +13,14 @@ import { ACCENT, BLUE, CHROME, ERR, MUTED, OK, SURFACE, TUI_COMMANDS, WARN } fro
 import { formatClientConfigSnippet } from "../configSnippet.js";
 import { asObject, safeJson, shortPath, truncate } from "../format.js";
 import { computeMenuLayout, listWindowStart } from "../layout.js";
-import { commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
-import type { BrowseLayout, ClientSelection, CommandLog, InputMode, InstallFlow, TuiState, TuiVersionInfo, View } from "../types.js";
+import { browseSortLabel, commandLogForView, configTargetLabel, formatVersionChoices, installClientChoicesForScope, installClientLabel, scopeLabel, selectedClientsForScope } from "../selectors.js";
+import type { BrowseLayout, BrowseSortMode, ClientSelection, CommandLog, InstallFlow, SourceMode, TuiState, TuiVersionInfo, View } from "../types.js";
 import { trustBarCells, trustDimensions, trustRiskTone, trustTierScore } from "../ui/trust.js";
 
 export function ChromeHeader({ state, resultCount, totalMatches, selectedServer, width }: { state: TuiState; resultCount: number; totalMatches: number; selectedServer?: NormalizedServer; width: number }) {
   const status = state.installing ? "install" : state.testing ? "test" : state.loading ? "sync" : state.error ? "err" : "ready";
   const statusColor = state.installing || state.testing || state.loading ? WARN : state.error ? ERR : OK;
-  const right = `${status} | client:${state.client} | source:${state.sourceMode} | shown:${resultCount}/${totalMatches} matches`;
+  const right = `${status} | client:${state.client} | source:${state.sourceMode} | sort:${browseSortLabel(state.browseSortMode)} | shown:${resultCount}/${totalMatches} matches`;
   const leftWidth = Math.max(18, width - right.length - 7);
   return (
     <Box paddingX={2} marginTop={1} marginBottom={1} justifyContent="space-between">
@@ -40,6 +40,9 @@ export function ChromeHeader({ state, resultCount, totalMatches, selectedServer,
         <Text color={CHROME}> | </Text>
         <Text color={CHROME}>source:</Text>
         <Text color={state.dataMode === "live" ? WARN : OK}>{state.sourceMode}</Text>
+        <Text color={CHROME}> | </Text>
+        <Text color={CHROME}>sort:</Text>
+        <Text color={MUTED}>{browseSortLabel(state.browseSortMode)}</Text>
         <Text color={CHROME}> | </Text>
         <Text color={CHROME}>shown:</Text>
         <Text color={MUTED}>{resultCount} / {totalMatches} matches</Text>
@@ -133,6 +136,8 @@ export function OptionList({
   query,
   loading,
   browseLayout,
+  browseSortMode = "source-first",
+  sourceMode = "all",
   dimmed,
 }: {
   results: SearchResult[];
@@ -145,6 +150,8 @@ export function OptionList({
   query: string;
   loading?: boolean;
   browseLayout: BrowseLayout;
+  browseSortMode?: BrowseSortMode;
+  sourceMode?: SourceMode;
   dimmed?: boolean;
 }) {
   const grouped = browseLayout !== "flat";
@@ -193,7 +200,7 @@ export function OptionList({
       {results.length > 0 ? (
         <Text color={CHROME} wrap="truncate">
           {"  "}selected {selected + 1} of {results.length} shown / {totalMatches} matches / {totalServers} latest servers / {totalVersions} cached versions
-          <Text color={MUTED}>  layout:{browseLayout}</Text>
+          <Text color={MUTED}>  source:{sourceMode}  sort:{browseSortLabel(browseSortMode)}  layout:{browseLayout}</Text>
           {results.length < totalMatches ? <Text color={MUTED}>  press m for more</Text> : null}
         </Text>
       ) : null}
@@ -310,7 +317,7 @@ export function SourcesView({
 }) {
   const contentWidth = Math.max(24, width - 4);
   const counts = sourceEntryCounts(entries);
-  const sorted = [...sources].sort(compareSources);
+  const sorted = [...sources].sort(compareRegistrySources);
   const connected = sorted.filter((source) => source.enabled);
   const legendRows = height >= 18 ? 5 : 3;
   const visibleRows = Math.max(1, height - 9 - legendRows);
@@ -319,15 +326,15 @@ export function SourcesView({
     <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} height={height} flexGrow={1}>
       <ModalTitle title="sources" file="registry list" />
       <Text color={MUTED} wrap="truncate">
-        Enabled registry sources feed browse/search. Disabled directories are known, not connected. <Text color={activeSource === "all" ? OK : BLUE}>active:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
+        Active registry sources feed Browse/search. Known adapters can stay disabled and are not server sources. <Text color={activeSource === "all" ? OK : BLUE}>active filter:{activeSource}</Text> <Text color={CHROME}>mode:{dataMode}</Text>
       </Text>
       <Spacer />
       <Text wrap="truncate">
         <Text color={OK}>trusted first</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>{connected.length} usable / {sources.length} known</Text>
+        <Text color={MUTED}>{connected.length} active / {sources.length} known registry sources</Text>
         <Text color={CHROME}>  </Text>
-        <Text color={MUTED}>j/k select, Enter/space toggle, r refresh enabled</Text>
+        <Text color={MUTED}>j/k select, Enter/space toggle, r refresh enabled; pinned sources stay on</Text>
       </Text>
       <Divider width={contentWidth} />
       {visible.map((source, index) => (
@@ -357,6 +364,7 @@ function SourceRow({ source, count, dataMode, active, selected, width }: { sourc
   const modeColor = source.mode === "installable" ? OK : WARN;
   const titleWidth = Math.max(16, Math.min(34, Math.floor(width * 0.26)));
   const meta = `${source.trust} / ${source.mode} / ${source.type ?? "custom"} / ${auth}`;
+  const pin = source.pinned ? " / pinned" : "";
   const rowColor = selected ? BLUE : active ? OK : CHROME;
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -371,10 +379,11 @@ function SourceRow({ source, count, dataMode, active, selected, width }: { sourc
         <Text color={modeColor}>{source.mode}</Text>
         <Text color={CHROME}> </Text>
         <Text color={MUTED}>{sourceCountLabel(source, count, dataMode)}</Text>
+        {source.pinned ? <Text color={BLUE}> pinned</Text> : null}
       </Text>
       <Text color={MUTED} wrap="truncate">
         <Text color={CHROME}>    {source.id.padEnd(12)}</Text>
-        {truncate(source.setupHint && status === "auth-missing" ? source.setupHint : source.description || meta, Math.max(8, width - 18))}
+        {truncate(source.setupHint && status === "auth-missing" ? source.setupHint : `${source.description || meta}${pin}`, Math.max(8, width - 18))}
       </Text>
     </Box>
   );
@@ -420,24 +429,6 @@ function sourceEntryCounts(entries: RegistryEntry[]): Map<string, number> {
     if (typeof source === "string") counts.set(source, (counts.get(source) ?? 0) + 1);
   }
   return counts;
-}
-
-function compareSources(left: RegistrySourceInfo, right: RegistrySourceInfo): number {
-  return Number(right.enabled) - Number(left.enabled)
-    || sourceTrustRank(left.trust) - sourceTrustRank(right.trust)
-    || sourceModeRank(left.mode) - sourceModeRank(right.mode)
-    || left.label.localeCompare(right.label);
-}
-
-function sourceTrustRank(trust: RegistrySourceInfo["trust"]): number {
-  if (trust === "canonical") return 0;
-  if (trust === "curated") return 1;
-  if (trust === "directory") return 2;
-  return 3;
-}
-
-function sourceModeRank(mode: RegistrySourceInfo["mode"]): number {
-  return mode === "installable" ? 0 : 1;
 }
 
 function TrustMeter({ score, showScore = true, cells: cellCount = 9 }: { score: number; showScore?: boolean; cells?: number }) {
@@ -741,10 +732,11 @@ export function HelpView({ width, height }: { width: number; height: number }) {
     ["Browse", "/", "Edit the search text. Press Esc while searching to clear it."],
     ["Browse", "j/k", "Move through the current server list."],
     ["Browse", "f", "Change list layout: flat, grouped by project, or grouped by category when categories exist."],
+    ["Browse", "a", "Change sort: source-first, alpha A-Z, alpha Z-A, source-last, or relevance."],
     ["Browse", "m / +", "Show 50 more matches until every loaded or cached match is visible."],
     ["Browse", "r", "Refresh enabled registry sources into .toolpin/registry-cache.json."],
     ["Browse", "l", "Toggle live session loading without writing the registry cache."],
-    ["Browse", "g", `Change registry source: all, official, or docker. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
+    ["Browse", "g", `Change exact registry source filter. Enabled sources: ${REGISTRY_SOURCES.filter((source) => source.enabled).map((source) => source.id).join(", ")}.`],
     ["Installed", "I", "Show installed MCP servers and refresh the installed inventory."],
     ["Sources", "S", "Show installable vs discovery-only sources, auth status, cache/live counts, and the source legend."],
     ["Review", "Enter", "Open the install plan for the selected server."],
@@ -1072,6 +1064,11 @@ export function DeleteConfirmModal({ state, width, height }: { state: TuiState; 
       <Text color={MUTED} wrap="wrap">
         This will remove the client config entry and matching mcp-lock.json entry.
       </Text>
+      {confirm.runtimeAdvisory ? (
+        <Text color={WARN} wrap="wrap">
+          {truncate(confirm.runtimeAdvisory, modalWidth * 2)}
+        </Text>
+      ) : null}
       <Text color="white" wrap="truncate">{truncate(confirm.serverName, modalWidth - 4)}</Text>
       <Text color={MUTED} wrap="truncate">
         {confirm.client} / {confirm.scope}
@@ -1148,13 +1145,14 @@ function isOperationLog(title: string): boolean {
   return ["install", "update", "adopt", "test", "doctor", "remove"].includes(title);
 }
 
-export function Footer({ view, inputMode, width }: { view: View; inputMode: InputMode; width: number }) {
+export function Footer({ state, width }: { state: TuiState; width: number }) {
+  const { inputMode, view } = state;
   const hints = inputMode === "search"
     ? [["Enter", "apply"], ["Esc", "cancel"], ["Backspace", "edit"]]
     : inputMode === "command"
       ? [["Enter", "run"], ["Esc", "close"], ["Type", "filter"], ["j/k", "select"]]
     : view === "discover"
-      ? [["/", "search"], ["f", "layout"], ["g", "source"], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "cache-refresh"], ["l", "live/cache"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
+      ? [["/", "search"], ["a", `sort ${browseSortLabel(state.browseSortMode)}`], ["f", "layout"], ["g", `source ${state.sourceMode}`], ["S", "sources"], ["m", "more"], ["i", "install"], ["I", "installed"], ["r", "cache-refresh"], ["l", "live/cache"], ["R", "reset"], ["j/k", "move"], ["q", "quit"]]
       : view === "installed"
         ? [["j/k", "move"], ["I", "refresh list"], ["S", "sources"], ["u", "registry+lock"], ["v/V", "version"], ["U", "update locked"], ["x", "delete"], ["t", "test-installed"], ["d", "doctor"], ["q", "quit"]]
       : view === "sources"

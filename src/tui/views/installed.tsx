@@ -4,6 +4,7 @@ import { CHROME, ERR, MUTED, OK, SURFACE, WARN } from "../constants.js";
 import { listWindowStart } from "../layout.js";
 import type { InstalledServerState } from "../installedState.js";
 import { shortPath, truncate } from "../format.js";
+import type { LocalHttpRuntimeAdvisory } from "../../runtimeAdvisory.js";
 
 export function InstalledServersView({
   rows,
@@ -50,7 +51,19 @@ export function InstalledServersView({
   );
 }
 
-export function InstalledServerDetails({ row, width, selectedVersion, selectedTarget }: { row?: InstalledServerState; width: number; selectedVersion?: string; selectedTarget?: InstalledServerState["updateServer"] }) {
+export function InstalledServerDetails({
+  row,
+  width,
+  selectedVersion,
+  selectedTarget,
+  runtimeAdvisory,
+}: {
+  row?: InstalledServerState;
+  width: number;
+  selectedVersion?: string;
+  selectedTarget?: InstalledServerState["updateServer"];
+  runtimeAdvisory?: LocalHttpRuntimeAdvisory;
+}) {
   if (!row) {
     return (
       <Box flexDirection="column" backgroundColor={SURFACE} paddingX={2} paddingY={1} flexGrow={1}>
@@ -68,6 +81,7 @@ export function InstalledServerDetails({ row, width, selectedVersion, selectedTa
       <Metric label="version" value={versionText(row)} color={row.updateAvailable ? WARN : row.locked ? OK : MUTED} />
       <Metric label="source" value={row.source ?? "unknown"} />
       <Metric label="runtime" value={row.runningStatus} color={row.runningStatus === "reachable" ? OK : row.runningStatus === "stale" ? WARN : MUTED} />
+      {runtimeAdvisory ? <Metric label="endpoint" value={`${runtimeAdvisory.url} ${runtimeAdvisory.running ? "accepting connections" : "not accepting connections"}`} color={runtimeAdvisory.running ? OK : WARN} /> : null}
       <Metric label="match" value={matchText(row)} color={row.registryMatch ? OK : MUTED} />
       <Metric label="actions" value={actionText(row)} color={row.canUpdate ? WARN : MUTED} />
       {row.lifecycleAction !== "none" || selectedVersion ? <Metric label="u action" value={lifecycleExplanation(row, selectedVersion)} color={WARN} /> : null}

@@ -160,17 +160,32 @@ function installedConfigToLaunch(config: unknown): InstalledLaunch | undefined {
   return { kind: "stdio", command, args, env };
 }
 
-function packageToStdio(pkg: { registryType: string; identifier: string; version?: string; environmentVariables?: Array<{ name: string; default?: string; isRequired?: boolean }> }): {
+function packageToStdio(pkg: {
+  registryType: string;
+  identifier: string;
+  version?: string;
+  runtimeHint?: string;
+  command?: string;
+  args?: string[];
+  packageArguments?: string[];
+  environmentVariables?: Array<{ name: string; default?: string; isRequired?: boolean }>;
+}): {
   command: string;
   args: string[];
   env: Record<string, string>;
   missing: string[];
 } {
   const env = resolvePackageEnv(pkg.environmentVariables ?? []);
+  if (typeof pkg.command === "string" && pkg.command.length > 0) {
+    return { command: pkg.command, args: Array.isArray(pkg.args) ? pkg.args.filter(isNonEmptyString) : [], env: env.values, missing: env.missing };
+  }
+  const packageArgs = Array.isArray(pkg.packageArguments) ? pkg.packageArguments.filter(isNonEmptyString) : [];
   switch (pkg.registryType) {
     case "npm": {
       const spec = pkg.version ? `${pkg.identifier}@${pkg.version}` : pkg.identifier;
-      return { command: "npx", args: ["-y", spec], env: env.values, missing: env.missing };
+      return pkg.runtimeHint === "bun"
+        ? { command: "bunx", args: [spec, ...packageArgs], env: env.values, missing: env.missing }
+        : { command: "npx", args: ["-y", spec, ...packageArgs], env: env.values, missing: env.missing };
     }
     case "pypi": {
       const spec = pkg.version ? `${pkg.identifier}==${pkg.version}` : pkg.identifier;
@@ -181,14 +196,18 @@ function packageToStdio(pkg: { registryType: string; identifier: string; version
       return { command: "dnx", args: [spec], env: env.values, missing: env.missing };
     }
     case "cargo":
-      return { command: pkg.identifier, args: [], env: env.values, missing: env.missing };
+      return { command: pkg.identifier, args: packageArgs, env: env.values, missing: env.missing };
     case "oci":
       return { command: "docker", args: ["run", "--rm", "-i", pkg.identifier], env: env.values, missing: env.missing };
     case "mcpb":
       return { command: "mcpb", args: ["run", pkg.identifier], env: env.values, missing: env.missing };
     default:
-      return { command: pkg.identifier, args: [], env: env.values, missing: env.missing };
+      return { command: pkg.identifier, args: packageArgs, env: env.values, missing: env.missing };
   }
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function resolvePackageEnv(variables: Array<{ name: string; default?: string; isRequired?: boolean }>): { values: Record<string, string>; missing: string[] } {

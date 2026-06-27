@@ -85,7 +85,7 @@ export function scoreServer(server: NormalizedServer): TrustReport {
 
   const metadataCompleteness = clamp(score);
   const uniqueEvidence = dedupeEvidence(evidence);
-  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
+  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "toolpin" || server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
   const pillars = trustPillars(server, metadataCompleteness, issues, integritySignals, verifiedProvenance);
   const gated = gateTrust(metadataCompleteness, issues, uniqueEvidence, pillars, verifiedProvenance);
   return {
@@ -204,7 +204,7 @@ export function trustCapExplanation(report: Pick<TrustReport, "capReason" | "evi
     return declaredAttestation ? `${base}; declared attestations are not verified` : base;
   }
   if (report.capReason === "no verified provenance") {
-    return "no verified provenance: source must be official or Docker and include a repository URL";
+    return "no verified provenance: source must be ToolPin, official, or Docker and include a repository URL";
   }
   if (report.capReason.startsWith("veto: ")) {
     const codes = report.capReason.slice("veto: ".length).split(", ");
@@ -225,12 +225,12 @@ function criticalGates(issues: TrustIssue[]): TrustGate[] {
 }
 
 function trustPillars(server: NormalizedServer, metadataCompleteness: number, issues: TrustIssue[], integritySignals: number, verifiedProvenance: boolean): TrustPillars {
-  const provenance = verifiedProvenance ? (server.registrySource === "official" ? 85 : 80) : server.repositoryUrl ? 55 : 20;
+  const provenance = verifiedProvenance ? (server.registrySource === "official" ? 85 : server.registrySource === "toolpin" ? 82 : 80) : server.repositoryUrl ? 55 : 20;
   const blocked = issues.some((issue) => issue.severity === "critical" && BLOCKED_TRUST_CODES.has(issue.code));
   const unverified = issues.some((issue) => issue.severity === "critical" && UNVERIFIED_TRUST_CODES.has(issue.code));
   const integrityPenalty = blocked ? 60 : unverified ? 35 : 0;
   const integrity = clamp(35 + integritySignals * 15 - integrityPenalty);
-  const baseReputation = server.registrySource === "official" ? 80 : server.registrySource === "docker" ? 75 : server.registryMode === "discovery" ? 45 : 60;
+  const baseReputation = server.registrySource === "official" ? 80 : server.registrySource === "toolpin" ? 78 : server.registrySource === "docker" ? 75 : server.registryMode === "discovery" ? 45 : 60;
   const scanPenalty = issues.filter((issue) => issue.code === "agent_instruction_in_description" || issue.code === "hidden_unicode_in_description").length * 10;
   return { provenance: clamp(provenance), integrity, reputation: clamp(baseReputation - scanPenalty), metadataCompleteness };
 }

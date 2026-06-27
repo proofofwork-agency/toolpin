@@ -3,9 +3,14 @@ import { scoreServer } from "./trust.js";
 
 export function searchServers(servers: NormalizedServer[], query: string, limit = 10): SearchResult[] {
   const terms = tokenize(query);
+  const knownSources = new Set(servers.map((server) => server.registrySource));
+  const sourceTerms = new Set(terms.filter((term) => knownSources.has(term)));
+  const textTerms = terms.filter((term) => !sourceTerms.has(term));
+  const scoringTerms = textTerms.length ? textTerms : terms;
   return servers
+    .filter((server) => !sourceTerms.size || sourceTerms.has(server.registrySource))
     .map((server) => {
-      const relevance = scoreRelevance(server, terms);
+      const relevance = scoreRelevance(server, scoringTerms);
       return { server, relevance, trust: scoreServer(server) };
     })
     .filter((result) => result.relevance > 0)
@@ -18,6 +23,7 @@ function scoreRelevance(server: NormalizedServer, terms: string[]): number {
     { value: server.name, weight: 8 },
     { value: server.title, weight: 6 },
     { value: server.description, weight: 3 },
+    { value: server.registrySource, weight: 5 },
     { value: server.packageTypes.join(" "), weight: 2 },
     { value: server.transports.join(" "), weight: 2 },
     { value: server.repositoryUrl ?? "", weight: 1 },

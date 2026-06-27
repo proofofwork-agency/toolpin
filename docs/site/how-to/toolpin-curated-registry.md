@@ -4,9 +4,10 @@ title: ToolPin Curated Registry
 
 # ToolPin Curated Registry
 
-ToolPin can host a first-party curated registry without running any custom
+ToolPin hosts a first-party curated registry without running any custom
 infrastructure. The registry is versioned JSON in GitHub, reviewed through pull
-requests, and served either from raw GitHub or GitHub Pages.
+requests, fetched from raw GitHub at runtime, and bundled in the npm package as
+an offline fallback snapshot.
 
 Use it for servers ToolPin maintainers are willing to recommend because the
 metadata is installable, reviewable, lockable, and documented. Do not use it as
@@ -63,23 +64,13 @@ ToolPin does not automatically promote scraped directory results into this
 registry. A server belongs here only after a maintainer can explain why it is
 worth recommending.
 
-## Configure ToolPin
+## Built-In Source
 
-Create `.toolpin/registries.json`:
-
-```json
-{
-  "registries": [
-    {
-      "id": "toolpin",
-      "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
-      "mode": "installable",
-      "trust": "curated"
-    }
-  ]
-}
-```
+ToolPin ships this registry as the built-in `toolpin` source: a hosted curated
+registry with bundled fallback. It is first in the source list, enabled by
+default, and pinned. Users can filter to another source, but `toolpin` cannot be
+disabled through `.toolpin/registries.json`, `toolpin registry disable`, or the
+TUI source selector.
 
 Then:
 
@@ -143,6 +134,25 @@ a starting point:
         "status": "not-verified",
         "notes": "Branch protection and ToolPin CI enforcement have not been verified."
       }
+    },
+    "dev.toolpin/clientSupport": {
+      "default": "unsupported",
+      "clients": {
+        "codex": {
+          "status": "toolpin-installable",
+          "installMode": "mcp-config",
+          "requirements": ["node>=22"],
+          "setupCommands": [],
+          "notes": "ToolPin can write this as a normal Codex MCP server."
+        },
+        "claude": {
+          "status": "toolpin-installable",
+          "installMode": "mcp-config",
+          "requirements": ["node>=22"],
+          "setupCommands": [],
+          "notes": "ToolPin can write this as a project MCP server."
+        }
+      }
     }
   }
 }
@@ -158,6 +168,25 @@ a `metadata` block. If `metadata.count` or `metadata.total` is present, it must
 equal `servers.length`, or `npm run registry:check` fails. Package targets
 require `registryType`, `identifier`, and `transport.type`; remote targets
 require an `https://` URL.
+
+`dev.toolpin/clientSupport` is ToolPin-owned metadata:
+
+- `toolpin-installable`: ToolPin can generate the client MCP config directly.
+- `external-setup`: the client is supported, but setup needs documented steps
+  outside ToolPin, such as plugins, daemons, project initialization, or
+  instruction-file writes.
+- `unsupported`: ToolPin must not offer that client as an install target.
+
+Use `requirements` for runtimes, CLIs, API-key prerequisites, OAuth support, or
+other normal setup constraints. Use `setupCommands` only for documented external
+steps; ToolPin does not run external setup commands from registry metadata.
+
+For ContextRelay specifically, Codex is `toolpin-installable` through a normal
+MCP config that runs package arguments equivalent to `contextrelay codex-mcp
+server`. Claude is `external-setup`: install ContextRelay globally, run
+`ctxrelay init --instructions project`, and use the generated Claude
+plugin/setup. ToolPin must not run `ctxrelay init` until an explicit external
+setup flow exists because it writes project files and plugin state.
 
 The PR description should include:
 

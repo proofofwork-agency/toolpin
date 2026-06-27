@@ -78,6 +78,25 @@ Security-sensitive PRs should state:
 - Whether `toolpin ci`, `toolpin install`, TUI installs, or generated client
   config are affected.
 
+## Curated Registry Contributions
+
+Curated registry PRs should edit JSON directly in both `registry/v0/servers`
+and `website/static/registry/v0/servers`; the files must stay identical. Each
+entry needs install metadata, `_meta["dev.toolpin/curation"]`, and
+`_meta["dev.toolpin/clientSupport"]`.
+
+Use client support statuses precisely:
+
+- `toolpin-installable`: ToolPin can generate the client MCP config directly.
+- `external-setup`: the client is supported through documented setup outside
+  ToolPin, such as plugins, daemons, project initialization, or instruction-file
+  writes.
+- `unsupported`: ToolPin must not offer that client as an install target.
+
+Run `npm run registry:check` before opening the PR. It validates malformed JSON,
+mirror sync, curation metadata, client support metadata, and enough package or
+remote config for direct ToolPin installs.
+
 ## Documentation Standard
 
 Be precise about guarantees:

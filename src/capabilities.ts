@@ -13,16 +13,8 @@ const TOOLPIN_ATTESTATIONS_META = "dev.toolpin/attestations";
 
 export function deriveCapabilityManifest(
   server: NormalizedServer,
-  options: { toolDescriptionHash?: ToolDescriptionHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
+  options: { toolDescriptionHash?: ToolDescriptionHash; toolManifestHash?: ToolManifestHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
 ): CapabilityManifest {
-  const toolManifestHash = options.toolDescriptionHash
-    ? {
-        algorithm: options.toolDescriptionHash.algorithm,
-        value: options.toolDescriptionHash.value,
-        toolCount: options.toolDescriptionHash.toolCount,
-        generatedAt: options.toolDescriptionHash.generatedAt,
-      }
-    : undefined;
   return {
     version: 1,
     serverName: server.name,
@@ -34,7 +26,7 @@ export function deriveCapabilityManifest(
     secrets: capabilitySecrets(server).sort((left, right) => `${left.source}:${left.name}`.localeCompare(`${right.source}:${right.name}`)),
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     toolDescriptionHash: options.toolDescriptionHash,
-    toolManifestHash,
+    toolManifestHash: options.toolManifestHash,
     toolDescriptionScan: options.toolDescriptionScan,
   };
 }
@@ -137,9 +129,14 @@ export function isCapabilityManifest(value: unknown): value is CapabilityManifes
     Array.isArray(value.remoteHosts) &&
     Array.isArray(value.secrets) &&
     typeof value.generatedAt === "string" &&
+    (value.toolDescriptionHash === undefined || isToolDescriptionHash(value.toolDescriptionHash)) &&
     (value.toolManifestHash === undefined || isToolManifestHash(value.toolManifestHash)) &&
     (value.toolDescriptionScan === undefined || isToolDescriptionScan(value.toolDescriptionScan))
   );
+}
+
+function isToolDescriptionHash(value: unknown): value is ToolDescriptionHash {
+  return isToolManifestHash(value);
 }
 
 function isToolManifestHash(value: unknown): value is ToolManifestHash {

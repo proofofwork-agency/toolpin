@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -69,6 +70,136 @@ test("CLI search preserves human output without --json", async () => {
     assert.match(stdout, /title\s+GitHub Example Server/);
     assert.match(stdout, /evidence\s+declared package_pin/);
   });
+});
+
+test("CLI export-config --client all skips unsupported curated clients and keeps stdout JSON", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({
+        name: "@proofofwork-agency/contextrelay",
+        identifier: "@proofofwork-agency/contextrelay",
+        runtimeHint: "bun",
+        packageArguments: ["codex-mcp", "server"],
+        clientSupport: contextRelayClientSupport(),
+      }),
+    ]);
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "export-config",
+      "@proofofwork-agency/contextrelay",
+      "--client",
+      "all",
+      "--source",
+      "official",
+    ]);
+    const parsed = JSON.parse(stdout);
+
+    assert.deepEqual(Object.keys(parsed), ["codex"]);
+    assert.equal(parsed.codex.mcp_servers["@proofofwork-agency/contextrelay"].command, "bunx");
+    assert.match(stderr, /Skipping claude: .*external setup/);
+    assert.match(stderr, /Skipping cursor: .*not supported/);
+  });
+});
+
+test("CLI install --client all installs only ToolPin-installable clients and fails when none are scoped installable", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({
+        name: "@proofofwork-agency/contextrelay",
+        identifier: "@proofofwork-agency/contextrelay",
+        runtimeHint: "bun",
+        packageArguments: ["codex-mcp", "server"],
+        clientSupport: contextRelayClientSupport(),
+      }),
+      packageServer({
+        name: "io.github/external-only",
+        clientSupport: {
+          default: "unsupported",
+          clients: {
+            claude: {
+              status: "external-setup",
+              installMode: "claude-plugin",
+              requirements: ["external-cli"],
+              setupCommands: ["external init"],
+              notes: "Uses external setup.",
+            },
+          },
+        },
+      }),
+    ]);
+
+    const installed = await execFileAsync(process.execPath, [
+      CLI,
+      "install",
+      "@proofofwork-agency/contextrelay",
+      "--client",
+      "all",
+      "--scope",
+      "project",
+      "--source",
+      "official",
+      "--update-lock",
+      "--no-policy",
+    ]);
+    const lockfile = await readLockfile();
+
+    assert.ok(lockfile.servers["@proofofwork-agency/contextrelay:codex"]);
+    assert.equal(lockfile.servers["@proofofwork-agency/contextrelay:claude"], undefined);
+    assert.match(installed.stdout, /clients\s+codex/);
+    assert.match(installed.stderr, /Skipping claude: .*external setup/);
+
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [
+        CLI,
+        "install",
+        "io.github/external-only",
+        "--client",
+        "all",
+        "--scope",
+        "global",
+        "--source",
+        "official",
+        "--update-lock",
+        "--no-policy",
+      ]),
+      (error) => {
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        assert.match(stderr, /No ToolPin-installable clients are available/);
+        assert.match(stderr, /codex: .*not supported/);
+        return true;
+      },
+    );
+  });
+});
+
+test("CLI ci --verify --skip-live-verification rejects description and manifest pins", async () => {
+  for (const field of ["toolDescriptionHash", "toolManifestHash"]) {
+    await withTempCwd(async () => {
+      const server = packageServer({ name: `io.github/${field}` });
+      await writeRegistryCache([server]);
+      await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, field) }));
+
+      await assert.rejects(
+        () => execFileAsync(process.execPath, [
+          CLI,
+          "ci",
+          "--file",
+          "mcp-lock.json",
+          "--source",
+          "official",
+          "--verify",
+          "--skip-live-verification",
+          "--no-policy",
+        ]),
+        (error) => {
+          const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+          assert.match(stderr, /--skip-live-verification is not allowed for pinned CI entries/);
+          return true;
+        },
+      );
+    });
+  }
 });
 
 test("CLI boolean flags do not consume positional arguments", async () => {
@@ -146,6 +277,36 @@ test("CLI accepts short client and scope aliases", async () => {
     assert.match(removed.stdout, /Remove/);
     assert.match(removed.stdout, /scope\s+project/);
     assert.match(removed.stdout, /server\s+io\.github\/example/);
+  });
+});
+
+test("CLI remove warns when deleting a local HTTP MCP endpoint", async () => {
+  await withTempCwd(async () => {
+    const listener = net.createServer((socket) => socket.end());
+    await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+    const address = listener.address();
+    assert.equal(typeof address, "object");
+    const url = `http://127.0.0.1:${address.port}/mcp`;
+    try {
+      const server = remoteServer({ name: "io.github/local-http", url });
+      await installServerConfig(server, "claude", "project");
+      await writeLockfile(buildInstallPlan(server, "claude"));
+
+      const { stdout } = await execFileAsync(process.execPath, [
+        CLI,
+        "remove",
+        "io.github/local-http",
+        "--client",
+        "claude",
+        "--scope",
+        "project",
+      ]);
+
+      assert.match(stdout, new RegExp(`runtime\\s+local HTTP endpoint ${url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} is accepting connections`));
+      assert.match(stdout, /does not stop that process/);
+    } finally {
+      await new Promise((resolve) => listener.close(resolve));
+    }
   });
 });
 
@@ -481,7 +642,85 @@ function packageServer(overrides = {}) {
           registryType: "npm",
           identifier,
           version,
+          runtimeHint: overrides.runtimeHint,
+          packageArguments: overrides.packageArguments,
           transport: { type: "stdio" },
+        },
+      ],
+      _meta: overrides.clientSupport
+        ? { "dev.toolpin/clientSupport": overrides.clientSupport }
+        : undefined,
+    },
+  };
+}
+
+function contextRelayClientSupport() {
+  return {
+    default: "unsupported",
+    clients: {
+      codex: {
+        status: "toolpin-installable",
+        installMode: "mcp-config",
+      },
+      claude: {
+        status: "external-setup",
+        installMode: "claude-plugin",
+        requirements: ["bun", "claude-code"],
+        setupCommands: ["ctxrelay init --instructions project"],
+        notes: "Claude support uses plugin setup.",
+      },
+    },
+  };
+}
+
+function capabilityManifest(server, field) {
+  return {
+    version: 1,
+    serverName: server.name,
+    serverVersion: server.version,
+    registrySource: server.registrySource,
+    packageTypes: server.packageTypes,
+    transports: server.transports,
+    remoteHosts: [],
+    secrets: [],
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    [field]: {
+      algorithm: "sha256",
+      value: field === "toolDescriptionHash" ? "description-hash" : "manifest-hash",
+      toolCount: 1,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  };
+}
+
+function remoteServer(overrides = {}) {
+  const name = overrides.name ?? "io.github/remote";
+  const version = overrides.version ?? "1.0.0";
+  const url = overrides.url ?? "http://localhost:3333/mcp";
+  return {
+    registrySource: "official",
+    registryMode: "installable",
+    name,
+    title: overrides.title ?? "Remote Server",
+    description: "Synthetic remote server",
+    version,
+    isLatest: true,
+    installable: true,
+    repositoryUrl: "https://github.com/example/remote",
+    packageTypes: [],
+    remoteTypes: ["streamable-http"],
+    transports: ["streamable-http"],
+    requiresSecrets: false,
+    raw: {
+      name,
+      title: overrides.title ?? "Remote Server",
+      description: "Synthetic remote server",
+      version,
+      repository: { url: "https://github.com/example/remote" },
+      remotes: [
+        {
+          type: "streamable-http",
+          url,
         },
       ],
     },

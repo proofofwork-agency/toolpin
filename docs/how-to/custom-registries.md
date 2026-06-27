@@ -4,11 +4,14 @@ ToolPin can read built-in registries and repo-owned registry definitions from `.
 
 Built-in sources:
 
+- `toolpin`: ToolPin hosted curated registry with bundled fallback, installable,
+  `curated` trust, pinned, and always enabled.
 - `official`: Official MCP Registry, installable, `canonical` trust.
 - `docker`: Docker MCP Catalog, installable, `curated` trust.
 - `pulse` (PulseMCP), `smithery`, `glama`: known directory sources, disabled by default. Enable one explicitly before it appears in `--source all`, browse, or search. `pulse` is auth-gated, Smithery hosted targets require `--allow-hosted-directory-targets`, and Glama entries become installable only when ToolPin can match their repository to an Official MCP Registry entry with lockable targets.
 
-Use source preferences to turn built-ins on or off:
+Use source preferences to turn optional built-ins on or off. The pinned
+`toolpin` source is always enabled:
 
 ```sh
 toolpin registry list
@@ -32,22 +35,11 @@ Those commands write a top-level `sources` preference block:
 }
 ```
 
-ToolPin also maintains a GitHub-backed curated registry. It is not built into
-the CLI by default yet; add it as a custom `official-compatible` registry:
-
-```json
-{
-  "registries": [
-    {
-      "id": "toolpin",
-      "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
-      "mode": "installable",
-      "trust": "curated"
-    }
-  ]
-}
-```
+ToolPin also maintains a GitHub-backed curated registry. Current ToolPin
+versions expose it as the built-in `toolpin` source and fetch
+`https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers`
+first, falling back to the bundled snapshot if the hosted file is unavailable
+or invalid.
 
 See [ToolPin Curated Registry](./toolpin-curated-registry.md) for the PR-based
 review workflow.
@@ -127,7 +119,7 @@ Each entry in `.toolpin/registries.json` supports:
 | `mode` | no | `installable` for `official-compatible`, `discovery` for `http-json` | Whether entries from this source can be installed. |
 | `label` | no | the `id` | Display label in `toolpin registry list` and the TUI. |
 | `trust` | no | `private` | One of `canonical`, `curated`, `directory`, `private`. |
-| `enabled` | no | `true` | For custom registry entries, set to `false` to hide the source from `--source all`; built-ins are toggled through top-level `sources` preferences or `toolpin registry enable/disable`. |
+| `enabled` | no | `true` | For custom registry entries, set to `false` to hide the source from `--source all`; optional built-ins are toggled through top-level `sources` preferences or `toolpin registry enable/disable`. Pinned sources such as `toolpin` cannot be disabled. |
 | `authEnv` | no | — | Environment variable name that holds an auth token; marks the source `authRequired`. Advisory only — ToolPin does not yet send this token in registry requests. |
 | `description` | no | generated | Human-readable source description. |
 
@@ -135,7 +127,11 @@ Invalid `type` or `mode` values are rejected. If a custom entry reuses a built-i
 
 ## Source Resolution and Caching
 
-`--source all` fetches every enabled source in parallel and deduplicates entries by repository URL, server name, and version. On collisions, `official` beats `docker`, which beats any custom source. Disabled sources can remain in the cache, but browse/search filter them out until they are enabled again.
+`--source all` fetches every enabled source in parallel and deduplicates entries by repository URL, server name, and version. On collisions, `toolpin` beats `official`, which beats `docker`, which beats any custom source. Disabled sources can remain in the cache, but browse/search filter them out until they are enabled again.
+
+The TUI Browse list uses the same source priority by default: `toolpin`,
+`official`, `docker`, then other enabled sources. Press `a` to cycle sort modes
+or `g` to cycle the exact source filter.
 
 `toolpin ingest` always fetches live and writes the combined result to `.toolpin/registry-cache.json` (a `{ generatedAt, entries }` document). Other commands read that cache when `--live` is omitted; if the cache is missing or does not contain the requested source, they transparently fall back to a live fetch. Pass `--live` to bypass the cache entirely. A cache file that exists but is not valid registry-cache JSON raises a `CacheSchemaError` instead of falling back.
 

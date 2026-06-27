@@ -12,13 +12,17 @@ import {
   configTargetLabel,
   formatVersionChoices,
   initialInstallVersionIndex,
+  InstalledServerDetails,
   installClientChoicesForScope,
   InstallWizard,
+  nextBrowseSortMode,
+  nextSource,
   nextResultLimit,
   OptionList,
   persistentRefreshOptions,
   selectedClientsForScope,
   sourceCountLabel,
+  SourcesView,
 } from "../dist/tui.js";
 
 test("TUI command-line rendering quotes values and keeps active source/live flags", () => {
@@ -186,6 +190,117 @@ test("TUI source count labels mark partial cached and loaded sources", () => {
   assert.equal(sourceCountLabel(sourceFixture("docker"), 328, "cache"), "328 cached");
 });
 
+test("TUI source cycling includes pinned ToolPin source first and skips disabled sources", () => {
+  const sources = [
+    sourceFixture("official", { enabled: true }),
+    sourceFixture("docker", { enabled: true }),
+    sourceFixture("toolpin", { enabled: true, pinned: true, trust: "curated" }),
+    sourceFixture("glama", { enabled: false }),
+  ];
+
+  assert.equal(nextSource("all", sources), "toolpin");
+  assert.equal(nextSource("toolpin", sources), "official");
+  assert.equal(nextSource("official", sources), "docker");
+  assert.equal(nextSource("docker", sources), "all");
+});
+
+test("TUI browse default source-first sort groups ToolPin before official and Docker", () => {
+  const servers = [
+    serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Match" }),
+    serverFixture({ registrySource: "docker", name: "docker/bravo", title: "Bravo Match" }),
+    serverFixture({ registrySource: "toolpin", name: "toolpin/zulu", title: "Zulu Match" }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "match", "latest").map((result) => result.server.registrySource),
+    ["toolpin", "official", "docker"],
+  );
+});
+
+test("TUI browse search text matches registry source ids", () => {
+  const servers = [
+    serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Server", description: "Mentions toolpin but is not curated" }),
+    serverFixture({ registrySource: "toolpin", name: "curated/contextrelay", title: "ContextRelay" }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "toolpin", "latest").map((result) => result.server.name),
+    ["curated/contextrelay"],
+  );
+});
+
+test("TUI browse source text narrows source while preserving remaining query terms", () => {
+  const servers = [
+    serverFixture({ registrySource: "toolpin", name: "toolpin/github", title: "GitHub Curated" }),
+    serverFixture({ registrySource: "toolpin", name: "toolpin/postgres", title: "Postgres Curated" }),
+    serverFixture({ registrySource: "official", name: "official/github", title: "GitHub Official" }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "toolpin github", "latest").map((result) => result.server.name),
+    ["toolpin/github"],
+  );
+});
+
+test("TUI browse alphabetic sort orders ascending and descending by title", () => {
+  const servers = [
+    serverFixture({ registrySource: "toolpin", name: "toolpin/zulu", title: "Zulu Match" }),
+    serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Match" }),
+    serverFixture({ registrySource: "docker", name: "docker/bravo", title: "Bravo Match" }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "match", "latest", "alpha-asc").map((result) => result.server.title),
+    ["Alpha Match", "Bravo Match", "Zulu Match"],
+  );
+  assert.deepEqual(
+    browseSearchResults(servers, "match", "latest", "alpha-desc").map((result) => result.server.title),
+    ["Zulu Match", "Bravo Match", "Alpha Match"],
+  );
+});
+
+test("TUI browse source-last reverses source grouping", () => {
+  const servers = [
+    serverFixture({ registrySource: "official", name: "official/alpha", title: "Alpha Match" }),
+    serverFixture({ registrySource: "docker", name: "docker/bravo", title: "Bravo Match" }),
+    serverFixture({ registrySource: "toolpin", name: "toolpin/zulu", title: "Zulu Match" }),
+  ];
+
+  assert.deepEqual(
+    browseSearchResults(servers, "match", "latest", "source-last").map((result) => result.server.registrySource),
+    ["docker", "official", "toolpin"],
+  );
+});
+
+test("TUI browse sort cycle starts with source-first and reaches relevance", () => {
+  assert.equal(nextBrowseSortMode("source-first"), "alpha-asc");
+  assert.equal(nextBrowseSortMode("alpha-asc"), "alpha-desc");
+  assert.equal(nextBrowseSortMode("alpha-desc"), "source-last");
+  assert.equal(nextBrowseSortMode("source-last"), "relevance");
+  assert.equal(nextBrowseSortMode("relevance"), "source-first");
+});
+
+test("TUI Sources view distinguishes active from known registry sources", () => {
+  const rendered = renderToString(React.createElement(SourcesView, {
+    sources: [
+      sourceFixture("toolpin", { enabled: true, pinned: true, trust: "curated", mode: "installable" }),
+      sourceFixture("official", { enabled: true }),
+      sourceFixture("docker", { enabled: true }),
+      sourceFixture("glama", { enabled: false }),
+    ],
+    entries: [entryFixture("toolpin"), entryFixture("official"), entryFixture("docker")],
+    activeSource: "all",
+    selectedSource: 0,
+    dataMode: "cache",
+    width: 100,
+    height: 22,
+  }));
+
+  assert.match(rendered, /Active registry sources feed Browse\/search/);
+  assert.match(rendered, /Known adapters/);
+  assert.match(rendered, /3 active \/ 4 known registry sources/);
+});
+
 test("TUI empty browse state renders loader only while initial registry data is loading", () => {
   const loading = renderToString(React.createElement(OptionList, {
     results: [],
@@ -216,6 +331,32 @@ test("TUI empty browse state renders loader only while initial registry data is 
   assert.match(loading, /registry/);
   assert.doesNotMatch(loading, /No servers found/);
   assert.match(empty, /No servers found/);
+});
+
+test("Installed server details renders local HTTP endpoint advisory", () => {
+  const rendered = renderToString(React.createElement(InstalledServerDetails, {
+    row: installedRowFixture(),
+    width: 100,
+    runtimeAdvisory: {
+      url: "http://127.0.0.1:3333/mcp",
+      host: "127.0.0.1",
+      port: 3333,
+      running: true,
+      message: "local HTTP endpoint is accepting connections",
+    },
+  }));
+
+  assert.match(rendered, /endpoint/);
+  assert.match(rendered, /http:\/\/127\.0\.0\.1:3333\/mcp accepting connections/);
+});
+
+test("Installed server details omits endpoint metric without advisory", () => {
+  const rendered = renderToString(React.createElement(InstalledServerDetails, {
+    row: installedRowFixture(),
+    width: 100,
+  }));
+
+  assert.doesNotMatch(rendered, /endpoint/);
 });
 
 test("TUI install wizard uses step counts before install and activity bar only while installing", () => {
@@ -328,6 +469,33 @@ function serverFixture(overrides = {}) {
       version,
       packages: [{ registryType: "npm", identifier: "example-server", version }],
     },
+    ...overrides,
+  };
+}
+
+function installedRowFixture(overrides = {}) {
+  return {
+    id: "io.github/example:claude:project",
+    client: "claude",
+    scope: "project",
+    file: "/tmp/project/.mcp.json",
+    serverName: "io.github/example",
+    installed: true,
+    locked: true,
+    lockDrift: false,
+    lockedVersion: "1.0.0",
+    currentVersion: "1.0.0",
+    latestVersion: "1.0.0",
+    updateAvailable: false,
+    source: "official",
+    canUpdate: false,
+    canDelete: true,
+    canTest: true,
+    registryMatch: "exact",
+    registryStatus: "exact",
+    lifecycleAction: "none",
+    testSource: "config",
+    runningStatus: "not_checked",
     ...overrides,
   };
 }

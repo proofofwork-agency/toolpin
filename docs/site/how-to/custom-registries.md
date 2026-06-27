@@ -17,6 +17,7 @@ ToolPin ships with these source IDs:
 
 | Source | Status | Use |
 |---|---:|---|
+| `toolpin` | installable, pinned | ToolPin hosted curated registry with bundled fallback. |
 | `official` | installable | Official MCP Registry metadata. |
 | `docker` | installable | Docker MCP Catalog metadata. |
 | `pulse` | disabled directory | PulseMCP directory source; auth-gated and opt-in. |
@@ -31,9 +32,9 @@ toolpin ingest --source docker
 toolpin search github --source all --live
 ```
 
-`official` and `docker` are enabled by default. Directory sources are known but
-disabled by default, so they do not inflate Browse or `--source all` until you
-turn them on:
+`toolpin`, `official`, and `docker` are enabled by default. `toolpin` is pinned
+and cannot be disabled. Directory sources are known but disabled by default, so
+they do not inflate Browse or `--source all` until you turn them on:
 
 ```sh
 toolpin registry list
@@ -59,22 +60,11 @@ Those commands write top-level source preferences in `.toolpin/registries.json`:
 
 ## ToolPin Curated Registry
 
-ToolPin also maintains a GitHub-backed curated registry. It is not enabled by
-default yet. Add it as an `official-compatible` registry:
-
-```json
-{
-  "registries": [
-    {
-      "id": "toolpin",
-      "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
-      "mode": "installable",
-      "trust": "curated"
-    }
-  ]
-}
-```
+ToolPin also maintains a GitHub-backed curated registry. Current ToolPin
+versions expose it as the built-in `toolpin` source and fetch
+`https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers`
+first, falling back to the bundled snapshot if the hosted file is unavailable
+or invalid.
 
 Then run:
 
@@ -158,6 +148,12 @@ repositories, make sure your environment can fetch the raw URL with the
 appropriate GitHub authentication before relying on CI.
 
 ## TUI Installed View
+
+The TUI Browse list defaults to source-first ordering: `toolpin`, `official`,
+`docker`, then other enabled sources. Press `a` to cycle source-first, alpha
+A-Z, alpha Z-A, source-last, and relevance ordering. Press `g` to cycle the
+exact source filter; exact source IDs such as `toolpin`, `official`, and
+`docker` act as source-narrowing terms in the search box.
 
 Open the `Installed` tab to inspect servers already written to supported config
 files across folder/project and global/user scopes. Rows show registry match

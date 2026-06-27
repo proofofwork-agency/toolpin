@@ -1,7 +1,82 @@
 {
   "servers": [
     {
-      "source": "official",
+      "server": {
+        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        "name": "@proofofwork-agency/contextrelay",
+        "title": "ContextRelay",
+        "description": "Local coordination bridge that connects Codex and Claude Code agents in the same project session.",
+        "repository": {
+          "url": "https://github.com/proofofwork-agency/contextrelay",
+          "source": "github"
+        },
+        "version": "3.9.2",
+        "packages": [
+          {
+            "registryType": "npm",
+            "identifier": "@proofofwork-agency/contextrelay",
+            "version": "3.9.2",
+            "runtimeHint": "bun",
+            "packageArguments": [
+              "codex-mcp",
+              "server"
+            ],
+            "transport": {
+              "type": "stdio"
+            }
+          }
+        ]
+      },
+      "_meta": {
+        "dev.toolpin/curation": {
+          "status": "reviewed",
+          "reviewedAt": "2026-06-27T00:00:00.000Z",
+          "reviewedBy": "toolpin-maintainers",
+          "reason": "First-party ContextRelay bridge for agent collaboration; Codex can consume it as stdio MCP while Claude support requires project/plugin initialization.",
+          "evidenceTier": "metadata-only",
+          "riskNotes": [
+            "Requires Bun to run the npm package through bunx.",
+            "Claude setup writes project/plugin state and is documented as external setup until ToolPin has an explicit setup flow."
+          ],
+          "testedClients": [
+            "codex",
+            "claude"
+          ],
+          "toolpinEnforcement": {
+            "status": "not-verified",
+            "notes": "Repository branch protection and ToolPin CI enforcement have not been verified for this entry."
+          }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "unsupported",
+          "clients": {
+            "codex": {
+              "status": "toolpin-installable",
+              "installMode": "mcp-config",
+              "requirements": [
+                "bun>=1.0.0"
+              ],
+              "setupCommands": [],
+              "notes": "Installed as a normal Codex MCP server using `contextrelay codex-mcp server` package arguments."
+            },
+            "claude": {
+              "status": "external-setup",
+              "installMode": "claude-plugin",
+              "requirements": [
+                "bun>=1.0.0",
+                "claude-code"
+              ],
+              "setupCommands": [
+                "npm install -g @proofofwork-agency/contextrelay",
+                "ctxrelay init --instructions project"
+              ],
+              "notes": "Claude support exists through the ContextRelay Claude plugin/init flow, not a plain mcpServers entry."
+            }
+          }
+        }
+      }
+    },
+    {
       "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "ac.tandem/docs-mcp",
@@ -36,11 +111,14 @@
             "status": "not-verified",
             "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
           }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "toolpin-installable",
+          "clients": {}
         }
       }
     },
     {
-      "source": "official",
       "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "ai.abmeter/abmeter",
@@ -75,11 +153,14 @@
             "status": "not-verified",
             "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
           }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "toolpin-installable",
+          "clients": {}
         }
       }
     },
     {
-      "source": "official",
       "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "ai.adeu/adeu",
@@ -117,11 +198,14 @@
             "status": "not-verified",
             "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
           }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "toolpin-installable",
+          "clients": {}
         }
       }
     },
     {
-      "source": "official",
       "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "ai.agentberg/agentberg",
@@ -155,11 +239,14 @@
             "status": "not-verified",
             "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
           }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "toolpin-installable",
+          "clients": {}
         }
       }
     },
     {
-      "source": "official",
       "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "ai.agentdm/agentdm",
@@ -201,16 +288,20 @@
             "status": "not-verified",
             "notes": "Repository branch protection and ToolPin CI enforcement were not verified for this seed entry."
           }
+        },
+        "dev.toolpin/clientSupport": {
+          "default": "toolpin-installable",
+          "clients": {}
         }
       }
     }
   ],
   "metadata": {
-    "count": 5,
-    "total": 5,
+    "count": 6,
+    "total": 6,
     "name": "ToolPin Curated MCP Registry",
     "description": "A PR-reviewed, GitHub-hosted registry for MCP servers ToolPin can normalize, review, lock, and recommend.",
-    "generatedAt": "2026-06-26T00:00:00.000Z",
+    "generatedAt": "2026-06-27T00:00:00.000Z",
     "source": {
       "type": "github",
       "repository": "https://github.com/proofofwork-agency/toolpin",

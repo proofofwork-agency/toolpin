@@ -32,21 +32,11 @@ https://toolpin.dev/registry/v0
 ToolPin appends `/servers`, so configure the registry URL without the trailing
 `/servers`.
 
-## Local Configuration
+## Built-In CLI Source
 
-```json
-{
-  "registries": [
-    {
-      "id": "toolpin",
-      "type": "official-compatible",
-      "url": "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0",
-      "mode": "installable",
-      "trust": "curated"
-    }
-  ]
-}
-```
+Current ToolPin versions expose this registry as the built-in `toolpin` source.
+The CLI fetches the raw GitHub `/servers` file first and uses the packaged
+`registry/v0/servers` file only as an offline fallback snapshot.
 
 Then run:
 

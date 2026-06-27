@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
@@ -41,7 +42,7 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
   const generatedAt = new Date().toISOString();
   let capabilityManifest = deriveCapabilityManifest(server, { generatedAt });
   const metadataScan = scanServerMetadata(server, generatedAt);
-  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
+  const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "toolpin" || server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
   issues.push(...scanFindingsToTrustIssues(metadataScan));
   if (metadataScan.findings.length) badges.push("description-scan-advisory");
 
@@ -62,13 +63,18 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
   } else if (launch.kind === "package") {
     await verifyPackagePins(launch.pkg, issues, badges, evidence, generatedAt, options);
     if (options.livePackageProbe === true) {
-      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package");
+      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package", options.timeoutMs);
       if (pinned) capabilityManifest = pinned;
     }
   } else {
     badges.push("remote-target");
+    const remoteTrust = remoteTrustIssue(launch.remote.url);
+    if (remoteTrust) {
+      issues.push(remoteTrust.issue);
+      evidence.push(remoteTrust.evidence);
+    }
     if (options.liveRemoteProbe !== false) {
-      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "remote", options.timeoutMs);
+      const pinned = remoteTrust?.blockProbe ? undefined : await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "remote", options.timeoutMs);
       if (pinned) capabilityManifest = pinned;
     } else {
       issues.push({
@@ -138,8 +144,7 @@ async function verifyLiveToolManifest(
   const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
   const toolManifestHash = hashToolManifests(result.tools, generatedAt);
   const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
-  const capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolDescriptionScan });
-  capabilityManifest.toolManifestHash = toolManifestHash;
+  const capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolManifestHash, toolDescriptionScan });
   badges.push("tool-description-pinned");
   badges.push("tool-manifest-pinned");
   evidence.push({
@@ -152,6 +157,83 @@ async function verifyLiveToolManifest(
     issues.push(...scanFindingsToTrustIssues(toolDescriptionScan));
   }
   return capabilityManifest;
+}
+
+function remoteTrustIssue(url: string): { issue: TrustIssue; evidence: TrustEvidence; blockProbe: boolean } | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      issue: {
+        severity: "critical",
+        code: "invalid_remote_url",
+        message: `Remote MCP URL is invalid: ${reason}.`,
+      },
+      evidence: {
+        code: "remote_transport_trust",
+        status: "failed",
+        message: "Remote MCP target URL could not be parsed.",
+        claim: url,
+        verificationMethod: "remote-url-scheme-check",
+        verifiedByToolPin: true,
+        trustedAnchor: false,
+        required: true,
+      },
+      blockProbe: true,
+    };
+  }
+
+  if (parsed.protocol === "https:") return undefined;
+  if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) {
+    return {
+      issue: {
+        severity: "warning",
+        code: "local_http_remote",
+        message: `Remote MCP URL ${url} uses loopback HTTP; treat it as a local runtime target, not trusted public remote metadata.`,
+      },
+      evidence: {
+        code: "remote_transport_trust",
+        status: "unavailable",
+        message: "Loopback HTTP remote target is local/advisory and not trusted public remote metadata.",
+        claim: url,
+        verificationMethod: "remote-url-scheme-check",
+        verifiedByToolPin: true,
+        trustedAnchor: false,
+      },
+      blockProbe: false,
+    };
+  }
+
+  return {
+    issue: {
+      severity: "critical",
+      code: "insecure_remote",
+      message: `Remote MCP URL ${url} must use HTTPS unless it is a loopback local fixture.`,
+    },
+    evidence: {
+      code: "remote_transport_trust",
+      status: "failed",
+      message: "Remote MCP target uses insecure transport.",
+      claim: url,
+      verificationMethod: "remote-url-scheme-check",
+      verifiedByToolPin: true,
+      trustedAnchor: false,
+      required: true,
+    },
+    blockProbe: true,
+  };
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (isIP(host) === 4) {
+    const first = Number.parseInt(host.split(".")[0] ?? "", 10);
+    return first === 127;
+  }
+  return host === "::1" || host === "0:0:0:0:0:0:0:1";
 }
 
 async function verifyPackagePins(

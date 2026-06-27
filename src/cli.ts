@@ -4,6 +4,7 @@ import { verifyFrozenInstall } from "./ci.js";
 import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { continueYamlFromClientConfig } from "./continueYaml.js";
+import { installableClientsForServer, type ToolPinClientSkip } from "./clientSupport.js";
 import { doctorLockfile } from "./doctor.js";
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer, type InstalledMutationResult, type InstalledUpdateAllResult } from "./installed.js";
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
@@ -19,6 +20,7 @@ import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verification
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { testServer } from "./tester.js";
 import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
+import { localHttpRuntimeAdvisory } from "./runtimeAdvisory.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
@@ -422,7 +424,7 @@ async function auditServer(rest: string[]): Promise<void> {
 
 async function scan(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000]");
+  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]");
 
   const server = await findServer(rest, name);
   const generatedAt = new Date().toISOString();
@@ -468,7 +470,7 @@ async function scan(rest: string[]): Promise<void> {
 
 async function verify(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
+  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
 
   const server = await findServer(rest, name);
   const liveVerification = liveVerificationEnabled(rest);
@@ -494,7 +496,7 @@ async function verify(rest: string[]): Promise<void> {
 
 async function versions(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin versions <server-name> [--source official|docker|all] [--live] [--limit 10] [--json]");
+  if (!name) throw new Error("Usage: toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]");
 
   const servers = await loadServers(rest, { search: name });
   const exactName = latestOnly(servers).find((server) => server.name === name)?.name
@@ -550,6 +552,7 @@ async function registry(rest: string[]): Promise<void> {
     printField("status", partition?.status ?? source.status ?? (source.enabled ? "ready" : "disabled"));
     printField("trust", source.trust);
     printField("enabled", source.enabled ? "yes" : "no");
+    if (source.pinned) printField("pinned", "required");
     printField("auth", source.authRequired ? "required" : "none");
     if (source.url) printField("url", source.url);
     if (partition) {
@@ -616,7 +619,10 @@ async function plan(rest: string[]): Promise<void> {
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
   if (client === "all") {
-    console.log(JSON.stringify(PROJECT_CLIENTS.map((targetClient) => buildInstallPlan(server, targetClient)), null, 2));
+    const { clients, skipped } = installableClientsForServer(server, PROJECT_CLIENTS);
+    printClientSkips(skipped);
+    if (!clients.length) throw noInstallableClientsError(server.name, skipped);
+    console.log(JSON.stringify(clients.map((targetClient) => buildInstallPlan(server, targetClient)), null, 2));
   } else {
     console.log(JSON.stringify(buildInstallPlan(server, client), null, 2));
   }
@@ -669,7 +675,10 @@ async function lock(rest: string[]): Promise<void> {
   }
   let lockfile;
   if (client === "all") {
-    for (const targetClient of PROJECT_CLIENTS) {
+    const { clients, skipped } = installableClientsForServer(server, PROJECT_CLIENTS);
+    printClientSkips(skipped);
+    if (!clients.length) throw noInstallableClientsError(server.name, skipped);
+    for (const targetClient of clients) {
       lockfile = await writeLockfile(buildInstallPlan(server, targetClient, { scope, capabilityManifest: verifiedCapabilityManifest, verificationReport }), path);
     }
   } else {
@@ -749,7 +758,9 @@ async function exportConfig(rest: string[]): Promise<void> {
   const client = clientFlag(rest, "generic");
   const server = await findServer(rest, name);
   if (client === "all") {
-    const exported = Object.fromEntries(PROJECT_CLIENTS.map((targetClient) => [targetClient, exportClientConfig(server, targetClient).config]));
+    const { clients, skipped } = installableClientsForServer(server, PROJECT_CLIENTS);
+    printClientSkips(skipped);
+    const exported = Object.fromEntries(clients.map((targetClient) => [targetClient, exportClientConfig(server, targetClient).config]));
     console.log(JSON.stringify(exported, null, 2));
     return;
   }
@@ -879,7 +890,12 @@ async function install(rest: string[]): Promise<void> {
     verificationReport = report;
     verifiedCapabilityManifest = report.capabilityManifest;
   }
-  const clients = client === "all" ? clientsForScope(scope) : [client];
+  const allClients = client === "all" ? installableClientsForServer(server, clientsForScope(scope)) : undefined;
+  if (allClients) {
+    printClientSkips(allClients.skipped);
+    if (!allClients.clients.length) throw noInstallableClientsError(server.name, allClients.skipped);
+  }
+  const clients: ClientName[] = allClients?.clients ?? [client as ClientName];
   const plans = clients.map((targetClient) => buildInstallPlan(server, targetClient, { capabilityManifest: verifiedCapabilityManifest, verificationReport, scope }));
   if (!hasFlag(rest, "--no-policy")) {
     const violations = [];
@@ -1079,12 +1095,14 @@ async function remove(rest: string[], command: "remove" | "uninstall" = "remove"
   printField("server", name);
   printField("scope", scope);
   for (const targetClient of clients) {
+    const runtimeAdvisory = await localHttpRuntimeAdvisory(name, targetClient, scope).catch(() => undefined);
     const configResult = await removeServerConfig(name, targetClient, scope);
     const lockResult = await removeLockfileEntry(name, targetClient, path);
     const status = configResult.action === "removed" || lockResult.removed ? "removed" : "missing";
     printSubhead(`${targetClient}: ${status}`);
     printField("config", configResult.action);
     printField("lock", lockResult.removed ? "removed" : "missing");
+    if (runtimeAdvisory && configResult.action === "removed") printField("runtime", runtimeAdvisory.message, WARN_COLOR);
     for (const note of configResult.notes) printBullet(note);
   }
 }
@@ -1344,7 +1362,7 @@ async function doctor(rest: string[]): Promise<void> {
 }
 
 function ciHelp(): void {
-  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
 }
 
 function doctorHelp(): void {
@@ -1357,7 +1375,7 @@ function commandHelp(command: string): void {
       upgradeHelp();
       return;
     case "search":
-      console.log("Usage: toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]");
+      console.log("Usage: toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]");
       return;
     case "ci":
       ciHelp();
@@ -1367,13 +1385,13 @@ function commandHelp(command: string): void {
       console.log("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
       return;
     case "audit":
-      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source official|docker|all] [--live] [--json]");
+      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
       return;
     case "scan":
-      console.log("Usage: toolpin scan <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
+      console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
       return;
     case "verify":
-      console.log("Usage: toolpin verify <server-name> [--source official|docker|all] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
+      console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
       return;
     case "doctor":
       doctorHelp();
@@ -1413,7 +1431,7 @@ function upgradeHelp(): void {
 async function test(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error("Usage: toolpin test <server-name> [--source official|docker|all] [--live] [--timeout 15000] [--json]");
+  if (!name) throw new Error("Usage: toolpin test <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]");
 
   const timeout = numberFlag(rest, "--timeout", 15000);
   const server = await findServer(rest, name);
@@ -1455,12 +1473,12 @@ Quick start
   toolpin install <server> --client claude --update-lock
 
 Discovery
-  toolpin ingest [--source official|docker|all|custom-id] [--limit 100] [--pages 10]
+  toolpin ingest [--source toolpin|official|docker|all|custom-id] [--limit 100] [--pages 10]
   toolpin registry list [--json]
   toolpin registry enable <source-id>
   toolpin registry disable <source-id>
   toolpin sources [--json]
-  toolpin search <query> [--source official|docker|all|custom-id] [--limit 10] [--live] [--json]
+  toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
   toolpin info <server> [--version <server-version>] [--json] [--live]
   toolpin scan <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000]  # description scan
   toolpin verify <server> [--version <server-version>] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]
@@ -1482,7 +1500,7 @@ Install and config
 Lock and governance
   toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--require-verified] [--json]
   toolpin audit server <server> [--version <server-version>] [--live] [--json]
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
@@ -1505,7 +1523,8 @@ Trust output
   cap explains why an otherwise strong score was limited
 
 Common options
-  --source official|docker|all|id    choose registry source; all means enabled sources
+  --source toolpin|official|docker|all|id
+                                    choose registry source; all means enabled sources
   --live                            fetch instead of cache
   --json                            machine-readable output where supported
   --sarif                           SARIF 2.1.0 output where supported
@@ -1543,6 +1562,19 @@ function printCapExplanation(report: Parameters<typeof trustCapExplanation>[0]):
 
 function printBullet(value: string): void {
   console.log(`  - ${colorize(value, MUTED_COLOR)}`);
+}
+
+function printClientSkips(skipped: ToolPinClientSkip[]): void {
+  for (const skip of skipped) {
+    console.error(`Skipping ${skip.client}: ${skip.reason}`);
+  }
+}
+
+function noInstallableClientsError(serverName: string, skipped: ToolPinClientSkip[]): Error {
+  return new Error([
+    `No ToolPin-installable clients are available for ${serverName} in the selected scope.`,
+    ...skipped.map((skip) => `- ${skip.client}: ${skip.reason}`),
+  ].join("\n"));
 }
 
 function scopeDescription(scope: "all" | InstallScope): string {
@@ -1610,6 +1642,8 @@ function printTuiHelp(): void {
 
 Opens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.
 Browse rows show full evidence labels (REVIEW, UNVERIFIED, BLOCKED, EVIDENCE).
+Browse defaults to source-first ordering: toolpin, official, docker, then other enabled sources.
+Use g for the exact source filter and a to cycle sort modes.
 Overview separates evidence tier, gated overall score, metadata completeness,
 and pillar scores; cap explains why a score was limited.`);
 }

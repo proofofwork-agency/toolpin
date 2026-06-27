@@ -20,7 +20,7 @@ test("repository and namespace trust signals have exact metadata weights", () =>
   assert.equal(missingRepository.metadataCompleteness, 58);
   assert.equal(missingRepository.tier, "conditional");
   assert.equal(missingRepository.capReason, "no verified provenance");
-  assert.equal(trustCapExplanation(missingRepository), "no verified provenance: source must be official or Docker and include a repository URL");
+  assert.equal(trustCapExplanation(missingRepository), "no verified provenance: source must be ToolPin, official, or Docker and include a repository URL");
   assert.ok(missingRepository.issues.some((issue) => issue.code === "missing_repository"));
 
   assert.equal(unnamespaced.score, 68);

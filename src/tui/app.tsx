@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
@@ -8,7 +8,8 @@ import { installServerConfig, removeServerConfig, type InstallScope } from "../i
 import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, updateInstalledServer } from "../installed.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, verifyAgainstLockfile, writeLockfile, type Lockfile } from "../plan.js";
 import { enforcePolicy } from "../policy.js";
-import { dedupeRegistryEntries, fetchRegistryResult, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache, updateRegistrySourceEnabled } from "../registry.js";
+import { compareRegistrySources, dedupeRegistryEntries, fetchRegistryResult, latestOnly, listRegistrySourceStatuses, normalizeEntries, readCache, REGISTRY_SOURCES, refreshCache as refreshRegistryCache, updateRegistrySourceEnabled } from "../registry.js";
+import { localHttpRuntimeAdvisory, type LocalHttpRuntimeAdvisory } from "../runtimeAdvisory.js";
 import { testServer, type ServerTestResult } from "../tester.js";
 import type { NormalizedServer, RegistryFetchResult, RegistrySourceInfo } from "../types.js";
 import { commandLineFor, commandRequiresServer } from "./command.js";
@@ -24,12 +25,14 @@ import { buildTuiHitZones, hitTestTui } from "./layout.js";
 import {
   buildTuiVersionInfo,
   browseSearchResults,
+  browseSortLabel,
   cacheCoverage,
   commandLogForView,
   filterByEnabledSources,
   installClientChoicesForScope,
   installClientLabel,
   initialInstallVersionIndex,
+  nextBrowseSortMode,
   nextResultLimit,
   nextClient,
   nextSource,
@@ -84,6 +87,7 @@ export function MpmTui() {
     sourceMode: "all",
     browseLayout: "flat",
     browseVersionMode: "latest",
+    browseSortMode: "source-first",
     resultLimit: DEFAULT_RESULT_LIMIT,
     client: "claude",
     installScope: "project",
@@ -99,6 +103,8 @@ export function MpmTui() {
     loading: true,
   });
   const [installedTests, setInstalledTests] = useState<Record<string, ServerTestResult>>({});
+  const [installedRuntimeAdvisories, setInstalledRuntimeAdvisories] = useState<Record<string, LocalHttpRuntimeAdvisory | null>>({});
+  const pendingInstalledRuntimeAdvisoryIds = useRef(new Set<string>());
 
   useEffect(() => {
     void loadData("cache");
@@ -112,7 +118,7 @@ export function MpmTui() {
     };
   }, []);
 
-  const allResults = useMemo(() => browseSearchResults(state.servers, state.query, state.browseVersionMode), [state.servers, state.query, state.browseVersionMode]);
+  const allResults = useMemo(() => browseSearchResults(state.servers, state.query, state.browseVersionMode, state.browseSortMode), [state.servers, state.query, state.browseVersionMode, state.browseSortMode]);
   const results = useMemo(() => allResults.slice(0, state.resultLimit), [allResults, state.resultLimit]);
   const browseLayout = state.browseLayout === "category" && !hasCategoryMetadata(results) ? "project" : state.browseLayout;
 
@@ -139,6 +145,34 @@ export function MpmTui() {
   const selectedInstalledTarget = selectedInstalled
     ? installedTargetServer(selectedInstalled, selectedInstalledTargetVersion)
     : undefined;
+  const selectedInstalledRuntimeAdvisory = selectedInstalled
+    ? installedRuntimeAdvisories[selectedInstalled.id] ?? undefined
+    : undefined;
+
+  useEffect(() => {
+    if (!selectedInstalled) return;
+    if (Object.hasOwn(installedRuntimeAdvisories, selectedInstalled.id)) return;
+    if (pendingInstalledRuntimeAdvisoryIds.current.has(selectedInstalled.id)) return;
+
+    const row = selectedInstalled;
+    pendingInstalledRuntimeAdvisoryIds.current.add(row.id);
+    void localHttpRuntimeAdvisory(row.serverName, row.client, row.scope)
+      .then((advisory) => {
+        setInstalledRuntimeAdvisories((prev) => ({
+          ...prev,
+          [row.id]: advisory ?? null,
+        }));
+      })
+      .catch(() => {
+        setInstalledRuntimeAdvisories((prev) => ({
+          ...prev,
+          [row.id]: null,
+        }));
+      })
+      .finally(() => {
+        pendingInstalledRuntimeAdvisoryIds.current.delete(row.id);
+      });
+  }, [selectedInstalled, installedRuntimeAdvisories]);
 
   async function loadData(mode: DataMode, query = state.query, sourceMode = state.sourceMode): Promise<void> {
     setState((prev) => ({ ...prev, loading: true, error: undefined, dataMode: mode }));
@@ -241,6 +275,20 @@ export function MpmTui() {
   async function toggleSelectedSource(): Promise<void> {
     const source = sourceRows(state.registrySources)[state.sourceSelected];
     if (!source) return;
+    if (source.pinned && source.enabled) {
+      setState((prev) => ({
+        ...prev,
+        error: undefined,
+        lastAction: `${source.id} is pinned`,
+        commandLog: {
+          title: "sources",
+          command: `toolpin registry disable ${source.id}`,
+          ok: false,
+          lines: [`${source.id} is pinned and cannot be disabled.`],
+        },
+      }));
+      return;
+    }
     setState((prev) => ({ ...prev, loading: true, error: undefined }));
     try {
       await updateRegistrySourceEnabled(source.id, !source.enabled);
@@ -526,18 +574,40 @@ export function MpmTui() {
 
   function requestInstalledRemoveConfirmation(row: InstalledServerState | undefined): void {
     if (!row) return;
+    const requested = { serverName: row.serverName, client: row.client, scope: row.scope };
     setState((prev) => ({
       ...prev,
       deleteConfirm: {
         source: "installed",
-        serverName: row.serverName,
-        client: row.client,
-        scope: row.scope,
+        ...requested,
         selected: "no",
       },
       pendingRemove: undefined,
       lastAction: `confirm delete ${row.serverName}`,
     }));
+    void localHttpRuntimeAdvisory(row.serverName, row.client, row.scope)
+      .then((advisory) => {
+        if (!advisory) return;
+        setState((prev) => {
+          const confirm = prev.deleteConfirm;
+          if (
+            !confirm
+            || confirm.serverName !== requested.serverName
+            || confirm.client !== requested.client
+            || confirm.scope !== requested.scope
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            deleteConfirm: {
+              ...confirm,
+              runtimeAdvisory: advisory.message,
+            },
+          };
+        });
+      })
+      .catch(() => undefined);
   }
 
   async function testSelected(): Promise<void> {
@@ -762,9 +832,12 @@ export function MpmTui() {
 
   async function removeInstalledTarget(target: Pick<InstalledServerState, "serverName" | "client" | "scope">): Promise<void> {
     try {
+      const runtimeAdvisory = await localHttpRuntimeAdvisory(target.serverName, target.client, target.scope).catch(() => undefined);
       const configResult = await removeServerConfig(target.serverName, target.client, target.scope);
       const lockResult = await removeLockfileEntry(target.serverName, target.client, "mcp-lock.json");
       const lockfile = lockResult.lockfile;
+      const lines = [`config ${configResult.action}: ${configResult.file}`, `lock ${lockResult.removed ? "removed" : "missing"}`];
+      if (runtimeAdvisory && configResult.action === "removed") lines.push(`runtime ${runtimeAdvisory.message}`);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -773,7 +846,7 @@ export function MpmTui() {
           title: "remove",
           command: `toolpin remove ${target.serverName} --client ${target.client} --scope ${target.scope}`,
           ok: true,
-          lines: [`config ${configResult.action}: ${configResult.file}`, `lock ${lockResult.removed ? "removed" : "missing"}`],
+          lines,
         },
         lastAction: `removed ${target.serverName} from ${target.client} ${target.scope}`,
       }));
@@ -1094,6 +1167,7 @@ export function MpmTui() {
       inputMode: "normal",
       sourceMode: "all",
       browseVersionMode: "latest",
+      browseSortMode: "source-first",
       resultLimit: DEFAULT_RESULT_LIMIT,
       client: "claude",
       installScope: "project",
@@ -1104,7 +1178,7 @@ export function MpmTui() {
         title: "reset",
         command: "toolpin tui",
         ok: true,
-        lines: ["reset search, source, result count, client, and scope to defaults"],
+        lines: ["reset search, source, sort, result count, client, and scope to defaults"],
       },
       lastAction: "reset TUI defaults",
     }));
@@ -1352,6 +1426,22 @@ export function MpmTui() {
           lastAction: `browse ${prev.browseVersionMode === "latest" ? "all cached versions" : "latest servers"}`,
         }));
         break;
+      case "a":
+        if (state.view === "discover") {
+          setState((prev) => {
+            const browseSortMode = nextBrowseSortMode(prev.browseSortMode);
+            return {
+              ...prev,
+              browseSortMode,
+              selected: 0,
+              pendingRemove: undefined,
+              testResult: undefined,
+              commandLog: undefined,
+              lastAction: `browse sort ${browseSortLabel(browseSortMode)}`,
+            };
+          });
+        }
+        break;
       case "I":
         switchToView("installed");
         void refreshInstalledRows();
@@ -1409,7 +1499,7 @@ export function MpmTui() {
           dispatchInstalled({ type: "scope", scope: nextScope });
           void refreshInstalledRows(state.servers, state.lockfile, nextScope);
         } else {
-          void loadData(state.dataMode, state.query, nextSource(state.sourceMode));
+          void loadData(state.dataMode, state.query, nextSource(state.sourceMode, state.registrySources));
         }
         break;
       case "G":
@@ -1675,6 +1765,7 @@ export function MpmTui() {
                 width={rightPaneWidth - 4}
                 selectedVersion={selectedInstalledTargetVersion}
                 selectedTarget={selectedInstalledTarget}
+                runtimeAdvisory={selectedInstalledRuntimeAdvisory}
               />
             </Box>
           </Box>
@@ -1691,6 +1782,8 @@ export function MpmTui() {
               query={state.query}
               loading={state.loading && state.servers.length === 0}
               browseLayout={browseLayout}
+              browseSortMode={state.browseSortMode}
+              sourceMode={state.sourceMode}
               dimmed={state.view !== "discover"}
             />
             {(state.view === "discover" && selectedServer) || SERVER_VIEWS.has(state.view) || state.installFlow ? (
@@ -1719,18 +1812,13 @@ export function MpmTui() {
       <DeleteConfirmModal state={state} width={width} height={height} />
       <ActivityStrip state={state} width={width} />
       {state.error ? <Text color={ERR} wrap="truncate"> error: {truncate(state.error, width - 8)}</Text> : null}
-      <Footer view={state.view} inputMode={state.inputMode} width={width} />
+      <Footer state={state} width={width} />
     </Box>
   );
 }
 
 function sourceRows(sources: TuiState["registrySources"]): TuiState["registrySources"] {
-  return [...sources].sort((left, right) => (
-    Number(right.enabled) - Number(left.enabled)
-    || sourceTrustRank(left.trust) - sourceTrustRank(right.trust)
-    || (left.mode === right.mode ? 0 : left.mode === "installable" ? -1 : 1)
-    || left.label.localeCompare(right.label)
-  ));
+  return [...sources].sort(compareRegistrySources);
 }
 
 function registrySourcesWithFetchResult(
@@ -1750,13 +1838,6 @@ function registrySourcesWithFetchResult(
       cachePageInfo: fetched.pageInfo,
     };
   });
-}
-
-function sourceTrustRank(trust: TuiState["registrySources"][number]["trust"]): number {
-  if (trust === "canonical") return 0;
-  if (trust === "curated") return 1;
-  if (trust === "directory") return 2;
-  return 3;
 }
 
 function useTerminalSize(stdout: ReturnType<typeof useStdout>["stdout"]): { width: number; height: number } {
