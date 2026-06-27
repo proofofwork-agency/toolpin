@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">ToolPin Curated Registry | ToolPin</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://proofofwork-agency.github.io/toolpin/docs/how-to/toolpin-curated-registry"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="ToolPin Curated Registry | ToolPin"><meta data-rh="true" name="description" content="ToolPin can host a first-party curated registry without running any custom"><meta data-rh="true" property="og:description" content="ToolPin can host a first-party curated registry without running any custom"><link data-rh="true" rel="canonical" href="https://proofofwork-agency.github.io/toolpin/docs/how-to/toolpin-curated-registry"><link data-rh="true" rel="alternate" href="https://proofofwork-agency.github.io/toolpin/docs/how-to/toolpin-curated-registry" hreflang="en"><link data-rh="true" rel="alternate" href="https://proofofwork-agency.github.io/toolpin/docs/how-to/toolpin-curated-registry" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"ToolPin Curated Registry","item":"https://proofofwork-agency.github.io/toolpin/docs/how-to/toolpin-curated-registry"}]}</script><link rel="stylesheet" href="/toolpin/assets/css/styles.142eeb61.css">
-<script src="/toolpin/assets/js/runtime~main.4483d273.js" defer="defer"></script>
+<script src="/toolpin/assets/js/runtime~main.d67753c3.js" defer="defer"></script>
 <script src="/toolpin/assets/js/main.3a04cee3.js" defer="defer"></script>
 </head>
 <body>
@@ -23,7 +23,7 @@ the curated registry is for entries ToolPin can safely turn into install plans.<
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="urls">URLs<a href="#urls" class="hash-link" aria-label="Direct link to URLs" title="Direct link to URLs" translate="no">​</a></h2>
 <p>Raw GitHub, no deploy required:</p>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#bfc7d5;background-color:#292d3e"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#bfc7d5"><span class="token plain">https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0</span><br></div></code></pre></div></div>
-<p>GitHub Pages / Docusaurus, after the site is deployed:</p>
+<p>GitHub Pages / Docusaurus:</p>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#bfc7d5;background-color:#292d3e"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#bfc7d5"><span class="token plain">https://proofofwork-agency.github.io/toolpin/registry/v0</span><br></div></code></pre></div></div>
 <p>ToolPin appends <code>/servers</code> automatically for <code>official-compatible</code> registries.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="how-the-registry-is-maintained">How the Registry Is Maintained<a href="#how-the-registry-is-maintained" class="hash-link" aria-label="Direct link to How the Registry Is Maintained" title="Direct link to How the Registry Is Maintained" translate="no">​</a></h2>
@@ -31,9 +31,9 @@ the curated registry is for entries ToolPin can safely turn into install plans.<
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#bfc7d5;background-color:#292d3e"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#bfc7d5"><span class="token plain">registry/v0/servers</span><br></div></code></pre></div></div>
 <p>The same payload is copied to the Docusaurus static directory:</p>
 <div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#bfc7d5;--prism-background-color:#292d3e"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#bfc7d5;background-color:#292d3e"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#bfc7d5"><span class="token plain">website/static/registry/v0/servers</span><br></div></code></pre></div></div>
-<p>That second copy makes the registry available at
-<code>https://proofofwork-agency.github.io/toolpin/registry/v0</code> after the
-documentation site is deployed. CI rejects the change if the two files drift.</p>
+<p>That second copy makes the registry available on the published documentation
+site at <code>https://proofofwork-agency.github.io/toolpin/registry/v0</code>. CI rejects
+the change if the two files drift.</p>
 <p>Maintainers review registry changes like code:</p>
 <ul>
 <li class="">every addition or update goes through a pull request;</li>
