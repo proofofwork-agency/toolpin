@@ -8,6 +8,7 @@
 - Policy source normalization: the legacy `pulse` alias in `allowedSources`/`deniedSources` is accepted and normalized to the canonical `pulsemcp`, `toolpin` was added to the source enum, and unknown sources fail closed. Tests added.
 - CLI docs: corrected `toolpin lock sign`/`verify-signature` synopses in the CLI reference and the catch-drift how-tos to include the required `--policy` argument and the `--public-key` flag.
 - Runtime audits: `npm run audit:runtime` (`npm audit --omit=dev`) added to `release:check`.
+- TUI review UX: the default Browse search is empty instead of prefilled with `github`, empty Browse now lists registry entries without a hidden fallback keyword, and the footer includes a compact trust-state legend (`OK`, `REVIEW`, `UNVERIFIED`, `BLOCKED`).
 - Repo hygiene: stopped tracking the internal `docs/research/mcp-sentiment.md` positioning brief and the `website/CLAUDE-DESIGN-BRIEF.md` design deck (now gitignored); marked the homepage install demo as an illustrative placeholder and surfaced the pre-1.0 beta status on the landing page; restored the honest "npm publish pending" badge until the package is published.
 - Release hygiene: version bump 0.2.2 -> 0.2.3.
 
