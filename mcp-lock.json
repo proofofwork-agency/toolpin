@@ -1,7 +1,7 @@
 {
   "lockfileVersion": 2,
   "generatedAt": "2026-06-25T16:12:09.391Z",
-  "updatedAt": "2026-06-26T23:35:57.024Z",
+  "updatedAt": "2026-06-27T20:38:01.086Z",
   "servers": {
     "io.docker.mcp/atlassian-remote:codex": {
       "name": "io.docker.mcp/atlassian-remote",
@@ -692,16 +692,16 @@
         "metadataCompleteness": 80,
         "tier": "conditional",
         "capReason": "automated evidence incomplete",
-        "vetoes": [],
-        "gates": [],
-        "gatedBy": [],
         "verifiedProvenance": true,
+        "gates": [],
+        "vetoes": [],
         "pillars": {
           "provenance": 85,
           "integrity": 50,
           "reputation": 80,
           "metadataCompleteness": 80
         },
+        "gatedBy": [],
         "evidence": [
           {
             "code": "lock_integrity",
@@ -791,6 +791,156 @@
         }
       },
       "integrity": "sha256-205VlFqegtzJj55ujVZl/o0cD2v+GDLJ41qHxDDYU60="
+    },
+    "@proofofwork-agency/contextrelay:codex": {
+      "name": "@proofofwork-agency/contextrelay",
+      "version": "3.9.2",
+      "client": "codex",
+      "scope": "global",
+      "selectedTarget": {
+        "kind": "package",
+        "registryType": "npm",
+        "identifier": "@proofofwork-agency/contextrelay",
+        "version": "3.9.2",
+        "transport": "stdio"
+      },
+      "trust": {
+        "score": 74,
+        "overallScore": 100,
+        "metadataCompleteness": 74,
+        "tier": "verified",
+        "vetoes": [],
+        "gates": [],
+        "gatedBy": [],
+        "verifiedProvenance": true,
+        "pillars": {
+          "provenance": 82,
+          "integrity": 100,
+          "reputation": 78,
+          "metadataCompleteness": 74
+        },
+        "evidence": [
+          {
+            "code": "package_pin",
+            "status": "declared",
+            "message": "Package @proofofwork-agency/contextrelay declares exact version 3.9.2.",
+            "source": "registry-metadata",
+            "claim": "@proofofwork-agency/contextrelay@3.9.2",
+            "verificationMethod": "metadata-presence",
+            "verifiedByToolPin": false
+          },
+          {
+            "code": "npm_integrity_verified",
+            "status": "passed",
+            "message": "npm tarball integrity matched registry dist.integrity for @proofofwork-agency/contextrelay@3.9.2.",
+            "source": "npm-tarball",
+            "claim": "sha512-zUmS+iLWX/uRha5wzO8AdxSHUrOvXy8MOx+JHdMBRDRvMU+wS6jtQn0beWRUjRdMKN2RDZ0WRzxoHlDtEBmQYQ==",
+            "verificationMethod": "npm-packument-sri",
+            "verifiedByToolPin": true,
+            "trustedAnchor": true,
+            "trustAnchor": "registry.npmjs.org",
+            "verifiedAt": "2026-06-27T19:50:00.000Z"
+          },
+          {
+            "code": "lock_integrity",
+            "status": "passed",
+            "message": "Lock entry integrity digest is computed over the reviewed install plan.",
+            "source": "local-lockfile",
+            "claim": "install plan integrity",
+            "verificationMethod": "canonical-json-sha256",
+            "verifiedByToolPin": true
+          }
+        ],
+        "badges": [
+          "source repo",
+          "namespaced",
+          "npm",
+          "pinned version",
+          "npm-integrity-verified"
+        ],
+        "issues": []
+      },
+      "config": {
+        "mcp_servers": {
+          "@proofofwork-agency/contextrelay": {
+            "command": "bunx",
+            "args": [
+              "@proofofwork-agency/contextrelay@3.9.2",
+              "codex-mcp",
+              "server"
+            ],
+            "env": {}
+          }
+        }
+      },
+      "notes": [
+        "Requires Bun and bunx on PATH."
+      ],
+      "capabilityManifest": {
+        "version": 1,
+        "serverName": "@proofofwork-agency/contextrelay",
+        "serverVersion": "3.9.2",
+        "registrySource": "toolpin",
+        "packageTypes": [
+          "npm"
+        ],
+        "transports": [
+          "stdio"
+        ],
+        "remoteHosts": [],
+        "secrets": [],
+        "generatedAt": "2026-06-27T20:38:01.081Z"
+      },
+      "resolvedAt": "2026-06-27T20:38:01.081Z",
+      "lockedAt": "2026-06-27T20:38:01.086Z",
+      "resolved": {
+        "source": "toolpin",
+        "name": "@proofofwork-agency/contextrelay",
+        "version": "3.9.2"
+      },
+      "original": {
+        "name": "@proofofwork-agency/contextrelay",
+        "version": "3.9.2",
+        "client": "codex"
+      },
+      "locked": {
+        "selectedTarget": {
+          "kind": "package",
+          "registryType": "npm",
+          "identifier": "@proofofwork-agency/contextrelay",
+          "version": "3.9.2",
+          "transport": "stdio"
+        },
+        "config": {
+          "mcp_servers": {
+            "@proofofwork-agency/contextrelay": {
+              "command": "bunx",
+              "args": [
+                "@proofofwork-agency/contextrelay@3.9.2",
+                "codex-mcp",
+                "server"
+              ],
+              "env": {}
+            }
+          }
+        },
+        "capabilityManifest": {
+          "version": 1,
+          "serverName": "@proofofwork-agency/contextrelay",
+          "serverVersion": "3.9.2",
+          "registrySource": "toolpin",
+          "packageTypes": [
+            "npm"
+          ],
+          "transports": [
+            "stdio"
+          ],
+          "remoteHosts": [],
+          "secrets": [],
+          "generatedAt": "2026-06-27T20:38:01.081Z"
+        }
+      },
+      "integrity": "sha256-H1jhYjQn4AkxanyFOQFvlYADAgxywVAYAa+Akn3lcuE="
     }
   }
 }

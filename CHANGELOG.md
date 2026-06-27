@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Curated ContextRelay verification: accept ToolPin-owned npm tarball integrity evidence from the curated registry, validate it against `registry.npmjs.org`, and show verified curated entries as evidence-complete without overriding ordinary registry metadata rules.
+- Registry cache correctness: invalidate stale built-in ToolPin cache partitions when the bundled curated registry snapshot changes, so users do not keep seeing removed or outdated trusted listings after upgrading.
+- ContextRelay install metadata: clarify that Codex support is a stdio MCP registration, not a Codex plugin, and document the upstream `ctxrelay codex-mcp install` path alongside ToolPin's direct Codex config install.
+- Contributor workflow: make curated-registry PRs ask explicitly for install targets, runtime/package details, and per-client setup fields.
+- Release hygiene: defer the pending npm release from `0.2.1` to `0.2.2` so the evidence, cache invalidation, and install-metadata changes are represented in the published version.
+
 ## 0.2.1
 
 - Publish readiness: aligned the npm package homepage gate with the public GitHub Pages documentation site.

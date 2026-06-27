@@ -10,7 +10,6 @@ import { compareVersionish } from "./versions.js";
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
 const TOOLPIN_REGISTRY_FILE = new URL("../registry/v0/servers", import.meta.url);
 const TOOLPIN_REGISTRY_URL = "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers";
-const TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT = bundledRegistryFingerprint();
 const TOOLPIN_FALLBACK_ERROR = "ToolPin hosted registry fetch failed; using bundled fallback snapshot";
 const DEFAULT_CACHE_PATH = path.join(process.cwd(), ".toolpin", "registry-cache.json");
 const DEFAULT_REGISTRY_CONFIG_PATH = path.join(process.cwd(), ".toolpin", "registries.json");
@@ -992,7 +991,7 @@ function resultToPartition(result: RegistryFetchResult): RegistryCachePartition 
     status: result.status,
     generatedAt: result.fetchedAt,
     ttlMs: DEFAULT_CACHE_TTL_MS,
-    ...(result.source.id === "toolpin" ? { bundledRegistryFingerprint: TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT } : {}),
+    ...(result.source.id === "toolpin" ? { bundledRegistryFingerprint: bundledRegistryFingerprint() } : {}),
     entries: result.entries,
     pageInfo: result.pageInfo,
     accepted: result.accepted,
@@ -1044,7 +1043,7 @@ function flattenCache(cache: RegistryCacheFileV2): RegistryEntry[] {
 
 function reconcileBundledToolPinCache(cache: RegistryCacheFileV2): RegistryCacheFileV2 {
   const cached = cache.sources.toolpin;
-  if (cached?.bundledRegistryFingerprint === TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT) return cache;
+  if (cached?.bundledRegistryFingerprint === bundledRegistryFingerprint()) return cache;
   const bundled = bundledToolPinPartition();
   if (!bundled) return cache;
   return {
@@ -1058,7 +1057,9 @@ function reconcileBundledToolPinCache(cache: RegistryCacheFileV2): RegistryCache
 
 function bundledToolPinPartition(): RegistryCachePartition | undefined {
   try {
-    const body = JSON.parse(readFileSync(TOOLPIN_REGISTRY_FILE, "utf8")) as unknown;
+    const snapshot = bundledRegistrySnapshot();
+    if (!snapshot.text) return undefined;
+    const body = JSON.parse(snapshot.text) as unknown;
     const source = BUILTIN_REGISTRY_SOURCES.find((entry) => entry.id === "toolpin");
     if (!source) return undefined;
     return resultToPartition(parseToolPinRegistryResult(body, source, { limit: 500 }));
@@ -1067,12 +1068,29 @@ function bundledToolPinPartition(): RegistryCachePartition | undefined {
   }
 }
 
-function bundledRegistryFingerprint(): string {
+interface BundledRegistrySnapshot {
+  text?: string;
+  fingerprint: string;
+}
+
+let bundledRegistrySnapshotCache: BundledRegistrySnapshot | undefined;
+
+function bundledRegistrySnapshot(): BundledRegistrySnapshot {
+  if (bundledRegistrySnapshotCache) return bundledRegistrySnapshotCache;
   try {
-    return createHash("sha256").update(readFileSync(TOOLPIN_REGISTRY_FILE)).digest("hex");
+    const body = readFileSync(TOOLPIN_REGISTRY_FILE);
+    bundledRegistrySnapshotCache = {
+      text: body.toString("utf8"),
+      fingerprint: createHash("sha256").update(body).digest("hex"),
+    };
   } catch {
-    return "unavailable";
+    bundledRegistrySnapshotCache = { fingerprint: "unavailable" };
   }
+  return bundledRegistrySnapshotCache;
+}
+
+function bundledRegistryFingerprint(): string {
+  return bundledRegistrySnapshot().fingerprint;
 }
 
 export function normalizeEntry(entry: RegistryEntry): NormalizedServer {
