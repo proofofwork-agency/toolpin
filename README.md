@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/proofofwork-agency/toolpin/actions/workflows/ci.yml/badge.svg)](https://github.com/proofofwork-agency/toolpin/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![npm publish pending](https://img.shields.io/badge/npm-publish%20pending-orange)](https://www.npmjs.com/package/@proofofwork-agency/toolpin)
+[![npm](https://img.shields.io/npm/v/@proofofwork-agency/toolpin)](https://www.npmjs.com/package/@proofofwork-agency/toolpin)
 [![Status: pre-1.0 beta](https://img.shields.io/badge/status-pre--1.0%20beta-yellow)](https://github.com/proofofwork-agency/toolpin/releases)
 
 ToolPin is a review gate for MCP server installs. It helps teams inspect what
