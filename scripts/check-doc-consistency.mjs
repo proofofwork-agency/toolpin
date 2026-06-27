@@ -94,6 +94,19 @@ for (const file of files) {
   }
 }
 
+const packageJson = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+const versionSource = await readFile(new URL("src/version.ts", root), "utf8");
+const versionLiteral = `TOOLPIN_VERSION = "${packageJson.version}"`;
+if (!versionSource.includes(versionLiteral)) {
+  fail(`src/version.ts: TOOLPIN_VERSION does not match package.json version ${packageJson.version}`);
+}
+
+const readme = await readFile(new URL("README.md", root), "utf8");
+const actionVersion = `proofofwork-agency/toolpin@v${packageJson.version}`;
+if (!readme.includes(actionVersion)) {
+  fail(`README.md: expected GitHub Action example to use ${actionVersion}`);
+}
+
 if (failed) {
   process.exit(1);
 }

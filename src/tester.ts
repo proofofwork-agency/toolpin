@@ -4,6 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { selectLaunchTarget } from "./config.js";
 import type { NormalizedServer, RegistryRemote } from "./types.js";
+import { TOOLPIN_VERSION } from "./version.js";
 
 export interface ServerTestTool {
   name: string;
@@ -40,7 +41,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
         ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } })
         : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } });
 
-      client = new Client({ name: "toolpin", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to remote MCP server.");
     } else {
       const local = packageToStdio(launch.pkg);
@@ -55,7 +56,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
         stderr: "pipe",
       });
 
-      client = new Client({ name: "toolpin", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out starting local MCP server.");
     }
 
@@ -98,7 +99,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
         ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } })
         : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } });
 
-      client = new Client({ name: "toolpin", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to installed remote MCP server.");
     } else {
       const transport = new StdioClientTransport({
@@ -108,7 +109,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
         stderr: "pipe",
       });
 
-      client = new Client({ name: "toolpin", version: "0.1.0" });
+      client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out starting installed local MCP server.");
     }
 
