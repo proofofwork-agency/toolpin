@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -8,6 +10,7 @@ import { compareVersionish } from "./versions.js";
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
 const TOOLPIN_REGISTRY_FILE = new URL("../registry/v0/servers", import.meta.url);
 const TOOLPIN_REGISTRY_URL = "https://raw.githubusercontent.com/proofofwork-agency/toolpin/main/registry/v0/servers";
+const TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT = bundledRegistryFingerprint();
 const TOOLPIN_FALLBACK_ERROR = "ToolPin hosted registry fetch failed; using bundled fallback snapshot";
 const DEFAULT_CACHE_PATH = path.join(process.cwd(), ".toolpin", "registry-cache.json");
 const DEFAULT_REGISTRY_CONFIG_PATH = path.join(process.cwd(), ".toolpin", "registries.json");
@@ -964,7 +967,7 @@ export async function readCacheMetadata(cachePath = DEFAULT_CACHE_PATH, options:
     if (options.ci && !options.allowStaleCache) throw new CacheSchemaError(message);
     process.stderr.write(`Warning: ${message}\n`);
   }
-  return cache;
+  return reconcileBundledToolPinCache(cache);
 }
 
 export class CacheSchemaError extends Error {
@@ -989,6 +992,7 @@ function resultToPartition(result: RegistryFetchResult): RegistryCachePartition 
     status: result.status,
     generatedAt: result.fetchedAt,
     ttlMs: DEFAULT_CACHE_TTL_MS,
+    ...(result.source.id === "toolpin" ? { bundledRegistryFingerprint: TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT } : {}),
     entries: result.entries,
     pageInfo: result.pageInfo,
     accepted: result.accepted,
@@ -1036,6 +1040,39 @@ function v1CacheToV2(cache: { generatedAt: string; ttlMs?: number; entries: Regi
 
 function flattenCache(cache: RegistryCacheFileV2): RegistryEntry[] {
   return Object.values(cache.sources).flatMap((partition) => partition.entries);
+}
+
+function reconcileBundledToolPinCache(cache: RegistryCacheFileV2): RegistryCacheFileV2 {
+  const cached = cache.sources.toolpin;
+  if (cached?.bundledRegistryFingerprint === TOOLPIN_BUNDLED_REGISTRY_FINGERPRINT) return cache;
+  const bundled = bundledToolPinPartition();
+  if (!bundled) return cache;
+  return {
+    ...cache,
+    sources: {
+      ...cache.sources,
+      toolpin: bundled,
+    },
+  };
+}
+
+function bundledToolPinPartition(): RegistryCachePartition | undefined {
+  try {
+    const body = JSON.parse(readFileSync(TOOLPIN_REGISTRY_FILE, "utf8")) as unknown;
+    const source = BUILTIN_REGISTRY_SOURCES.find((entry) => entry.id === "toolpin");
+    if (!source) return undefined;
+    return resultToPartition(parseToolPinRegistryResult(body, source, { limit: 500 }));
+  } catch {
+    return undefined;
+  }
+}
+
+function bundledRegistryFingerprint(): string {
+  try {
+    return createHash("sha256").update(readFileSync(TOOLPIN_REGISTRY_FILE)).digest("hex");
+  } catch {
+    return "unavailable";
+  }
 }
 
 export function normalizeEntry(entry: RegistryEntry): NormalizedServer {

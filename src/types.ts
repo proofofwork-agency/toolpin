@@ -148,6 +148,7 @@ export interface RegistryCachePartition {
   status: SourceStatus;
   generatedAt: string;
   ttlMs?: number;
+  bundledRegistryFingerprint?: string;
   entries: RegistryEntry[];
   pageInfo?: RegistryFetchPageInfo;
   accepted: number;

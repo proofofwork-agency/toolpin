@@ -138,6 +138,45 @@ test("refreshCache caches hosted ToolPin registry results", async () => {
   });
 });
 
+test("readCacheMetadata replaces stale bundled ToolPin cache partitions", async () => {
+  await withTempDir(async (tempDir) => {
+    const cachePath = path.join(tempDir, "registry-cache.json");
+    const generatedAt = new Date().toISOString();
+    await writeFile(cachePath, JSON.stringify({
+      schema: "dev.toolpin.registry-cache.v2",
+      generatedAt,
+      ttlMs: 86_400_000,
+      sources: {
+        toolpin: {
+          source: {
+            id: "toolpin",
+            label: "ToolPin Curated Registry",
+            type: "toolpin",
+            mode: "installable",
+            trust: "curated",
+            enabled: true,
+            authRequired: false,
+          },
+          status: "ready",
+          generatedAt,
+          ttlMs: 86_400_000,
+          entries: [toolpinRegistryEntry("ac.tandem/docs-mcp")],
+          accepted: 1,
+          skipped: 0,
+          malformed: 0,
+          failed: 0,
+        },
+      },
+    }), "utf8");
+
+    const cache = await readCacheMetadata(cachePath);
+
+    assert.equal(cache.sources.toolpin.entries.length, 1);
+    assert.equal(cache.sources.toolpin.entries[0].server.name, "@proofofwork-agency/contextrelay");
+    assert.equal(typeof cache.sources.toolpin.bundledRegistryFingerprint, "string");
+  });
+});
+
 test("ContextRelay is ToolPin-installable for Codex and external setup for Claude", async () => {
   const entries = await fetchRegistry({
     source: "toolpin",
