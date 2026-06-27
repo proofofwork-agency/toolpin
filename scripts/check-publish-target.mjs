@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const canonicalRepositoryUrl = "git+https://github.com/proofofwork-agency/toolpin.git";
-const canonicalHomepage = "https://github.com/proofofwork-agency/toolpin#readme";
+const canonicalHomepage = "https://proofofwork-agency.github.io/toolpin/";
 const canonicalIssuesUrl = "https://github.com/proofofwork-agency/toolpin/issues";
 
 function fail(message) {

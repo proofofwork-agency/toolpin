@@ -194,7 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.0
+      - uses: proofofwork-agency/toolpin@v0.2.1
         with:
           live: "true"
           verify: "true"

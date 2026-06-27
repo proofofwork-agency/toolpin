@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Publish readiness: aligned the npm package homepage gate with the public GitHub Pages documentation site.
+- Release identity: bumped the package/runtime version past the existing `v0.2.0` tag so the npm artifact can be tagged from the final release commit without moving an old tag.
+- Public registry/docs polish: keep the curated registry focused on the ToolPin ContextRelay entry, sync CLI/help examples, and preserve the `release:check` gate as the publish prerequisite.
+
 ## 0.2.0
 
 - Gated trust model: separated metadata-completeness from an evidence-gated `verified` tier that requires verified provenance, a pinned install target, and fresh (`verifiedByToolPin`) artifact evidence (≤7 days). Non-verified entries are capped (`conditional`/`unverified`/`blocked`) with a human-readable cap reason.

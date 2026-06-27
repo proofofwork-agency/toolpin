@@ -1,6 +1,6 @@
 {
   "name": "toolpin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "license": "Apache-2.0",
   "keywords": [

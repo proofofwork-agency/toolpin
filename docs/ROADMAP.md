@@ -40,7 +40,7 @@ evidence layer security teams must buy before agents touch production.
 
 ## Current state (public docs launch, pre-npm publish)
 
-Shipped through v0.2.0:
+Shipped through v0.2.1:
 
 - Official MCP Registry + Docker catalog ingestion (`src/registry.ts`), local cache.
 - Normalized package/remote metadata; multi-source scaffold (pulse/smithery/glama disabled).
