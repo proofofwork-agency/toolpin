@@ -12,7 +12,7 @@ export function commandLineFor(commandId: TuiCommandId, state: TuiCommandState, 
   const serverName = server ? shellQuote(server.name) : "<server-name>";
   switch (commandId) {
     case "ingest":
-      return `toolpin ingest ${source} --pages 6`;
+      return `toolpin ingest ${source} --limit 500 --pages 25`;
     case "installed":
       return "toolpin list --scope all --json";
     case "sources":
@@ -26,7 +26,7 @@ export function commandLineFor(commandId: TuiCommandId, state: TuiCommandState, 
     case "info":
       return `toolpin info ${serverName} ${source}${live}`;
     case "audit":
-      return `toolpin audit ${serverName} ${source}${live}`;
+      return `toolpin audit server ${serverName} ${source}${live}`;
     case "plan":
       return `toolpin plan ${serverName} --client ${state.client} ${source}${live}`;
     case "install":

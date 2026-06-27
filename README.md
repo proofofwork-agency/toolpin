@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.3
+      - uses: proofofwork-agency/toolpin@v0.2.4
         with:
           live: "true"
           verify: "true"
@@ -252,7 +252,7 @@ for the exact scope and limits.
 - ToolPin curated registry source of truth in GitHub:
   <https://github.com/proofofwork-agency/toolpin/blob/main/registry/v0/servers>
   with a GitHub Pages static mirror for docs/browsing:
-  <https://proofofwork-agency.github.io/toolpin/registry/v0>
+  <https://proofofwork-agency.github.io/toolpin/registry/v0/servers>
 - Custom registry configuration via `.toolpin/registries.json`.
 - Search ranking over name, title, description, package type, transport, and
   repository.
@@ -283,7 +283,7 @@ Longer-term direction:
 - Safer secret brokering without plaintext client config.
 - Task-first MCP discovery and stronger tool-description review signals.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for project direction.
+See [docs/ROADMAP.md](https://github.com/proofofwork-agency/toolpin/blob/main/docs/ROADMAP.md) for project direction.
 
 ## Contributing
 
@@ -297,7 +297,8 @@ npm run registry:check
 ```
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and
-[CLA.md](CLA.md) before opening larger changes.
+[CLA.md](https://github.com/proofofwork-agency/toolpin/blob/main/CLA.md)
+before opening larger changes.
 
 ## License
 
@@ -308,11 +309,11 @@ ToolPin is distributed under the Apache License 2.0. See [LICENSE](LICENSE).
 - [Hosted documentation](https://proofofwork-agency.github.io/toolpin/)
 - [CLI reference](https://proofofwork-agency.github.io/toolpin/docs/reference/cli)
 - [Threat model](https://proofofwork-agency.github.io/toolpin/docs/concepts/threat-model)
-- [Client config matrix](docs/client-configs.md)
+- [Client config matrix](https://github.com/proofofwork-agency/toolpin/blob/main/docs/client-configs.md)
 - [Catch drift in CI](docs/how-to/catch-drift-in-ci.md)
-- [ToolPin vs. the MCP ecosystem](docs/site/concepts/comparison.md)
+- [ToolPin vs. the MCP ecosystem](https://proofofwork-agency.github.io/toolpin/docs/concepts/comparison)
 - [Security policy](SECURITY.md)
-- [Disclaimer](DISCLAIMER.md)
+- [Disclaimer](https://github.com/proofofwork-agency/toolpin/blob/main/DISCLAIMER.md)
 
 ## Notice
 
@@ -321,4 +322,5 @@ ToolPin is distributed under the Apache License 2.0. See [LICENSE](LICENSE).
 > services. That code can access files, networks, and credentials through the
 > client that runs it. ToolPin's score, evidence tier, and lockfile checks are
 > review aids, not a guarantee that any server is safe. See
-> [DISCLAIMER.md](DISCLAIMER.md) and [docs/threat-model.md](docs/threat-model.md).
+> [DISCLAIMER.md](https://github.com/proofofwork-agency/toolpin/blob/main/DISCLAIMER.md)
+> and the [threat model](https://proofofwork-agency.github.io/toolpin/docs/concepts/threat-model).

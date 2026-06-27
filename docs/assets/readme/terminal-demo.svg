@@ -112,7 +112,7 @@
   <circle class="dot-red" cx="60" cy="53" r="9"/>
   <circle class="dot-yellow" cx="90" cy="53" r="9"/>
   <circle class="dot-green" cx="120" cy="53" r="9"/>
-    <text x="160" y="61" class="small">ToolPin v0.2.2 - MCP install review gate - toolpin or tpn</text>
+    <text x="160" y="61" class="small">ToolPin - MCP install review gate - toolpin or tpn</text>
 
   <g class="frame f1">
     <text x="62" y="126"><tspan class="prompt">$</tspan><tspan class="cmd"> toolpin search contextrelay --source toolpin</tspan></text>

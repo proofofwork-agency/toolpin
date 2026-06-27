@@ -48,7 +48,7 @@ website/static/registry/v0/servers
 ```
 
 That second copy makes the registry available on the published documentation
-site at `https://proofofwork-agency.github.io/toolpin/registry/v0`. CI rejects
+site at `https://proofofwork-agency.github.io/toolpin/registry/v0/servers`. CI rejects
 the change if the two files drift.
 
 Maintainers review registry changes like code:

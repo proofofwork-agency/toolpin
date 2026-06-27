@@ -1506,7 +1506,7 @@ Lock and governance
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin policy digest [--policy .toolpin/policy.json] [--json]
-  toolpin policy check <server> --client|-c <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--policy .toolpin/policy.json]
+  toolpin policy check <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--source toolpin|official|docker|all|custom-id] [--policy .toolpin/policy.json] [--json] [--live]
   toolpin lock <server> --client|-c <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--scope project|global] [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
   toolpin lock key-fingerprint --public-key public.pem [--json]

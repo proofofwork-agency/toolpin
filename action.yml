@@ -35,7 +35,7 @@ inputs:
     required: false
     default: ""
   toolpin-version:
-    description: Optional npm version specifier for the @proofofwork-agency/toolpin npm package after public npm publish. Leave empty to install from this action source.
+    description: Optional npm version specifier for the published @proofofwork-agency/toolpin npm package. Leave empty to install from this action source.
     required: false
     default: ""
   policy:

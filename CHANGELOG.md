@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+- Release hygiene: version bump 0.2.3 -> 0.2.4 because 0.2.3 was already published.
+- Package hygiene: clean `dist/` before every TypeScript build so removed generated files cannot be packed into npm tarballs.
+- TUI command help: align the command palette with the actual broad registry refresh settings and the preferred `toolpin audit server <server-name>` syntax.
+- Docs/readme polish: update public Action examples, package-facing README resource links, registry mirror URLs, roadmap/threat-model scope, and README terminal artwork for the live npm release.
+- Action metadata: remove pre-publication wording from the `toolpin-version` input description.
+
 ## 0.2.3
 
 - Honesty pass: the README "Verification currently covers" line and `docs/site/reference/lockfile-schema.md` now describe attestations as declared metadata, not verified, and `attestation_verified` was removed from the evidence-code list. A `docs:check` regression guard forbids the overclaiming phrasing so it cannot silently return.

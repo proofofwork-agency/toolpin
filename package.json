@@ -1,6 +1,6 @@
 {
   "name": "@proofofwork-agency/toolpin",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "license": "Apache-2.0",
   "keywords": [
@@ -39,6 +39,7 @@
     "tpn": "./dist/cli.js"
   },
   "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.json",
     "postbuild": "node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "docs:build": "docusaurus build website",

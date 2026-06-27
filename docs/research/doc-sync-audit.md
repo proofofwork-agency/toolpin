@@ -67,7 +67,7 @@ The README and docs were **highly accurate** (client matrix, policy, secrets, CI
 
 ### Curated-registry URLs (dead-ends)
 
-- The how-tos showed the **post-rename** URL (`proofofworks/TPN`) which 404s today, with only a vague "use the matching raw GitHub URL for the current location" caveat that never stated the actual current URL. **Decision:** did not mass-flip ~30 URLs (would fight the documented rename intent and touch npm/SARIF identity). **Fixed:** added the working current URL inline (`proofofwork-agency/toolpin`) to all 5 user-facing docs, preserving the rename target.
+- The how-tos showed an old **post-rename** URL that 404s today, with only a vague "use the matching raw GitHub URL for the current location" caveat that never stated the actual current URL. **Decision:** did not mass-flip ~30 URLs (would fight the documented rename intent and touch npm/SARIF identity). **Fixed:** added the working current URL inline (`proofofwork-agency/toolpin`) to all 5 user-facing docs, preserving the rename target.
   - `docs/how-to/toolpin-curated-registry.md`, `docs/how-to/custom-registries.md`, `registry/README.md`, `docs/site/how-to/toolpin-curated-registry.md`, `docs/site/how-to/custom-registries.md`.
 
 ---
@@ -107,7 +107,7 @@ These claims were checked against the code and matched exactly — no fixes requ
 
 ## Open item (human-gated, intentionally deferred)
 
-**Repository URL rename.** The git remote (source of truth) is `proofofwork-agency/toolpin` (live). `package.json`'s `homepage`/`repository`/`bugs` and `src/sarif.ts` help URIs point to `proofofworks/TPN` (the intended post-rename name, currently 404). These were left untouched because they are tied to the (human-gated) npm publish identity and the pending rename; GitHub will redirect both names once the rename happens. The user-facing how-to dead-ends were already closed inline above.
+**Repository URL rename.** Resolved. The git remote, `package.json` homepage/repository/bugs fields, and `src/sarif.ts` help URIs now point to `proofofwork-agency/toolpin` (live). The user-facing how-to dead-ends were already closed inline above.
 
 ---
 

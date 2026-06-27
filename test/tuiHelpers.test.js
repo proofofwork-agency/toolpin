@@ -41,6 +41,8 @@ test("TUI command-line rendering quotes values and keeps active source/live flag
   const server = serverFixture({ name: "demo server", version: "1.2.0" });
 
   assert.equal(commandLineFor("search", state), 'toolpin search "github tools" --source docker --live');
+  assert.equal(commandLineFor("ingest", state), "toolpin ingest --source docker --limit 500 --pages 25");
+  assert.equal(commandLineFor("audit", state, server), 'toolpin audit server "demo server" --source docker --live');
   assert.equal(commandLineFor("install", state, server), 'toolpin install "demo server" --client all --scope global --source docker --live');
   assert.equal(commandLineFor("remove", state, server), 'toolpin remove "demo server" --client all --scope global --file mcp-lock.json');
   assert.equal(commandLineFor("test", state), "toolpin test <server-name> --source docker --live --timeout 15000");

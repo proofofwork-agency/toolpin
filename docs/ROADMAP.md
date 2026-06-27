@@ -38,9 +38,9 @@ because nothing else matters if the resolution is unsafe or the config is wrong.
 audit trail) is the paid tier on top of pillars 1-3, targeted at v1.0. It is the SOC 2
 evidence layer security teams must buy before agents touch production.
 
-## Current state (public docs launch, pre-npm publish)
+## Current state (public docs and npm package live)
 
-Shipped through v0.2.2:
+Shipped through v0.2.4:
 
 - Official MCP Registry + Docker catalog ingestion (`src/registry.ts`), local cache.
 - Normalized package/remote metadata; multi-source scaffold (pulse/smithery/glama disabled).
