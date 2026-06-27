@@ -4,7 +4,7 @@
 
 - Release positioning: mark ToolPin as pre-1.0 beta software in the README while keeping the package on the normal `0.x` semver release track.
 - Distribution: switch the npm package target to `@proofofwork-agency/toolpin` while keeping the `toolpin` and `tpn` CLI binaries.
-- README/docs: lead with npm-first install and CI examples, add TUI screenshots to the README, and keep source-checkout commands as development-only fallbacks.
+- README/docs: lead with npm-first install and CI examples, call out the `tpn` shortcut, add an animated terminal workflow plus TUI screenshots to the README, and keep source-checkout commands as development-only fallbacks.
 - Curated ContextRelay verification: accept ToolPin-owned npm tarball integrity evidence from the curated registry, validate it against `registry.npmjs.org`, and show verified curated entries as evidence-complete without overriding ordinary registry metadata rules.
 - Registry cache correctness: invalidate stale built-in ToolPin cache partitions when the bundled curated registry snapshot changes, so users do not keep seeing removed or outdated trusted listings after upgrading.
 - Installed inventory: expose stale lock-only rows as deletable in the TUI and remove stale lock entries from the repo lockfile so audit no longer reports servers that are gone from client config.

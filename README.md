@@ -9,17 +9,14 @@ ToolPin is a review gate for MCP server installs. It helps teams inspect what
 an MCP server will run, generate client config, commit an enforcing
 `mcp-lock.json`, and fail CI when the reviewed install drifts.
 
+Use `toolpin` for explicit commands or the shorter `tpn` alias for daily work.
+
 Public documentation: <https://proofofwork-agency.github.io/toolpin/>
 
 ToolPin is pre-1.0 beta software, Apache-2.0 licensed, and requires Node.js 22
 or newer.
 
-> **No warranty. You assume all risk.** ToolPin installs and launches
-> third-party MCP servers, including npm packages, Docker images, and remote
-> services. That code can access files, networks, and credentials through the
-> client that runs it. ToolPin's score, evidence tier, and lockfile checks are
-> review aids, not a guarantee that any server is safe. See
-> [DISCLAIMER.md](DISCLAIMER.md) and [docs/threat-model.md](docs/threat-model.md).
+![Animated terminal demo showing ToolPin search, plan, install, audit, and CI drift-check commands.](docs/assets/readme/terminal-demo.svg)
 
 ## Contents
 
@@ -312,3 +309,12 @@ ToolPin is distributed under the Apache License 2.0. See [LICENSE](LICENSE).
 - [ToolPin vs. the MCP ecosystem](docs/site/concepts/comparison.md)
 - [Security policy](SECURITY.md)
 - [Disclaimer](DISCLAIMER.md)
+
+## Notice
+
+> **No warranty. You assume all risk.** ToolPin installs and launches
+> third-party MCP servers, including npm packages, Docker images, and remote
+> services. That code can access files, networks, and credentials through the
+> client that runs it. ToolPin's score, evidence tier, and lockfile checks are
+> review aids, not a guarantee that any server is safe. See
+> [DISCLAIMER.md](DISCLAIMER.md) and [docs/threat-model.md](docs/threat-model.md).
