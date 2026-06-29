@@ -79,12 +79,22 @@ signal there.
 | `tool_description_hash` | `passed` / `failed` / `unavailable` | Live package or remote `tools/list` descriptions were hashed, failed, or were skipped. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
-Tiering is conservative:
+Tiering is conservative. These are the same meanings surfaced by the TUI status
+labels:
 
-- `verified`: no critical issues, a pinned install target, and passed evidence with `verifiedByToolPin: true`, such as `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or future verified attestations.
-- `conditional`: usable metadata or pinning exists, but artifact proof is incomplete or unavailable.
-- `unverified`: weak or failed optional evidence, mutable OCI tags, missing MCPB hashes, or other non-blocking critical trust gaps.
-- `blocked`: unsafe or uninstallable cases such as no install target, insecure remote URLs, invalid remote URLs, or failed required evidence checks.
+- `verified` / `EVIDENCE`: no critical issues, a pinned install target, and
+  passed evidence with `verifiedByToolPin: true`, such as
+  `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or
+  future verified attestations.
+- `conditional` / `REVIEW`: usable metadata or pinning exists, but artifact
+  proof is incomplete, stale, unavailable, or only declared. Review the `cap`
+  and evidence rows before installing.
+- `unverified` / `UNVERIFIED`: required pins or evidence are weak or failed,
+  such as mutable OCI tags, missing MCPB hashes, failed optional evidence, or
+  other non-blocking critical trust gaps.
+- `blocked` / `BLOCKED`: unsafe or uninstallable cases such as no install
+  target, insecure remote URLs, invalid remote URLs, or failed required evidence
+  checks.
 
 Repository URL presence, registry source trust, `capability-pinned`, and
 self-declared attestations are useful review metadata. They do not make a
@@ -104,7 +114,7 @@ Common cap reasons:
 
 | Cap reason | Meaning |
 |---|---|
-| `automated evidence incomplete` | Metadata and package pinning may look good, but ToolPin has not verified artifact bytes/provenance: an OCI `@sha256:`, MCPB `fileSha256`, or npm exact version may be declared without a successful `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or future verified attestation. Declared attestations alone do not count. |
+| `automated evidence incomplete` | Metadata and package pinning may look good, but ToolPin has not verified artifact bytes/provenance: an OCI `@sha256:`, MCPB `fileSha256`, or npm exact version may be declared without a successful `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or future verified attestation. Declared pins and declared attestations alone do not count. |
 | `no verified provenance` | The entry is not from an official/Docker source with a repository URL, so provenance is not strong enough for a higher cap. |
 | `mutable_oci_tag` | The OCI target uses a mutable tag instead of a digest. |
 | `missing_mcpb_hash` | The MCPB target does not declare `fileSha256`. |

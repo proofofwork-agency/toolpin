@@ -67,8 +67,10 @@ the output includes a `cap` line explaining why, for example that automated
 evidence is incomplete because artifact proof is missing. Human-facing numeric
 ranking uses the profile score inside the evidence tier, so conditional entries
 do not all collapse to a visible 69%. A 69% cap means the entry has trusted
-provenance and usable metadata, but ToolPin has not yet verified artifact proof
-such as npm integrity, OCI digest, or MCPB hash evidence.
+provenance and usable metadata, but ToolPin has not yet verified artifact proof:
+npm tarball SRI from `registry.npmjs.org`, OCI registry digest resolution, or
+MCPB byte hashing from a code-allowlisted HTTPS artifact host. Declared pins or
+attestations alone do not count as ToolPin-verified proof.
 
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
@@ -134,12 +136,21 @@ toolpin tui
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
 
-The TUI Browse list shows full evidence labels (`REVIEW`, `UNVERIFIED`,
-`BLOCKED`, or `EVIDENCE`) next to the meter. Overview separates the evidence
-tier, metadata profile score, trust pillars, and cap reason; a red evidence row
-beside green profile rows means the metadata is strong but required automated
-proof is missing or failed. The TUI help screen calls out the 69% cap for
-trusted-source conditional entries.
+The TUI Browse list shows evidence labels next to the meter:
+
+| Label | Meaning |
+|---|---|
+| `EVIDENCE` | A pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, MCPB byte hash, or future verified attestation. |
+| `REVIEW` | Metadata may be useful, but required artifact proof is missing, stale, unavailable, or only declared. Check the `evidence`, `cap`, and `gated by` rows. |
+| `UNVERIFIED` | Required pins or evidence are weak or failed, such as a mutable OCI tag, missing MCPB `fileSha256`, or failed optional evidence. |
+| `BLOCKED` | A critical issue makes the entry unsafe or uninstallable, such as no install target, insecure/invalid remote URL, or failed required evidence. |
+
+The Overview panel's top block is a registry metadata summary, not a verification
+result. Below it, Overview separates the evidence tier, metadata profile score,
+trust pillars, and cap reason; a red evidence row beside green profile rows
+means the metadata is strong but required automated proof is missing or failed.
+The TUI help screen calls out the 69% cap for trusted-source conditional
+entries.
 
 Browse defaults to source-first ordering: `toolpin`, `official`, `docker`, then
 other enabled sources. Press `a` to cycle source-first, alpha A-Z, alpha Z-A,

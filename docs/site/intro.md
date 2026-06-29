@@ -38,6 +38,8 @@ tool already gives your team all four in one workflow, use it.
 ## What ToolPin does now
 
 - Searches and inspects MCP registry entries from supported sources.
+- Provides a guided `toolpin interactive` / `tpn i` flow that searches,
+  previews the one-shot command, and requires confirmation before writes.
 - Generates client config for supported MCP clients.
 - Creates a v2 `mcp-lock.json` keyed by server and client.
 - Rejects install drift when resolved metadata, selected target, trust score,
@@ -45,10 +47,11 @@ tool already gives your team all four in one workflow, use it.
 - Checks declared integrity pins: OCI targets must include `@sha256:` when
   required, and MCPB targets must declare `fileSha256` when required.
 - Separates metadata completeness from evidence tier. `verified` requires a
-  pinned install target plus artifact proof; missing proof caps the
+  pinned install target plus ToolPin-verified artifact proof; missing proof caps the
   machine-readable `overallScore` and is shown as a `cap` reason in CLI/TUI
   output. Trusted-source conditional entries cap at 69% until artifact proof is
-  verified.
+  verified. Current artifact proof means npm tarball SRI, OCI registry digest,
+  or MCPB byte-hash verification.
 - Runs `toolpin ci` as a read-only gate for committed lockfiles.
 - Supports optional whole-lock digest pins and detached Ed25519 lockfile
   signatures using keys managed outside ToolPin.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- TUI trust labels: clarify that `REVIEW` means missing, stale, unavailable, or only-declared ToolPin-verified npm, OCI, or MCPB artifact proof.
+- TUI overview: label the upper metadata block as a registry summary and separate it from verification gates.
+- Docs: surface `toolpin interactive` / `tpn i` in the Docusaurus introduction and document the TUI evidence/status meanings explicitly.
+- Release hygiene: version bump 0.3.1 -> 0.3.2 for the public-launch clarity pass.
+
 ## 0.2.5
 
 - Release hygiene: version bump 0.2.4 -> 0.2.5 for the post-release TUI polish.

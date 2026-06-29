@@ -532,6 +532,9 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
       <Text bold color="white" wrap="truncate">{server.name}@{server.version}</Text>
       <Text color={MUTED} wrap="wrap">{server.description || "No description declared."}</Text>
       <Spacer />
+      <Text bold color={BLUE}>registry summary</Text>
+      <Text color={MUTED} wrap="wrap">Metadata below comes from registry records and ToolPin scoring. It is review context, not runtime proof.</Text>
+      <Spacer />
       <Metric label="title" value={server.title} />
       <Metric label="registry" value={server.registrySource} valueColor={server.registrySource === "docker" ? WARN : OK} />
       <Metric label="runtime" value={server.packageTypes.join(", ") || server.remoteTypes.join(", ") || "none"} />
@@ -550,6 +553,8 @@ function DetailsView({ result, server: selectedServer, width, testResult, testin
       <Metric label="evidence" value={evidenceSummary(trust)} />
       <Spacer />
       <CompactDivider width={width} />
+      <Spacer />
+      <Text bold color={BLUE}>verification gates</Text>
       <Spacer />
       <Box flexDirection="column">
         <TrustTierRow
@@ -809,9 +814,13 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <Text bold color={BLUE}>scoring</Text>
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
-          <HelpNote width={lineWidth} label="tiers" text="Verified requires a pinned install target plus artifact proof; conditional means useful metadata exists but proof is incomplete." />
-          <HelpNote width={lineWidth} label="69% cap" text="69% until proof verified; proof=npm/OCI/MCPB." />
-          <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and explain why the evidence gate capped verification." />
+          <HelpNote width={lineWidth} label="EVIDENCE" text="Pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, or MCPB byte hash." />
+          <HelpNote width={lineWidth} label="REVIEW" text="Metadata may be useful, but required artifact proof is missing, stale, unavailable, or only declared." />
+          <HelpNote width={lineWidth} label="UNVERIFIED" text="Evidence or required pins are weak/failed, such as a mutable OCI tag or missing MCPB fileSha256." />
+          <HelpNote width={lineWidth} label="BLOCKED" text="Critical issue: no install target, insecure/invalid remote URL, or failed required evidence." />
+          <HelpNote width={lineWidth} label="summary" text="Overview's top block is registry metadata summary; the evidence row and cap notes say what proof exists or is missing." />
+          <HelpNote width={lineWidth} label="69% cap" text="Conditional trusted-source entries stay capped until npm/OCI/MCPB artifact proof is verified." />
+          <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and name the missing proof or gate." />
           <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
@@ -1211,18 +1220,18 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
 }
 
 export function TrustStateLegend({ width }: { width: number }) {
-  const compact = width < 118;
+  const compact = width < 150;
   const items = compact
     ? [
         { label: "OK", color: OK, text: "verified" },
-        { label: "REVIEW", color: WARN, text: "needs-proof" },
-        { label: "UNVERIFIED", color: ERR, text: "weak" },
+        { label: "REVIEW", color: WARN, text: "needs npm/OCI/MCPB proof" },
+        { label: "UNVERIFIED", color: ERR, text: "weak/failed pins" },
         { label: "BLOCKED", color: ERR, text: "stop" },
       ]
     : [
         { label: "OK", color: OK, text: "verified" },
-        { label: "REVIEW", color: WARN, text: "needs-proof" },
-        { label: "UNVERIFIED", color: ERR, text: "weak evidence" },
+        { label: "REVIEW", color: WARN, text: "needs npm/OCI/MCPB proof" },
+        { label: "UNVERIFIED", color: ERR, text: "weak or failed pins/evidence" },
         { label: "BLOCKED", color: ERR, text: "stop" },
       ];
   return (

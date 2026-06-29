@@ -420,9 +420,9 @@ test("TUI footer trust legend explains review-state colors", () => {
   assert.match(rendered, /OK/);
   assert.match(rendered, /verified/);
   assert.match(rendered, /REVIEW/);
-  assert.match(rendered, /needs-proof/);
+  assert.match(rendered, /needs npm\/OCI\/MCPB proof/);
   assert.match(rendered, /UNVERIFIED/);
-  assert.match(rendered, /weak evidence/);
+  assert.match(rendered, /weak\/failed pins/);
   assert.match(rendered, /BLOCKED/);
   assert.match(rendered, /stop/);
 });
@@ -446,6 +446,9 @@ test("TUI overview leads with profile score and cap reason instead of capped ove
     testing: false,
   }));
 
+  assert.match(rendered, /registry summary/);
+  assert.match(rendered, /review\s+context, not runtime proof/);
+  assert.match(rendered, /verification gates/);
   assert.match(rendered, /evidence\s+REVIEW/);
   assert.match(rendered, /profile\s+74%/);
   assert.match(rendered, /cap\s+evidence gate max 69%: automated evidence incomplete/);
@@ -455,12 +458,13 @@ test("TUI overview leads with profile score and cap reason instead of capped ove
 
 test("TUI help explains why conditional trusted entries cap at 69 percent", () => {
   const rendered = renderToString(React.createElement(HelpView, {
-    width: 120,
-    height: 34,
+    width: 180,
+    height: 60,
   }));
 
   assert.match(rendered, /69% cap/);
-  assert.match(rendered, /69% until proof verified; proof=npm\/OCI\/MCPB/);
+  assert.match(rendered, /Conditional trusted-source entries stay capped until npm\/OCI/);
+  assert.match(rendered, /Overview's top block is registry metadata summary/);
 });
 
 test("Installed server details renders local HTTP endpoint advisory", () => {

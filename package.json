@@ -1,6 +1,6 @@
 {
   "name": "@proofofwork-agency/toolpin",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Trusted install, lockfile, and governance layer for MCP servers",
   "license": "Apache-2.0",
   "keywords": [

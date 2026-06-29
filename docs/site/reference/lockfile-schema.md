@@ -167,9 +167,11 @@ attestations are not treated as ToolPin-verified unless a future verifier record
 
 `automated evidence incomplete` means the entry has not satisfied all evidence
 required for `verified`. In practice this usually means an exact package pin
-exists but artifact proof is missing or unavailable: ToolPin could not resolve
-the OCI manifest digest, recompute MCPB bytes from a trusted HTTPS host, verify
-npm tarball integrity, or verify an attestation.
+exists but artifact proof is missing, stale, unavailable, or only declared:
+ToolPin could not resolve the OCI manifest digest, recompute MCPB bytes from a
+trusted HTTPS host, verify npm tarball integrity, or verify an attestation.
+Declared pins and declared attestations alone do not count as ToolPin-verified
+proof.
 
 ## Capability manifest
 

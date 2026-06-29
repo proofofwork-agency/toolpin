@@ -1719,11 +1719,15 @@ function printTuiHelp(): void {
   console.log(`Usage: toolpin tui
 
 Opens the ToolPin ${TOOLPIN_VERSION} full-screen terminal UI.
-Browse rows show full evidence labels (REVIEW, UNVERIFIED, BLOCKED, EVIDENCE).
+Browse rows show evidence labels:
+  EVIDENCE   pinned target plus ToolPin-verified npm/OCI/MCPB proof
+  REVIEW    useful metadata, but artifact proof is missing/stale/unavailable/declared only
+  UNVERIFIED weak or failed pins/evidence, such as mutable OCI or missing MCPB hash
+  BLOCKED   critical issue such as no install target or insecure/invalid remote
 Browse defaults to source-first ordering: toolpin, official, docker, then other enabled sources.
 Use g for the exact source filter and a to cycle sort modes.
-Overview separates evidence tier, metadata profile score, pillar scores,
-and cap reasons; cap explains the evidence gate limit.`);
+Overview top rows are registry metadata summary. The evidence tier, metadata
+profile score, pillar scores, and cap reason below explain verification status.`);
 }
 
 function interactiveHelp(): void {
