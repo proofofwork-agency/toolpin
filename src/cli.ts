@@ -18,6 +18,7 @@ import { scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
+import { CYAN_COLOR, ERR_COLOR, MUTED_COLOR, OK_COLOR, WARN_COLOR, parseColorMode, terminalStyle } from "./terminalStyle.js";
 import { testServer } from "./tester.js";
 import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustProfileScore, trustTier } from "./trust.js";
 import { localHttpRuntimeAdvisory } from "./runtimeAdvisory.js";
@@ -27,6 +28,7 @@ import { compareLockedToLatest, knownVersions } from "./versions.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId, ToolDescriptionScan } from "./types.js";
 
 const args = normalizeArgs(process.argv.slice(2));
+let cliStyleCache: ReturnType<typeof terminalStyle> | undefined;
 type ClientSelection = ClientName | "all";
 const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
 const TOOLPIN_NPM_PACKAGE = "@proofofwork-agency/toolpin";
@@ -34,6 +36,7 @@ const VALUE_FLAGS = new Set([
   "-c",
   "-s",
   "--client",
+  "--color",
   "--expect-digest",
   "--file",
   "--key",
@@ -71,11 +74,23 @@ const KNOWN_FLAGS = new Set([
   "--verify",
   "-v",
 ]);
-const OK_COLOR = "\x1b[32m";
-const WARN_COLOR = "\x1b[33m";
-const ERR_COLOR = "\x1b[31m";
-const CYAN_COLOR = "\x1b[36m";
-const MUTED_COLOR = "\x1b[90m";
+const INTERACTIVE_FLAGS = new Set([
+  "--source",
+  "--live",
+  "--limit",
+  "--client",
+  "--scope",
+  "--version",
+  "--verify",
+  "--require-verified",
+  "--timeout",
+  "--policy",
+  "--no-policy",
+  "--no-input",
+  "--color",
+  "--help",
+  "-h",
+]);
 
 main().catch((error) => {
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -85,6 +100,7 @@ main().catch((error) => {
 async function main(): Promise<void> {
   const command = args[0] ?? "help";
   const rest = args.slice(1);
+  validateColorFlag(args);
   if (command !== "help" && command !== "--help" && command !== "-h") {
     validateFlags(command, rest);
     if (isHelp(rest)) {
@@ -107,6 +123,10 @@ async function main(): Promise<void> {
       return;
     case "search":
       await search(rest);
+      return;
+    case "interactive":
+    case "i":
+      await runInteractive(rest);
       return;
     case "info":
       await info(rest);
@@ -1104,7 +1124,9 @@ async function remove(rest: string[], command: "remove" | "uninstall" = "remove"
     printField("config", configResult.action);
     printField("lock", lockResult.removed ? "removed" : "missing");
     if (runtimeAdvisory && configResult.action === "removed") printField("runtime", runtimeAdvisory.message, WARN_COLOR);
-    for (const note of configResult.notes) printBullet(note);
+    if (configResult.action === "removed") {
+      for (const note of configResult.notes) printBullet(note);
+    }
   }
 }
 
@@ -1375,8 +1397,23 @@ function commandHelp(command: string): void {
     case "upgrade":
       upgradeHelp();
       return;
+    case "version":
+    case "--version":
+    case "-v":
+      console.log("Usage: toolpin version\n       toolpin --version\n       toolpin -v");
+      return;
+    case "ingest":
+      console.log("Usage: toolpin ingest [--source toolpin|official|docker|all|custom-id] [--limit 100] [--pages 10]");
+      return;
     case "search":
       console.log("Usage: toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]");
+      return;
+    case "info":
+      console.log("Usage: toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]");
+      return;
+    case "interactive":
+    case "i":
+      interactiveHelp();
       return;
     case "ci":
       ciHelp();
@@ -1394,6 +1431,12 @@ function commandHelp(command: string): void {
     case "verify":
       console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
       return;
+    case "versions":
+      console.log("Usage: toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]");
+      return;
+    case "outdated":
+      console.log("Usage: toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
+      return;
     case "doctor":
       doctorHelp();
       return;
@@ -1406,6 +1449,28 @@ function commandHelp(command: string): void {
     case "uninstall":
       console.log(`Usage: toolpin ${command} <server-name> [--client ${CLIENT_USAGE}] [--scope project|global] [--file mcp-lock.json]`);
       return;
+    case "plan":
+      console.log(`Usage: toolpin plan <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]`);
+      return;
+    case "install":
+      console.log(`Usage: toolpin install <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy]`);
+      return;
+    case "adopt":
+      console.log(`Usage: toolpin adopt <installed-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]`);
+      return;
+    case "update":
+      console.log(`Usage: toolpin update <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
+       toolpin update --all [--scope all|project|global] [--client ${CLIENT_USAGE}] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]`);
+      return;
+    case "test":
+      console.log("Usage: toolpin test <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]");
+      return;
+    case "test-installed":
+      console.log(`Usage: toolpin test-installed <server-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--timeout 15000] [--json]`);
+      return;
+    case "export-config":
+      console.log(`Usage: toolpin export-config <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]`);
+      return;
     case "lock":
       console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
        toolpin lock digest [--file mcp-lock.json] [--json]
@@ -1416,6 +1481,9 @@ function commandHelp(command: string): void {
     case "policy":
       console.log(`Usage: toolpin policy digest [--policy .toolpin/policy.json] [--json]
        toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
+      return;
+    case "secrets":
+      console.log("Usage: toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]");
       return;
     case "tui":
       printTuiHelp();
@@ -1466,6 +1534,8 @@ function help(): void {
 
 Quick start
   toolpin tui
+  toolpin interactive github
+  tpn i github
   tpn upgrade
   toolpin --version
   tpn -v
@@ -1480,6 +1550,8 @@ Discovery
   toolpin registry disable <source-id>
   toolpin sources [--json]
   toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
+  toolpin interactive [query] [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--client ${CLIENT_USAGE}] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+  toolpin i [query] [same options]
   toolpin info <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
   toolpin scan <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]  # description scan
   toolpin verify <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]
@@ -1638,6 +1710,11 @@ async function runTui(rest: string[]): Promise<void> {
   renderTui();
 }
 
+async function runInteractive(rest: string[]): Promise<void> {
+  const { runInteractive: renderInteractive } = await import("./interactive.js");
+  await renderInteractive(rest);
+}
+
 function printTuiHelp(): void {
   console.log(`Usage: toolpin tui
 
@@ -1647,6 +1724,17 @@ Browse defaults to source-first ordering: toolpin, official, docker, then other 
 Use g for the exact source filter and a to cycle sort modes.
 Overview separates evidence tier, metadata profile score, pillar scores,
 and cap reasons; cap explains the evidence gate limit.`);
+}
+
+function interactiveHelp(): void {
+  console.log(`Usage: toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client ${CLIENT_USAGE}] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+       toolpin i [query] [same options]
+       tpn interactive [query]
+       tpn i [query]
+
+Guided, scrollback-friendly MCP server search and install review.
+Without a TTY it fails closed unless --no-input is provided.
+--no-input prints equivalent one-shot command guidance and makes no writes.`);
 }
 
 function hasFlag(values: string[], flag: string): boolean {
@@ -1667,17 +1755,26 @@ function normalizeArgs(values: string[]): string[] {
 }
 
 function validateFlags(command: string, values: string[]): void {
+  const knownFlags = command === "interactive" || command === "i" ? INTERACTIVE_FLAGS : KNOWN_FLAGS;
   for (const value of values) {
     if (!value.startsWith("-")) continue;
-    if (KNOWN_FLAGS.has(value)) continue;
-    const suggestion = nearestFlag(value);
+    if (knownFlags.has(value)) continue;
+    const suggestion = nearestFlag(value, knownFlags);
     throw new Error(`Unknown flag for ${command}: ${value}.${suggestion ? ` Did you mean ${suggestion}?` : ""}`);
   }
 }
 
-function nearestFlag(value: string): string | undefined {
+function validateColorFlag(values: string[]): void {
+  const index = values.indexOf("--color");
+  if (index < 0) return;
+  const value = values[index + 1];
+  if (!value || value.startsWith("-")) throw new Error("--color requires auto, always, or never.");
+  parseColorMode(value);
+}
+
+function nearestFlag(value: string, knownFlags: Set<string> = KNOWN_FLAGS): string | undefined {
   let best: { flag: string; distance: number } | undefined;
-  for (const flag of KNOWN_FLAGS) {
+  for (const flag of knownFlags) {
     const distance = editDistance(value, flag);
     if (!best || distance < best.distance) best = { flag, distance };
   }
@@ -1858,8 +1955,12 @@ function trustTierColor(tier: ReturnType<typeof trustTier>): string {
 }
 
 function colorize(value: string, color?: string): string {
-  if (!color || !process.stdout.isTTY || process.env.NO_COLOR) return value;
-  return `${color}${value}\x1b[0m`;
+  cliStyleCache ??= terminalStyle({
+    color: parseColorMode(stringFlag(args, "--color", "auto")),
+    isTTY: process.stdout.isTTY,
+    machineReadable: hasAnyFlag(args, ["--json", "--sarif"]),
+  });
+  return cliStyleCache.colorize(value, color);
 }
 
 function printVerificationReport(report: VerificationReport): void {

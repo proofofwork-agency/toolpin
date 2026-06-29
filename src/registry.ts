@@ -151,6 +151,7 @@ export interface FetchOptions {
   dockerConcurrency?: number;
   cacheTtlMs?: number;
   allowStaleCache?: boolean;
+  quiet?: boolean;
   ci?: boolean;
 }
 
@@ -940,11 +941,11 @@ export async function refreshCache(options: FetchOptions & { cachePath?: string 
   return result;
 }
 
-export async function readCache(cachePath = DEFAULT_CACHE_PATH, options: Pick<FetchOptions, "cacheTtlMs" | "allowStaleCache" | "ci"> = {}): Promise<RegistryEntry[]> {
+export async function readCache(cachePath = DEFAULT_CACHE_PATH, options: Pick<FetchOptions, "cacheTtlMs" | "allowStaleCache" | "quiet" | "ci"> = {}): Promise<RegistryEntry[]> {
   return flattenCache(await readCacheMetadata(cachePath, options));
 }
 
-export async function readCacheMetadata(cachePath = DEFAULT_CACHE_PATH, options: Pick<FetchOptions, "cacheTtlMs" | "allowStaleCache" | "ci"> = {}): Promise<RegistryCacheFileV2> {
+export async function readCacheMetadata(cachePath = DEFAULT_CACHE_PATH, options: Pick<FetchOptions, "cacheTtlMs" | "allowStaleCache" | "quiet" | "ci"> = {}): Promise<RegistryCacheFileV2> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(cachePath, "utf8")) as unknown;
@@ -964,7 +965,7 @@ export async function readCacheMetadata(cachePath = DEFAULT_CACHE_PATH, options:
   if (stale) {
     const message = `Registry cache ${cachePath} is stale; generatedAt=${cache.generatedAt}, ttlMs=${ttlMs}.`;
     if (options.ci && !options.allowStaleCache) throw new CacheSchemaError(message);
-    process.stderr.write(`Warning: ${message}\n`);
+    if (!options.quiet) process.stderr.write(`Warning: ${message}\n`);
   }
   return reconcileBundledToolPinCache(cache);
 }

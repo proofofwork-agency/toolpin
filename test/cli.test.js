@@ -258,6 +258,45 @@ test("CLI search help is universal and does not execute a search", async () => {
   });
 });
 
+test("CLI command-specific help covers documented commands", async () => {
+  const commands = [
+    "ingest",
+    "info",
+    "versions",
+    "plan",
+    "install",
+    "export-config",
+    "test",
+    "test-installed",
+    "adopt",
+    "update",
+    "outdated",
+    "secrets",
+    "version",
+  ];
+  for (const command of commands) {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, command, "--help"]);
+    assert.match(stdout, /^Usage: toolpin /, command);
+    assert.equal(stderr, "", command);
+  }
+});
+
+test("CLI rejects invalid --color even for machine-readable commands", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ]);
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "search", "github", "--source", "official", "--json", "--color", "sometimes"]),
+      /--color must be auto, always, or never/,
+    );
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "registry", "list", "--json", "--color", "sometimes"]),
+      /--color must be auto, always, or never/,
+    );
+  });
+});
+
 test("CLI accepts short client and scope aliases", async () => {
   await withTempCwd(async () => {
     const listed = await execFileAsync(process.execPath, [CLI, "list", "-s", "global", "-c", "continue", "--json"]);
@@ -312,6 +351,23 @@ test("CLI remove warns when deleting a local HTTP MCP endpoint", async () => {
   });
 });
 
+test("CLI remove does not print config-written notes when entry is missing", async () => {
+  await withTempCwd(async () => {
+    const { stdout } = await execFileAsync(process.execPath, [
+      CLI,
+      "remove",
+      "io.github/missing",
+      "--client",
+      "codex",
+      "--scope",
+      "project",
+    ]);
+
+    assert.match(stdout, /config\s+missing/);
+    assert.doesNotMatch(stdout, /config\.toml written/);
+  });
+});
+
 test("CLI accepts npm-style -g as global scope", async () => {
   await withTempCwd(async () => {
     const { stdout } = await execFileAsync(process.execPath, [CLI, "doctor", "-g", "--json"]);
@@ -351,6 +407,17 @@ test("CLI tui --help prints usage without requiring a TTY", async () => {
 
   assert.match(stdout, /^Usage: toolpin tui/);
   assert.equal(stderr, "");
+});
+
+test("CLI interactive help works without requiring a TTY", async () => {
+  const interactive = await execFileAsync(process.execPath, [CLI, "interactive", "--help"]);
+  assert.match(interactive.stdout, /^Usage: toolpin interactive/);
+  assert.match(interactive.stdout, /toolpin i \[query\]/);
+  assert.equal(interactive.stderr, "");
+
+  const alias = await execFileAsync(process.execPath, [CLI, "i", "--help"]);
+  assert.match(alias.stdout, /^Usage: toolpin interactive/);
+  assert.equal(alias.stderr, "");
 });
 
 test("CLI upgrade help and dry-run expose the package-manager command", async () => {
@@ -397,6 +464,125 @@ test("CLI tui fails cleanly when stdio is not a TTY", async () => {
       return true;
     },
   );
+});
+
+test("CLI interactive fails cleanly without TTY unless --no-input is used", async () => {
+  await withTempCwd(async () => {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "interactive", "github"]),
+      (error) => {
+        assert.equal(error && typeof error === "object" && "stdout" in error ? error.stdout : undefined, "");
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        assert.match(stderr, /Error: toolpin interactive requires an interactive terminal/);
+        assert.match(stderr, /Use --no-input to print command guidance/);
+        return true;
+      },
+    );
+  });
+});
+
+test("CLI interactive --no-input prints command guidance and makes no writes", async () => {
+  await withTempCwd(async (dir) => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ]);
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "i",
+      "github",
+      "--source",
+      "official",
+      "--client",
+      "claude",
+      "--scope",
+      "project",
+      "--no-input",
+    ]);
+
+    assert.equal(stderr, "");
+    assert.match(stdout, /ToolPin interactive guidance/);
+    assert.match(stdout, /Top result: io\.github\/example@1\.0\.0/);
+    assert.match(stdout, /Equivalent one-shot command:/);
+    assert.match(stdout, /toolpin install io\.github\/example --client claude --scope project --update-lock --source official --version 1\.0\.0/);
+    assert.match(stdout, /No files were written/);
+    assert.deepEqual((await readdir(dir)).sort(), [".toolpin"]);
+  });
+});
+
+test("CLI interactive does not print stale cache warnings before guidance", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ], { generatedAt: "2020-01-01T00:00:00.000Z" });
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "i",
+      "github",
+      "--source",
+      "official",
+      "--client",
+      "claude",
+      "--scope",
+      "project",
+      "--no-input",
+    ]);
+
+    assert.equal(stderr, "");
+    assert.match(stdout, /ToolPin interactive guidance/);
+    assert.doesNotMatch(stdout, /Registry cache .* is stale/);
+  });
+});
+
+test("CLI interactive validates numeric flags and forced no-input color", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({ name: "io.github/example", title: "GitHub Example Server" }),
+    ]);
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "i", "github", "--limit", "banana", "--no-input"]),
+      /--limit must be a number/,
+    );
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "i", "github", "--timeout", "--no-input", "--no-input"]),
+      /--timeout requires a numeric value/,
+    );
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      CLI,
+      "i",
+      "github",
+      "--source",
+      "official",
+      "--client",
+      "claude",
+      "--scope",
+      "project",
+      "--no-input",
+      "--color",
+      "always",
+    ]);
+    assert.match(stdout, /\x1b\[/);
+  });
+});
+
+test("CLI interactive-only flags remain rejected for existing commands", async () => {
+  await withTempCwd(async () => {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "search", "github", "--no-input"]),
+      /Unknown flag for search: --no-input/,
+    );
+  });
+});
+
+test("CLI interactive rejects unsupported legacy flags", async () => {
+  await withTempCwd(async () => {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "interactive", "github", "--json"]),
+      /Unknown flag for interactive: --json/,
+    );
+  });
 });
 
 test("CLI test-installed tests installed config directly", async () => {
@@ -599,10 +785,10 @@ function isolatedHomeEnv(dir) {
   };
 }
 
-async function writeRegistryCache(servers) {
+async function writeRegistryCache(servers, options = {}) {
   await mkdir(".toolpin", { recursive: true });
   await writeFile(".toolpin/registry-cache.json", JSON.stringify({
-    generatedAt: new Date().toISOString(),
+    generatedAt: options.generatedAt ?? new Date().toISOString(),
     entries: servers.map((server) => ({
       source: server.registrySource,
       server: server.raw,

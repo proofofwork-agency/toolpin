@@ -1,7 +1,7 @@
 {
   "lockfileVersion": 2,
   "generatedAt": "2026-06-25T16:12:09.391Z",
-  "updatedAt": "2026-06-27T22:23:23.998Z",
+  "updatedAt": "2026-06-29T09:23:44.497Z",
   "servers": {
     "@proofofwork-agency/contextrelay:codex": {
       "name": "@proofofwork-agency/contextrelay",
@@ -153,42 +153,33 @@
       },
       "integrity": "sha256-H1jhYjQn4AkxanyFOQFvlYADAgxywVAYAa+Akn3lcuE="
     },
-    "app.selis.mcp/pmo:claude": {
-      "name": "app.selis.mcp/pmo",
-      "version": "0.2.2",
+    "ac.inference.sh/mcp:claude": {
+      "name": "ac.inference.sh/mcp",
+      "version": "1.0.1",
       "client": "claude",
       "scope": "project",
       "selectedTarget": {
         "kind": "remote",
         "type": "streamable-http",
-        "url": "https://mcp.selis.app/tmis/mcp"
+        "url": "https://sh.inference.ac"
       },
       "trust": {
-        "score": 100,
-        "overallScore": 69,
-        "metadataCompleteness": 100,
+        "score": 80,
+        "overallScore": 59,
+        "metadataCompleteness": 80,
         "tier": "conditional",
-        "capReason": "automated evidence incomplete",
+        "capReason": "no verified provenance",
         "vetoes": [],
         "gates": [],
         "gatedBy": [],
-        "verifiedProvenance": true,
+        "verifiedProvenance": false,
         "pillars": {
-          "provenance": 85,
-          "integrity": 100,
+          "provenance": 20,
+          "integrity": 65,
           "reputation": 80,
-          "metadataCompleteness": 100
+          "metadataCompleteness": 80
         },
         "evidence": [
-          {
-            "code": "package_pin",
-            "status": "declared",
-            "message": "Package @calx/selis-mcp declares exact version 0.2.2.",
-            "source": "registry-metadata",
-            "claim": "@calx/selis-mcp@0.2.2",
-            "verificationMethod": "metadata-presence",
-            "verifiedByToolPin": false
-          },
           {
             "code": "lock_integrity",
             "status": "passed",
@@ -200,28 +191,24 @@
           }
         ],
         "badges": [
-          "source repo",
           "namespaced",
-          "npm",
-          "pinned version",
           "streamable-http",
           "https remote",
-          "sse",
           "latest"
         ],
         "issues": [
           {
-            "severity": "info",
-            "code": "legacy_transport",
-            "message": "SSE transport appears in the manifest; streamable HTTP is preferred for remote servers."
+            "severity": "warning",
+            "code": "missing_repository",
+            "message": "No source repository is declared."
           }
         ]
       },
       "config": {
         "mcpServers": {
-          "app.selis.mcp/pmo": {
+          "ac.inference.sh/mcp": {
             "type": "streamable-http",
-            "url": "https://mcp.selis.app/tmis/mcp"
+            "url": "https://sh.inference.ac"
           }
         }
       },
@@ -230,72 +217,64 @@
       ],
       "capabilityManifest": {
         "version": 1,
-        "serverName": "app.selis.mcp/pmo",
-        "serverVersion": "0.2.2",
+        "serverName": "ac.inference.sh/mcp",
+        "serverVersion": "1.0.1",
         "registrySource": "official",
-        "packageTypes": [
-          "npm"
-        ],
+        "packageTypes": [],
         "transports": [
-          "sse",
-          "stdio",
           "streamable-http"
         ],
         "remoteHosts": [
-          "mcp.selis.app",
-          "mcp.selis.dev"
+          "api.inference.sh",
+          "sh.inference.ac"
         ],
         "secrets": [],
-        "generatedAt": "2026-06-27T22:23:23.996Z"
+        "generatedAt": "2026-06-29T09:23:44.496Z"
       },
-      "resolvedAt": "2026-06-27T22:23:23.996Z",
-      "lockedAt": "2026-06-27T22:23:23.998Z",
+      "resolvedAt": "2026-06-29T09:23:44.496Z",
+      "lockedAt": "2026-06-29T09:23:44.497Z",
       "resolved": {
         "source": "official",
-        "name": "app.selis.mcp/pmo",
-        "version": "0.2.2"
+        "name": "ac.inference.sh/mcp",
+        "version": "1.0.1"
       },
       "original": {
-        "name": "app.selis.mcp/pmo",
-        "version": "0.2.2",
+        "name": "ac.inference.sh/mcp",
+        "version": "1.0.1",
         "client": "claude"
       },
       "locked": {
         "selectedTarget": {
           "kind": "remote",
           "type": "streamable-http",
-          "url": "https://mcp.selis.app/tmis/mcp"
+          "url": "https://sh.inference.ac"
         },
         "config": {
           "mcpServers": {
-            "app.selis.mcp/pmo": {
+            "ac.inference.sh/mcp": {
               "type": "streamable-http",
-              "url": "https://mcp.selis.app/tmis/mcp"
+              "url": "https://sh.inference.ac"
             }
           }
         },
         "capabilityManifest": {
           "version": 1,
-          "serverName": "app.selis.mcp/pmo",
-          "serverVersion": "0.2.2",
+          "serverName": "ac.inference.sh/mcp",
+          "serverVersion": "1.0.1",
           "registrySource": "official",
-          "packageTypes": [
-            "npm"
-          ],
+          "packageTypes": [],
           "transports": [
-            "sse",
-            "stdio",
             "streamable-http"
           ],
           "remoteHosts": [
-            "mcp.selis.app",
-            "mcp.selis.dev"
+            "api.inference.sh",
+            "sh.inference.ac"
           ],
           "secrets": [],
-          "generatedAt": "2026-06-27T22:23:23.996Z"
+          "generatedAt": "2026-06-29T09:23:44.496Z"
         }
       },
-      "integrity": "sha256-2nOsmE+dLwUty/ecxiyeNWIALiUVE41KdldDgESEn3k="
+      "integrity": "sha256-h1cj2E0XZq26/0s+IbOxLhaImX2gn3VzvvfCCz9I9yY="
     }
   }
 }

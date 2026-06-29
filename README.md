@@ -134,6 +134,18 @@ toolpin ingest --source all --limit 500 --pages 25
 toolpin search github --source all --limit 5
 ```
 
+### Guided Interactive CLI
+
+```bash
+toolpin interactive github
+tpn i github
+```
+
+The guided CLI is scrollback-friendly and separate from the full-screen TUI. It
+searches, reviews trust/evidence/client defaults, shows the exact equivalent
+command, and writes only after explicit confirmation. In scripts or pipes,
+`toolpin i github --no-input` prints command guidance and makes no writes.
+
 ### Review an Install Plan
 
 ```bash
@@ -209,7 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.2.5
+      - uses: proofofwork-agency/toolpin@v0.3.0
         with:
           live: "true"
           verify: "true"

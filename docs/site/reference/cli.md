@@ -25,6 +25,8 @@ toolpin registry enable <source-id>
 toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
+toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+toolpin i [query] [same options]
 toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
 toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
 toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
@@ -80,8 +82,18 @@ adoptable rows, and reports them separately.
 
 Commands that list `--json` or `--sarif` keep the structured payload on stdout
 so it can be piped into tools such as `jq` or code-scanning uploaders. Progress,
-notes, and errors are written to stderr. The full-screen TUI requires an
-interactive terminal and fails closed when stdin or stdout is piped.
+notes, and errors are written to stderr.
+
+`toolpin interactive` and `toolpin i` provide a scrollback-friendly guided
+search/review/install flow separate from the full-screen TUI. It shows the
+equivalent one-shot command before writes and requires explicit confirmation for
+install or lock actions. It requires a TTY unless `--no-input` is passed; in
+`--no-input` mode it prints command guidance and makes no writes. Human color
+output respects `NO_COLOR`, `FORCE_COLOR`, and `--color auto|always|never`;
+`--json` and `--sarif` output remains uncolored unless color is forced.
+
+The full-screen TUI requires an interactive terminal and fails closed when stdin
+or stdout is piped.
 
 ## Inventory and cleanup
 

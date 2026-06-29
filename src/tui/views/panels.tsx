@@ -1189,6 +1189,9 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
   const hintWidth = Math.max(10, width - copyrightWidth - 8);
   return (
     <Box paddingX={2} marginTop={1} flexShrink={0} flexDirection="column">
+      <Box width={Math.max(1, width - 4)} justifyContent="flex-end">
+        <TrustStateLegend width={Math.max(1, width - 4)} />
+      </Box>
       <Box width={Math.max(1, width - 4)} justifyContent="space-between" marginTop={1} marginBottom={1}>
         <Box width={hintWidth}>
           <Text wrap="truncate">
@@ -1202,9 +1205,6 @@ export function Footer({ state, width }: { state: TuiState; width: number }) {
           </Text>
         </Box>
         <Text color={CHROME} wrap="truncate">{truncate(copyright, copyrightWidth)}</Text>
-      </Box>
-      <Box width={Math.max(1, width - 4)} justifyContent="flex-end">
-        <TrustStateLegend width={Math.max(1, width - 4)} />
       </Box>
     </Box>
   );

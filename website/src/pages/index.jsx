@@ -20,7 +20,7 @@ export default function Home() {
               fail CI when the reviewed state drifts.
             </p>
             <p className="heroClaim">
-              Official/Docker metadata · 12 MCP clients · enforcing lockfile · local CI and policy
+              Guided installs · Official/Docker metadata · 12 MCP clients · enforcing lockfile · local CI and policy
             </p>
             <div className="heroActions">
               <Link className="button button--secondary button--lg" to="/docs/tutorials/install-first-server">
@@ -43,6 +43,9 @@ export default function Home() {
               <p className="demoCaption">Illustrative example — <code>io.github.10iii/air</code> is a placeholder server, not a real registry entry.</p>
               <pre>
                 <code>
+                  <span className="prompt">$</span> tpn i github{"\n"}
+                  <span className="muted">Search, review trust evidence, and preview the equivalent command.</span>{"\n"}
+                  <span className="muted">No config or lockfile writes happen until explicit confirmation.</span>{"\n\n"}
                   <span className="prompt">$</span> toolpin install io.github.10iii/air --client claude --verify{"\n"}
                   <span className="muted">Resolving io.github.10iii/air from all registry source...</span>{"\n"}
                   <span className="muted">Installing io.github.10iii/air@0.2.8 into claude project config...</span>{"\n\n"}
