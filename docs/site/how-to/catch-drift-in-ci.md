@@ -5,11 +5,17 @@ title: Catch Drift in CI
 # Catch drift in CI
 
 Use `toolpin ci` when `mcp-lock.json` is committed and pull requests should fail
-if reviewed MCP installs drift.
+if reviewed MCP installs drift against registry metadata, generated install-plan
+config, policy, signatures, or verification inputs.
 
 `toolpin ci` is read-only. It re-resolves locked entries, rebuilds install
 plans, checks lock integrity, enforces policy unless bypassed, and exits
 non-zero on drift. It does not update `mcp-lock.json`.
+
+Use `toolpin doctor --scope project` as a separate gate when project client
+config files are committed and must match `mcp-lock.json`. `doctor` reads files
+such as `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, and
+`.codex/config.toml`; `ci` does not read local client config files.
 
 `toolpin ci --sarif` emits SARIF 2.1.0 JSON to stdout and still exits non-zero
 on drift:
@@ -22,10 +28,43 @@ Automatic GitHub code-scanning upload is not wired into the composite action in
 this pass; add an explicit upload step after reviewing the desired repository
 permissions.
 
-## GitHub Action
+## Project config and lockfile workflow
+
+Use this workflow when project client config files are committed and should
+match `mcp-lock.json`:
+
+```yaml
+name: ToolPin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @proofofwork-agency/toolpin
+      - run: toolpin doctor --file mcp-lock.json --scope project
+      - run: toolpin ci --file mcp-lock.json --live
+```
+
+Omit the `doctor` step only when the repository does not commit project client
+config files.
+
+## Composite action for lockfile-only CI
 
 The composite action installs ToolPin from the action source by default, so it
-does not require npm publish.
+does not require npm publish. Use it when you only need `mcp-lock.json`
+enforcement:
 
 ```yaml
 name: ToolPin
@@ -49,8 +88,7 @@ jobs:
           live: "true"
 ```
 
-The action
-builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
+The action builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
 
 ```bash
 toolpin ci --file mcp-lock.json --source all --live --policy .toolpin/policy.json
@@ -61,7 +99,7 @@ as a no-op.
 
 ## Direct CLI
 
-Install the CLI directly from npm:
+Install the CLI directly from npm when you only need lockfile enforcement:
 
 ```yaml
 name: ToolPin
@@ -85,7 +123,9 @@ jobs:
 ```
 
 For unreleased source-checkout development, run `npm ci`, `npm test`, and
-`npm run dev -- ci --file mcp-lock.json --live`.
+`npm run dev -- ci --file mcp-lock.json --live`. Add
+`npm run dev -- doctor --file mcp-lock.json --scope project` before `ci` when
+project client config files are committed.
 
 ## Digest pin
 
@@ -170,6 +210,8 @@ closed if only one is supplied.
 
 CI exits non-zero when:
 
+- `toolpin doctor --scope project` is included and a committed project client
+  config entry is missing, unreadable, or different from `mcp-lock.json`.
 - `mcp-lock.json` is missing, empty, malformed, or has an unsupported version.
 - Per-entry lock integrity is missing or invalid.
 - A locked server/client no longer resolves to the reviewed install plan

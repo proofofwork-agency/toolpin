@@ -176,6 +176,11 @@ toolpin doctor --scope project
 toolpin ci --file mcp-lock.json --live --verify
 ```
 
+`doctor` checks the actual project/global client config files on disk against
+`mcp-lock.json`. `ci` re-resolves locked entries and rejects lockfile, registry,
+policy, generated-plan, signature, or verification drift without reading local
+client config files.
+
 ### Use the TUI
 
 ```bash
@@ -206,7 +211,7 @@ for the full command list.
 
 ## GitHub Actions
 
-Run ToolPin against a committed MCP lockfile:
+Run ToolPin against committed project config and a committed MCP lockfile:
 
 ```yaml
 name: ToolPin
@@ -221,17 +226,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proofofwork-agency/toolpin@v0.3.2
+      - uses: actions/setup-node@v4
         with:
-          live: "true"
-          verify: "true"
-          file: mcp-lock.json
+          node-version: 22
+      - run: npm install -g @proofofwork-agency/toolpin
+      - run: toolpin doctor --file mcp-lock.json --scope project
+      - run: toolpin ci --file mcp-lock.json --live --verify
 ```
 
-The checked-in composite Action builds ToolPin from the action source by
-default, then runs `toolpin ci`. Set `toolpin-version` to an npm version
-specifier if you want the Action to install `@proofofwork-agency/toolpin` from
-npm instead.
+Run `toolpin doctor --scope project` when project client config files such as
+`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, or `.codex/config.toml` are
+committed and should match `mcp-lock.json`.
+
+If you only need lockfile enforcement, the composite Action builds ToolPin from
+the action source by default, then runs `toolpin ci`:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: proofofwork-agency/toolpin@v0.3.2
+  with:
+    live: "true"
+    verify: "true"
+    file: mcp-lock.json
+```
+
+Set `toolpin-version` to an npm version specifier if you want the Action to
+install `@proofofwork-agency/toolpin` from npm instead.
 
 Recommended CI posture for reviewed lockfiles is `toolpin ci --live --verify`
 for capability drift. Use `--skip-live-verification` only as an explicit downgrade

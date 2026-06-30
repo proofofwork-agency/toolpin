@@ -106,8 +106,9 @@ toolpin remove <server-name> [--client <client|all>] [--scope project|global] [-
 toolpin uninstall <server-name> [--client <client|all>] [--scope project|global] [--file mcp-lock.json]
 ```
 
-`doctor` compares the lockfile with current project/global client config. It is
-read-only.
+`doctor` compares the lockfile with current project/global client config files
+on disk. It is read-only and is the command to use when committed config files
+must match `mcp-lock.json`.
 
 ## Lock and CI
 
@@ -121,9 +122,10 @@ toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|cu
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
-selected policy unless `--no-policy` is used, and exits non-zero on drift. It
-does not update `mcp-lock.json`. `scan`, `verify`, and `ci` support SARIF 2.1.0
-output with `--sarif`.
+selected policy unless `--no-policy` is used, and exits non-zero on lockfile,
+registry, generated-plan, signature, or verification drift. It does not read
+local client config files and does not update `mcp-lock.json`. `scan`, `verify`,
+and `ci` support SARIF 2.1.0 output with `--sarif`.
 
 ## Secret hygiene and TUI
 
