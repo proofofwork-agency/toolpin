@@ -1,0 +1,3 @@
+[mcp_servers."@proofofwork-agency/contextrelay"]
+command = "bunx"
+args = ["@proofofwork-agency/contextrelay@3.9.2", "codex-mcp", "server"]

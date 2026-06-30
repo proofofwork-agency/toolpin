@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run ToolPin config doctor
+        run: npm run self:doctor
+
       - name: Run ToolPin self-check
         run: npm run self:ci
 
