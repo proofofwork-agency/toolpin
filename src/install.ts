@@ -224,12 +224,28 @@ export function vsCodeGlobalConfigFile(
 }
 
 async function readJsonObject(file: string): Promise<Record<string, unknown>> {
+  let raw: string;
   try {
-    const raw = await readFile(file, "utf8");
-    return asObject(JSON.parse(raw));
-  } catch {
-    return {};
+    raw = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new Error(`Cannot read existing config at ${file}: ${error instanceof Error ? error.message : String(error)}`);
   }
+
+  if (raw.trim().length === 0) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    // Fail closed: never silently treat an unparseable file as empty and
+    // overwrite it — that would destroy unrelated server entries the user has.
+    throw new Error(`Refusing to overwrite ${file}: it is not valid JSON (${error instanceof Error ? error.message : String(error)}). Fix or remove the file, then retry.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Refusing to overwrite ${file}: expected a JSON object at the top level. Fix or remove the file, then retry.`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function readText(file: string): Promise<string> {

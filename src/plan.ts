@@ -238,8 +238,6 @@ async function readExistingLockfile(path: string): Promise<Lockfile> {
     }
     throw error;
   }
-
-  return emptyLockfile();
 }
 
 function emptyLockfile(): Lockfile {
@@ -309,7 +307,6 @@ function parseTrust(value: unknown, key: string): TrustReport {
   if (value.evidence !== undefined && !Array.isArray(value.evidence)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence`);
   if (!Array.isArray(value.badges) || !value.badges.every((badge) => typeof badge === "string")) throw new Error(`Invalid lockfile entry ${key}: invalid trust.badges`);
   if (!Array.isArray(value.issues)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues`);
-  if (value.tier !== undefined && !isTrustTier(value.tier)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.tier`);
   if (value.overallScore !== undefined && (typeof value.overallScore !== "number" || !Number.isFinite(value.overallScore))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.overallScore`);
   if (value.metadataCompleteness !== undefined && (typeof value.metadataCompleteness !== "number" || !Number.isFinite(value.metadataCompleteness))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.metadataCompleteness`);
   if (value.capReason !== undefined && typeof value.capReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.capReason`);

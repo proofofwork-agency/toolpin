@@ -933,12 +933,19 @@ async function install(rest: string[]): Promise<void> {
       ].join("\n"));
     }
   }
+  // Default install preserves an existing, matching lock entry byte-for-byte so
+  // signed / --expect-digest lockfiles are not invalidated by a no-op install.
+  // Only write when --update-lock is set or the entry is new (or when drift was
+  // explicitly accepted via --update-lock, handled below).
+  const lockWriteNeeded: boolean[] = plans.map(() => true);
   if (!updateLock) {
     const mismatches = [];
-    for (const plan of plans) {
+    for (const [index, plan] of plans.entries()) {
       const verification = await verifyAgainstLockfile(plan, DEFAULT_LOCKFILE_PATH);
       if (!verification.ok) {
         mismatches.push(`${verification.key}: ${verification.messages.join("; ")}`);
+      } else if (verification.locked) {
+        lockWriteNeeded[index] = false;
       }
     }
     if (mismatches.length) {
@@ -963,10 +970,11 @@ async function install(rest: string[]): Promise<void> {
   printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
     const result = await installServerConfig(server, targetClient, scope);
-    await writeLockfile(plans[index], DEFAULT_LOCKFILE_PATH);
+    const wroteLock = lockWriteNeeded[index];
+    if (wroteLock) await writeLockfile(plans[index], DEFAULT_LOCKFILE_PATH);
     printSubhead(`${result.client} ${result.scope}`);
     printField("config", `${result.action}: ${result.file}`, OK_COLOR);
-    printField("lock", "mcp-lock.json updated", OK_COLOR);
+    printField("lock", wroteLock ? "mcp-lock.json updated" : "mcp-lock.json unchanged (matches lock)", wroteLock ? OK_COLOR : MUTED_COLOR);
     for (const note of result.notes) printBullet(note);
   }
   printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`, OK_COLOR);
@@ -1809,23 +1817,39 @@ function isHelp(values: string[]): boolean {
   return hasAnyFlag(values, ["--help", "-h"]);
 }
 
-function stringFlag(values: string[], flag: string, fallback: string): string {
+// Returns the token after `flag`, or undefined if the flag is absent. Throws if
+// the flag is present but its value is missing or looks like another flag, so a
+// typo like `--file --source official` fails loudly instead of silently using
+// `--source` as the file path (or falling back and ignoring the intent).
+function flagValue(values: string[], flag: string): string | undefined {
   const index = values.indexOf(flag);
-  return index >= 0 ? (values[index + 1] ?? fallback) : fallback;
+  if (index < 0) return undefined;
+  const value = values[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    throw new Error(`${flag} requires a value.`);
+  }
+  return value;
+}
+
+function stringFlag(values: string[], flag: string, fallback: string): string {
+  return flagValue(values, flag) ?? fallback;
 }
 
 function stringAnyFlag(values: string[], flags: string[], fallback: string): string {
   for (const flag of flags) {
-    const index = values.indexOf(flag);
-    if (index >= 0) return values[index + 1] ?? fallback;
+    const value = flagValue(values, flag);
+    if (value !== undefined) return value;
   }
   return fallback;
 }
 
 function numberFlag(values: string[], flag: string, fallback: number): number {
-  const value = stringFlag(values, flag, String(fallback));
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  const raw = flagValue(values, flag);
+  if (raw === undefined) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${flag} requires a non-negative integer (received "${raw}").`);
+  }
+  return Number.parseInt(raw, 10);
 }
 
 function clientFlag(values: string[], fallback: ClientName): ClientSelection {

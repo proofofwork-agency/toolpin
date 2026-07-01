@@ -433,13 +433,18 @@ export function MpmTui() {
         throw new Error(`policy refused install: ${policyViolations.join(" | ")}`);
       }
       const mismatches = [];
-      for (const plan of plans) {
+      // Preserve a matching lock entry byte-for-byte (see the CLI install path):
+      // only write when the entry is new or drifted. `w` performs an explicit update.
+      const lockWriteNeeded: boolean[] = plans.map(() => true);
+      for (const [index, plan] of plans.entries()) {
         const verification = await verifyAgainstLockfile(plan, "mcp-lock.json");
         if (!verification.ok) mismatches.push(`${verification.key}: ${verification.messages.join("; ")}`);
+        else if (verification.locked) lockWriteNeeded[index] = false;
       }
       if (mismatches.length) {
         throw new Error(`lock drift: ${mismatches.join(" | ")}. Press w to update the lock after review.`);
       }
+      const anyLockWritten = lockWriteNeeded.some(Boolean);
       setState((prev) => ({
         ...prev,
         commandLog: {
@@ -454,13 +459,16 @@ export function MpmTui() {
       }));
       for (const [index, client] of targetClients.entries()) {
         const result = await installServerConfig(server, client, scope);
-        lockfile = await writeLockfile(
-          plans[index],
-          "mcp-lock.json",
-          lockKey(server.name, client),
-        );
+        if (lockWriteNeeded[index]) {
+          lockfile = await writeLockfile(
+            plans[index],
+            "mcp-lock.json",
+            lockKey(server.name, client),
+          );
+        }
         files.push(result.file);
       }
+      if (!lockfile) lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -475,7 +483,7 @@ export function MpmTui() {
             `installed ${server.name}@${server.version} for ${clientLabel}`,
             `scope: ${scopeLabel(scope)}`,
             `${unique(files).length === 1 ? "path" : "paths"}: ${unique(files).join(", ")}`,
-            "updated mcp-lock.json",
+            anyLockWritten ? "updated mcp-lock.json" : "mcp-lock.json unchanged (matches lock)",
           ],
         },
       }));
