@@ -7,7 +7,16 @@ export interface SafeFetchOptions extends RequestInit {
   timeoutMs?: number;
   maxBytes?: number;
   allowedHosts?: Set<string>;
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
   fetch?: typeof fetch;
+  lookup?: Lookup;
+}
+
+export interface UrlSafetyOptions {
+  allowedHosts?: Set<string>;
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
   lookup?: Lookup;
 }
 
@@ -16,8 +25,22 @@ const DEFAULT_MAX_BYTES = 1024 * 1024;
 
 export async function safeFetch(input: string | URL, options: SafeFetchOptions = {}): Promise<Response> {
   const url = new URL(input);
-  await assertSafeUrl(url, options.allowedHosts, options.lookup);
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxBytes: _maxBytes, allowedHosts: _allowedHosts, fetch: fetchImpl = fetch, lookup: _lookup, ...fetchOptions } = options;
+  await assertSafeUrl(url, {
+    allowedHosts: options.allowedHosts,
+    allowHttp: options.allowHttp,
+    allowPrivateHosts: options.allowPrivateHosts,
+    lookup: options.lookup,
+  });
+  const {
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxBytes: _maxBytes,
+    allowedHosts: _allowedHosts,
+    allowHttp: _allowHttp,
+    allowPrivateHosts: _allowPrivateHosts,
+    fetch: fetchImpl = fetch,
+    lookup: _lookup,
+    ...fetchOptions
+  } = options;
   return fetchImpl(url, {
     ...fetchOptions,
     redirect: "error",
@@ -43,13 +66,16 @@ export async function safeFetchJson<T>(input: string | URL, options: SafeFetchOp
   return JSON.parse(bytes.toString("utf8")) as T;
 }
 
-export async function assertSafeUrl(url: URL, allowedHosts?: Set<string>, lookupImpl: Lookup = lookup): Promise<void> {
-  if (url.protocol !== "https:") throw new Error(`Refusing non-HTTPS URL: ${url.href}`);
+export async function assertSafeUrl(url: URL, options: UrlSafetyOptions = {}): Promise<void> {
+  const { allowedHosts, allowHttp = false, allowPrivateHosts = false, lookup: lookupImpl = lookup } = options;
+  if (url.protocol !== "https:" && !(allowHttp && url.protocol === "http:")) {
+    throw new Error(`Refusing non-HTTPS URL: ${url.href}`);
+  }
   const hostname = normalizeHostname(url.hostname);
   if (allowedHosts && !allowedHosts.has(hostname)) {
     throw new Error(`Refusing untrusted host ${hostname}`);
   }
-  await assertPublicHostname(hostname, lookupImpl);
+  if (!allowPrivateHosts) await assertPublicHostname(hostname, lookupImpl);
 }
 
 async function assertPublicHostname(hostname: string, lookupImpl: Lookup): Promise<void> {
@@ -64,6 +90,10 @@ async function assertPublicHostname(hostname: string, lookupImpl: Lookup): Promi
       throw new Error(`Refusing private or reserved IP address ${address.address} for ${hostname}`);
     }
   }
+}
+
+export async function readResponseTextCapped(response: Response, maxBytes = DEFAULT_MAX_BYTES): Promise<string> {
+  return (await readResponseCapped(response, maxBytes)).toString("utf8");
 }
 
 async function readResponseCapped(response: Response, maxBytes: number): Promise<Buffer> {

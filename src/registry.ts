@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { NormalizedServer, RegistryAdapterKind, RegistryCacheFileV2, RegistryCachePartition, RegistryEntry, RegistryFetchPageInfo, RegistryFetchResult, RegistryListResponse, RegistryPackage, RegistryRemote, RegistryRepository, RegistryServer, RegistrySourceId, RegistrySourceInfo, RegistrySourceMode, RegistrySourceType, SourceStatus } from "./types.js";
-import { safeFetchJson } from "./safeFetch.js";
+import { safeFetch, safeFetchJson, readResponseTextCapped } from "./safeFetch.js";
 import { compareVersionish } from "./versions.js";
 
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
@@ -19,6 +19,7 @@ const GLAMA_SERVERS_URL = "https://glama.ai/api/mcp/v1/servers";
 const SMITHERY_SERVERS_URL = "https://api.smithery.ai/servers";
 const PULSEMCP_SERVERS_URL = "https://api.pulsemcp.com/v0.1/servers";
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const MAX_REGISTRY_RESPONSE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_RETRY_BACKOFF_MS = 100;
 const DEFAULT_DOCKER_CONCURRENCY = 12;
 const MAX_DOCKER_CONCURRENCY = 50;
@@ -136,6 +137,8 @@ export interface ConfiguredRegistrySource {
   };
   priority?: number;
   description?: string;
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
 }
 
 export interface FetchOptions {
@@ -166,9 +169,16 @@ export interface FetchLikeResponse {
   text(): Promise<string>;
 }
 
+export interface FetchInit {
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
+}
+
 export type FetchLike = (
   url: URL | string,
-  init?: { headers?: Record<string, string>; signal?: AbortSignal },
+  init?: FetchInit,
 ) => Promise<FetchLikeResponse>;
 
 export interface RegistryParseReport {
@@ -340,6 +350,8 @@ function configuredRegistryAdapter(config: ConfiguredRegistrySource): RegistryAd
     description: config.description ?? `${type} registry configured in .toolpin/registries.json.`,
     url,
     status: config.enabled === false ? "disabled" : mode === "discovery" ? "discovery-only" : "ready",
+    allowHttp: config.allowHttp === true,
+    allowPrivateHosts: config.allowPrivateHosts === true,
   };
   return {
     info,
@@ -430,7 +442,7 @@ async function fetchOfficialRegistry(options: FetchOptions & { sourceInfo?: Regi
     if (cursor) url.searchParams.set("cursor", cursor);
     if (options.search) url.searchParams.set("search", options.search);
 
-    const response = await fetchWithRetry(url, {}, options, "Registry request");
+    const response = await fetchWithRetry(url, safetyInit(sourceInfo), options, "Registry request");
     if (!response.ok) {
       throw new Error(`Registry request failed: ${response.status} ${response.statusText}`);
     }
@@ -504,7 +516,7 @@ async function fetchDockerRegistry(options: FetchOptions & { sourceInfo?: Regist
 }
 
 async function fetchHttpJsonRegistry(url: string, sourceInfo: RegistrySourceInfo, options: FetchOptions = {}): Promise<RegistryFetchResult> {
-  const response = await fetchWithRetry(url, {}, options, `${sourceInfo.label} registry request`);
+  const response = await fetchWithRetry(url, safetyInit(sourceInfo), options, `${sourceInfo.label} registry request`);
   if (!response.ok) {
     throw new Error(`${sourceInfo.label} registry request failed: ${response.status} ${response.statusText}`);
   }
@@ -613,7 +625,7 @@ async function fetchCursorDirectory(
   let fetchedPages = 0;
 
   for (let page = 0; page < config.maxPages; page += 1) {
-    const response = await fetchWithRetry(config.buildUrl(cursor), { headers: config.headers }, options, `${sourceInfo.label} registry request`);
+    const response = await fetchWithRetry(config.buildUrl(cursor), { headers: config.headers, ...safetyInit(sourceInfo) }, options, `${sourceInfo.label} registry request`);
     if (!response.ok) {
       throw new Error(`${sourceInfo.label} registry request failed: ${response.status} ${response.statusText}`);
     }
@@ -656,7 +668,7 @@ async function fetchText(url: string, options: FetchOptions): Promise<string> {
 
 async function fetchWithRetry(
   url: URL | string,
-  init: { headers?: Record<string, string> },
+  init: FetchInit,
   options: FetchOptions,
   errorPrefix: string,
 ): Promise<FetchLikeResponse> {
@@ -679,7 +691,7 @@ async function fetchWithRetry(
 async function fetchOnce(
   fetchLike: FetchLike,
   url: URL | string,
-  init: { headers?: Record<string, string> },
+  init: FetchInit,
   timeoutMs: number,
   errorPrefix: string,
 ): Promise<FetchLikeResponse> {
@@ -697,15 +709,37 @@ async function fetchOnce(
   }
 }
 
-async function defaultFetch(url: URL | string, init?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<FetchLikeResponse> {
-  const response = await fetch(url, init);
+async function defaultFetch(url: URL | string, init?: FetchInit): Promise<FetchLikeResponse> {
+  // Route production registry ingestion through the SSRF firewall: HTTPS-only,
+  // no redirects, and public-address-only DNS unless the source explicitly
+  // opts into http/private hosts. Closes cloud-metadata / internal-service
+  // access via a repo-supplied .toolpin/registries.json URL.
+  const response = await safeFetch(url, {
+    headers: init?.headers,
+    signal: init?.signal,
+    allowHttp: init?.allowHttp,
+    allowPrivateHosts: init?.allowPrivateHosts,
+  });
+  return adaptRegistryResponse(response);
+}
+
+// Per-source SSRF policy. Built-in sources (HTTPS constants) never set these,
+// so they stay strict; only user-configured registries can opt into
+// http/private hosts via .toolpin/registries.json.
+function safetyInit(sourceInfo?: RegistrySourceInfo): Pick<FetchInit, "allowHttp" | "allowPrivateHosts"> {
+  return { allowHttp: sourceInfo?.allowHttp === true, allowPrivateHosts: sourceInfo?.allowPrivateHosts === true };
+}
+
+function adaptRegistryResponse(response: Response): FetchLikeResponse {
+  let body: Promise<string> | undefined;
+  const readBody = () => (body ??= readResponseTextCapped(response, MAX_REGISTRY_RESPONSE_BYTES));
   return {
     ok: response.ok,
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
-    json: () => response.json(),
-    text: () => response.text(),
+    json: async () => JSON.parse(await readBody()),
+    text: () => readBody(),
   };
 }
 
@@ -1271,7 +1305,9 @@ function isRegistryConfig(value: unknown): value is RegistryConfig {
       (entry.type === undefined || ["official-compatible", "http-json", "toolpin", "official", "docker", "glama", "smithery", "pulsemcp", "custom"].includes(String(entry.type))) &&
       (entry.adapter === undefined || ["official-compatible", "http-json", "glama", "smithery", "pulsemcp"].includes(String(entry.adapter))) &&
       (entry.mode === undefined || entry.mode === "installable" || entry.mode === "discovery") &&
-      (entry.enabled === undefined || typeof entry.enabled === "boolean")
+      (entry.enabled === undefined || typeof entry.enabled === "boolean") &&
+      (entry.allowHttp === undefined || typeof entry.allowHttp === "boolean") &&
+      (entry.allowPrivateHosts === undefined || typeof entry.allowPrivateHosts === "boolean")
     ))
   );
 }
