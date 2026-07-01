@@ -8,9 +8,9 @@ triaged.
 
 | Version | Supported |
 |---|---|
-| `0.2.x` | Yes (current) |
-| `0.1.x` | Limited |
-| `< 0.1.0` | No |
+| `0.3.x` | Yes (current) |
+| `0.2.x` | Limited |
+| `< 0.2.0` | No |
 
 Pre-1.0 releases may change lockfile, policy, and CLI behavior. Security fixes
 will be released on the latest minor line unless a backport is explicitly

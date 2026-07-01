@@ -1,11 +1,51 @@
 # Changelog
 
+## Unreleased
+
+- Security (probe env isolation): live `test`/`verify` probes now spawn MCP
+  servers with a minimal environment allowlist plus the server's declared env
+  vars, instead of the caller's full `process.env`. Probing an untrusted package
+  can no longer read `GITHUB_TOKEN`, npm, or cloud credentials.
+- Security (SSRF): remote-probe connections and registry ingestion now go
+  through the `safeFetch` firewall (HTTPS-only, no redirects, public-address-only
+  DNS). This blocks cloud-metadata (`169.254.169.254`) and private-host access
+  via registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`.
+  Self-hosted registries can opt back in with `allowHttp` / `allowPrivateHosts`.
+- Security (shell preview): the TUI/interactive command previews single-quote
+  untrusted server names and query text so a copied command cannot trigger
+  `$(...)`, backtick, or `$VAR` expansion.
+- Fix (data loss): `install`/`remove` refuse to overwrite an existing client
+  config that is not valid JSON, instead of silently replacing it with only the
+  new entry.
+- Fix (lockfile stability): a default `install` no longer rewrites a matching
+  `mcp-lock.json` entry, so signed / `--expect-digest` lockfiles stay valid.
+- Fix (OCI verify): live OCI probes pass declared env vars via `-e`, matching the
+  installed launcher.
+- Fix (CLI parsing): value flags reject a missing or flag-like value and numeric
+  flags reject non-integers rather than silently falling back.
+
 ## 0.3.2
 
 - TUI trust labels: clarify that `REVIEW` means missing, stale, unavailable, or only-declared ToolPin-verified npm, OCI, or MCPB artifact proof.
 - TUI overview: label the upper metadata block as a registry summary and separate it from verification gates.
 - Docs: surface `toolpin interactive` / `tpn i` in the Docusaurus introduction and document the TUI evidence/status meanings explicitly.
 - Release hygiene: version bump 0.3.1 -> 0.3.2 for the public-launch clarity pass.
+
+## 0.3.1
+
+- Packaging: normalize the npm `bin` paths for the `toolpin` and `tpn`
+  executables so global installs link both commands correctly.
+- Release hygiene: version bump 0.3.0 -> 0.3.1.
+
+## 0.3.0
+
+- Interactive CLI: add the guided `toolpin interactive` / `tpn i` flow
+  (`src/interactive.tsx`, `src/interactive/workflow.ts`) for search →
+  recommendation → install/lock in one screen.
+- Terminal styling: add a shared ANSI color layer (`src/terminalStyle.ts`,
+  `--color auto|always|never`) used across CLI output.
+- Docs/tests: document the interactive command and cover the interactive
+  workflow and terminal styling with tests.
 
 ## 0.2.5
 
