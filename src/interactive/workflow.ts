@@ -1,6 +1,7 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
 import { installableClientsForServer } from "../clientSupport.js";
 import { DEFAULT_POLICY_PATH } from "../constants.js";
+import { shellQuote } from "../shellQuote.js";
 import { buildInstallPlan, type Lockfile } from "../plan.js";
 import { searchServers } from "../search.js";
 import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
@@ -276,11 +277,6 @@ function clientSupportLabel(server: NormalizedServer, client: InteractiveClient,
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-}
-
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_./:@=-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function escapeRegExp(value: string): string {

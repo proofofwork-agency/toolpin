@@ -90,6 +90,15 @@ function normalizeHostname(hostname: string): string {
   return hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
 }
 
+export function isLoopbackHostname(hostname: string): boolean {
+  const host = normalizeHostname(hostname);
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  const family = isIP(host);
+  if (family === 4) return host === "127" || host.startsWith("127.");
+  if (family === 6) return host === "::1" || host === "0:0:0:0:0:0:0:1";
+  return false;
+}
+
 function isBlockedIp(address: string): boolean {
   const normalized = normalizeHostname(address);
   const family = isIP(normalized);

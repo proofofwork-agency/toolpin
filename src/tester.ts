@@ -3,6 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { selectLaunchTarget } from "./config.js";
+import { assertSafeUrl, isLoopbackHostname } from "./safeFetch.js";
 import type { NormalizedServer, RegistryRemote } from "./types.js";
 import { TOOLPIN_VERSION } from "./version.js";
 
@@ -32,6 +33,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
   let client: Client | undefined;
   try {
     if (launch.kind === "remote") {
+      await assertRemoteProbeUrlSafe(launch.remote.url);
       const headers = resolveRemoteHeaders(launch.remote);
       if (headers.missing.length) {
         return fail(server, `remote:${launch.remote.type}`, startedAt, `Missing required header/env value: ${headers.missing.join(", ")}`);
@@ -52,7 +54,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
       const transport = new StdioClientTransport({
         command: local.command,
         args: local.args,
-        env: { ...definedProcessEnv(), ...local.env },
+        env: { ...minimalSpawnEnv(), ...local.env },
         stderr: "pipe",
       });
 
@@ -95,6 +97,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
   let client: Client | undefined;
   try {
     if (launch.kind === "remote") {
+      await assertRemoteProbeUrlSafe(launch.url);
       const transport = launch.type === "sse"
         ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } })
         : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } });
@@ -105,7 +108,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
       const transport = new StdioClientTransport({
         command: launch.command,
         args: launch.args,
-        env: { ...definedProcessEnv(), ...launch.env },
+        env: { ...minimalSpawnEnv(), ...launch.env },
         stderr: "pipe",
       });
 
@@ -199,7 +202,12 @@ function packageToStdio(pkg: {
     case "cargo":
       return { command: pkg.identifier, args: packageArgs, env: env.values, missing: env.missing };
     case "oci":
-      return { command: "docker", args: ["run", "--rm", "-i", pkg.identifier], env: env.values, missing: env.missing };
+      return {
+        command: "docker",
+        args: ["run", "--rm", "-i", ...dockerEnvArgs(pkg.environmentVariables ?? []), pkg.identifier],
+        env: env.values,
+        missing: env.missing,
+      };
     case "mcpb":
       return { command: "mcpb", args: ["run", pkg.identifier], env: env.values, missing: env.missing };
     default:
@@ -209,6 +217,24 @@ function packageToStdio(pkg: {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+// Mirror config.ts dockerEnvArgs so a live OCI probe passes declared env vars
+// into the container exactly as the installed launcher would (`-e NAME`).
+function dockerEnvArgs(variables: Array<{ name: string }>): string[] {
+  const names = [...new Set(variables.map((variable) => variable.name).filter(Boolean))];
+  return names.flatMap((name) => ["-e", name]);
+}
+
+// Before opening a transport to a registry-declared remote MCP URL, apply the
+// same SSRF firewall used for artifact fetches. Loopback targets are permitted
+// as intentional local runtime/dev fixtures (consistent with verify.ts), but
+// every other host must be HTTPS and resolve to a public address — this blocks
+// cloud metadata endpoints (169.254.169.254) and internal/private services.
+async function assertRemoteProbeUrlSafe(rawUrl: string): Promise<void> {
+  const url = new URL(rawUrl);
+  if (isLoopbackHostname(url.hostname)) return;
+  await assertSafeUrl(url);
 }
 
 function resolvePackageEnv(variables: Array<{ name: string; default?: string; isRequired?: boolean }>): { values: Record<string, string>; missing: string[] } {
@@ -252,8 +278,45 @@ function extractEnvName(value?: string): string | undefined {
   return match?.[1];
 }
 
-function definedProcessEnv(): Record<string, string> {
-  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+// Environment passed to spawned MCP server processes. ToolPin probes untrusted
+// packages, so we must NOT hand them the caller's full environment (which in CI
+// includes GITHUB_TOKEN, npm/cloud credentials, etc.). Start from a minimal set
+// of non-secret system variables the runtimes need to function; the caller then
+// layers only the server's explicitly-declared env vars on top.
+const SPAWN_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LANGUAGE",
+  "TERM",
+  "TZ",
+  // Windows
+  "SystemRoot",
+  "SystemDrive",
+  "ComSpec",
+  "PATHEXT",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "windir",
+];
+
+function minimalSpawnEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of SPAWN_ENV_ALLOWLIST) {
+    const value = process.env[name];
+    if (typeof value === "string") env[name] = value;
+  }
+  // Locale variables (LC_ALL, LC_CTYPE, ...) are non-secret and affect output.
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.startsWith("LC_") && typeof value === "string") env[name] = value;
+  }
+  return env;
 }
 
 function firstString(...values: unknown[]): string | undefined {

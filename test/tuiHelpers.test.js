@@ -40,12 +40,30 @@ test("TUI command-line rendering quotes values and keeps active source/live flag
   };
   const server = serverFixture({ name: "demo server", version: "1.2.0" });
 
-  assert.equal(commandLineFor("search", state), 'toolpin search "github tools" --source docker --live');
+  assert.equal(commandLineFor("search", state), "toolpin search 'github tools' --source docker --live");
   assert.equal(commandLineFor("ingest", state), "toolpin ingest --source docker --limit 500 --pages 25");
-  assert.equal(commandLineFor("audit", state, server), 'toolpin audit server "demo server" --source docker --live');
-  assert.equal(commandLineFor("install", state, server), 'toolpin install "demo server" --client all --scope global --source docker --live');
-  assert.equal(commandLineFor("remove", state, server), 'toolpin remove "demo server" --client all --scope global --file mcp-lock.json');
+  assert.equal(commandLineFor("audit", state, server), "toolpin audit server 'demo server' --source docker --live");
+  assert.equal(commandLineFor("install", state, server), "toolpin install 'demo server' --client all --scope global --source docker --live");
+  assert.equal(commandLineFor("remove", state, server), "toolpin remove 'demo server' --client all --scope global --file mcp-lock.json");
   assert.equal(commandLineFor("test", state), "toolpin test <server-name> --source docker --live --timeout 15000");
+});
+
+test("TUI command-line rendering neutralizes shell metacharacters in untrusted names", () => {
+  const state = {
+    query: "$(touch pwned)",
+    sourceMode: "all",
+    dataMode: "cache",
+    client: "claude",
+    installScope: "project",
+  };
+  const server = serverFixture({ name: "evil`whoami`", version: "1.0.0" });
+
+  // Registry-controlled names / user text must be single-quoted so a copied
+  // command cannot trigger command substitution ($(), backticks) or $VAR.
+  assert.equal(commandLineFor("search", state), "toolpin search '$(touch pwned)' --source all");
+  assert.equal(commandLineFor("info", state, server), "toolpin info 'evil`whoami`' --source all");
+  const withQuote = serverFixture({ name: "a'b", version: "1.0.0" });
+  assert.equal(commandLineFor("info", state, withQuote), "toolpin info 'a'\\''b' --source all");
 });
 
 test("TUI command-line rendering does not invent a default search query", () => {

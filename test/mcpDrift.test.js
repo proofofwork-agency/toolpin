@@ -258,7 +258,7 @@ test("verifyServer live-probes every supported stdio package launcher", async ()
       assert.deepEqual(invocations.find((entry) => entry.command === "npx").args, ["-y", "@toolpin/test-mcp-server@1.0.0"]);
       assert.deepEqual(invocations.find((entry) => entry.command === "uvx").args, ["toolpin-test-mcp-server==1.0.0"]);
       assert.deepEqual(invocations.find((entry) => entry.command === "dnx").args, ["ToolPin.TestMcpServer@1.0.0"]);
-      assert.deepEqual(invocations.find((entry) => entry.command === "docker").args, ["run", "--rm", "-i", `127.0.0.1:5000/toolpin/test-mcp-server@sha256:${"a".repeat(64)}`]);
+      assert.deepEqual(invocations.find((entry) => entry.command === "docker").args, ["run", "--rm", "-i", "-e", "TOOLPIN_TEST_TOOLS", "-e", "TOOLPIN_TEST_INVOCATIONS", `127.0.0.1:5000/toolpin/test-mcp-server@sha256:${"a".repeat(64)}`]);
       assert.deepEqual(invocations.find((entry) => entry.command === "mcpb").args, ["run", path.join(dir, "tpn-test.mcpb")]);
     } finally {
       restoreEnv("PATH", originalPath);
@@ -266,6 +266,62 @@ test("verifyServer live-probes every supported stdio package launcher", async ()
       restoreEnv("TOOLPIN_TEST_INVOCATIONS", originalInvocationsPath);
     }
   });
+});
+
+test("live package probe does not leak ambient env vars to the spawned server", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha package tool")]);
+    const originalPath = process.env.PATH;
+    const originalToolsPath = process.env.TOOLPIN_TEST_TOOLS;
+    const originalInvocationsPath = process.env.TOOLPIN_TEST_INVOCATIONS;
+    const originalSentinel = process.env.TOOLPIN_SECRET_SENTINEL;
+    process.env.PATH = `${fixture.binDir}${path.delimiter}${originalPath ?? ""}`;
+    process.env.TOOLPIN_TEST_TOOLS = fixture.toolsPath;
+    process.env.TOOLPIN_TEST_INVOCATIONS = fixture.invocationsPath;
+    process.env.TOOLPIN_SECRET_SENTINEL = "super-secret-token";
+    try {
+      const report = await verifyServer(packageServer("npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }), {
+        livePackageProbe: true,
+        timeoutMs: 5000,
+        lookup: publicLookup,
+        fetch: npmIntegrityFetch,
+      });
+      assert.equal(report.ok, true, report.issues.map((issue) => issue.message).join("; "));
+
+      const invocations = await readInvocations(fixture.invocationsPath);
+      const npx = invocations.find((entry) => entry.command === "npx");
+      assert.ok(npx, "expected the npx launcher to be invoked");
+      // The un-declared ambient secret must NOT reach the spawned process...
+      assert.equal(npx.sawSentinel, null, "ambient TOOLPIN_SECRET_SENTINEL leaked into the spawned MCP server");
+      // ...while the server's explicitly-declared env vars still flow through.
+      assert.equal(npx.sawDeclaredTools, "present", "declared env var was not passed to the spawned MCP server");
+    } finally {
+      restoreEnv("PATH", originalPath);
+      restoreEnv("TOOLPIN_TEST_TOOLS", originalToolsPath);
+      restoreEnv("TOOLPIN_TEST_INVOCATIONS", originalInvocationsPath);
+      restoreEnv("TOOLPIN_SECRET_SENTINEL", originalSentinel);
+    }
+  });
+});
+
+test("remote probe refuses private/reserved and non-HTTPS targets (SSRF guard)", async () => {
+  const blocked = [
+    "https://169.254.169.254/mcp",   // cloud metadata endpoint
+    "https://10.0.0.1/mcp",           // RFC1918 private
+    "https://192.168.1.10/mcp",       // RFC1918 private
+    "http://example.com/mcp",         // non-loopback plaintext
+  ];
+  for (const url of blocked) {
+    const report = await verifyServer(remoteServer(url), {
+      liveRemoteProbe: true,
+      timeoutMs: 5000,
+      lookup: publicLookup,
+    });
+    assert.equal(report.ok, false, `${url} should not verify`);
+    const messages = report.issues.map((issue) => issue.message).join(" | ");
+    assert.match(messages, /private or reserved|HTTPS|Refusing/i, `${url} -> ${messages}`);
+  }
 });
 
 async function startRemoteMcpFixture(getTools) {
@@ -359,7 +415,9 @@ import { spawn } from "node:child_process";
 
 appendFileSync(process.env.TOOLPIN_TEST_INVOCATIONS, JSON.stringify({
   command: basename(process.argv[1]),
-  args: process.argv.slice(2)
+  args: process.argv.slice(2),
+  sawSentinel: process.env.TOOLPIN_SECRET_SENTINEL ?? null,
+  sawDeclaredTools: process.env.TOOLPIN_TEST_TOOLS ? "present" : null
 }) + "\\n");
 const child = spawn(process.execPath, [${JSON.stringify(serverPath)}], {
   stdio: "inherit",
@@ -456,6 +514,12 @@ function packageServer(registryType, overrides = {}) {
           version,
           fileSha256: overrides.fileSha256,
           transport: { type: "stdio" },
+          // Declared so the fixture's control vars reach the spawned probe via
+          // the legitimate resolved-env path (ToolPin no longer leaks ambient env).
+          environmentVariables: [
+            { name: "TOOLPIN_TEST_TOOLS", isRequired: false },
+            { name: "TOOLPIN_TEST_INVOCATIONS", isRequired: false },
+          ],
         },
       ],
     },
