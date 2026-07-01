@@ -293,6 +293,18 @@ const SPAWN_ENV_ALLOWLIST = [
   "LANGUAGE",
   "TERM",
   "TZ",
+  // Non-secret infrastructure config that runtimes need to reach daemons and
+  // trust stores. These are paths / daemon URLs, not credentials, so they are
+  // safe to pass to an untrusted child (unlike proxy vars, which can embed
+  // credentials and require the explicit opt-in below).
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "DOCKER_HOST",
+  "DOCKER_CONTEXT",
+  "DOCKER_CONFIG",
+  "DOCKER_TLS_VERIFY",
+  "DOCKER_CERT_PATH",
   // Windows
   "SystemRoot",
   "SystemDrive",
@@ -315,6 +327,16 @@ function minimalSpawnEnv(): Record<string, string> {
   // Locale variables (LC_ALL, LC_CTYPE, ...) are non-secret and affect output.
   for (const [name, value] of Object.entries(process.env)) {
     if (name.startsWith("LC_") && typeof value === "string") env[name] = value;
+  }
+  // Explicit opt-in passthrough for operators who must expose extra variables
+  // to spawned servers (e.g. HTTPS_PROXY with embedded credentials on a
+  // corporate network). Off by default so ambient secrets never leak implicitly.
+  const extra = process.env.TOOLPIN_SPAWN_ENV_ALLOW;
+  if (extra) {
+    for (const name of extra.split(",").map((entry) => entry.trim()).filter(Boolean)) {
+      const value = process.env[name];
+      if (typeof value === "string") env[name] = value;
+    }
   }
   return env;
 }

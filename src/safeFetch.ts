@@ -66,6 +66,15 @@ export async function safeFetchJson<T>(input: string | URL, options: SafeFetchOp
   return JSON.parse(bytes.toString("utf8")) as T;
 }
 
+// KNOWN LIMITATION (DNS rebinding / TOCTOU): this validates the addresses the
+// hostname resolves to *now*, but the subsequent fetch()/transport resolves the
+// hostname again independently. A hostname whose DNS answer flips from a public
+// address (passes here) to a private/metadata address (used by the real
+// connection) can still be reached. Closing this fully requires pinning the
+// resolved address into the connection (e.g. an undici dispatcher or node:https
+// Agent with a `lookup` that returns the vetted IP) for every caller. This
+// preflight still blocks the common cases (literal private IPs, non-HTTPS,
+// static private DNS) and is a strict improvement over an unguarded fetch.
 export async function assertSafeUrl(url: URL, options: UrlSafetyOptions = {}): Promise<void> {
   const { allowedHosts, allowHttp = false, allowPrivateHosts = false, lookup: lookupImpl = lookup } = options;
   if (url.protocol !== "https:" && !(allowHttp && url.protocol === "http:")) {

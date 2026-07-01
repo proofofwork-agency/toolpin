@@ -5,7 +5,10 @@
 - Security (probe env isolation): live `test`/`verify` probes now spawn MCP
   servers with a minimal environment allowlist plus the server's declared env
   vars, instead of the caller's full `process.env`. Probing an untrusted package
-  can no longer read `GITHUB_TOKEN`, npm, or cloud credentials.
+  can no longer read `GITHUB_TOKEN`, npm, or cloud credentials. Non-secret
+  infrastructure vars (Docker daemon config, CA cert paths) stay in the
+  allowlist; set `TOOLPIN_SPAWN_ENV_ALLOW=VAR1,VAR2` to explicitly pass extra
+  variables (e.g. `HTTPS_PROXY`) through to spawned servers when needed.
 - Security (SSRF): remote-probe connections and registry ingestion now go
   through the `safeFetch` firewall (HTTPS-only, no redirects, public-address-only
   DNS). This blocks cloud-metadata (`169.254.169.254`) and private-host access
@@ -23,6 +26,11 @@
   installed launcher.
 - Fix (CLI parsing): value flags reject a missing or flag-like value and numeric
   flags reject non-integers rather than silently falling back.
+- Known limitation: the `safeFetch` URL guard validates DNS at check time but
+  does not yet pin the resolved address into the connection, so a DNS-rebinding
+  host can still bypass the private-address check. Literal private IPs, non-HTTPS,
+  and static private DNS are blocked; connection-time IP pinning is tracked as a
+  follow-up.
 
 ## 0.3.2
 

@@ -305,6 +305,38 @@ test("live package probe does not leak ambient env vars to the spawned server", 
   });
 });
 
+test("TOOLPIN_SPAWN_ENV_ALLOW opts a named var back into the spawned server env", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha package tool")]);
+    const saved = {
+      PATH: process.env.PATH,
+      TOOLPIN_TEST_TOOLS: process.env.TOOLPIN_TEST_TOOLS,
+      TOOLPIN_TEST_INVOCATIONS: process.env.TOOLPIN_TEST_INVOCATIONS,
+      TOOLPIN_SECRET_SENTINEL: process.env.TOOLPIN_SECRET_SENTINEL,
+      TOOLPIN_SPAWN_ENV_ALLOW: process.env.TOOLPIN_SPAWN_ENV_ALLOW,
+    };
+    process.env.PATH = `${fixture.binDir}${path.delimiter}${saved.PATH ?? ""}`;
+    process.env.TOOLPIN_TEST_TOOLS = fixture.toolsPath;
+    process.env.TOOLPIN_TEST_INVOCATIONS = fixture.invocationsPath;
+    process.env.TOOLPIN_SECRET_SENTINEL = "opted-in-value";
+    process.env.TOOLPIN_SPAWN_ENV_ALLOW = "TOOLPIN_SECRET_SENTINEL";
+    try {
+      const report = await verifyServer(packageServer("npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }), {
+        livePackageProbe: true,
+        timeoutMs: 5000,
+        lookup: publicLookup,
+        fetch: npmIntegrityFetch,
+      });
+      assert.equal(report.ok, true, report.issues.map((issue) => issue.message).join("; "));
+      const npx = (await readInvocations(fixture.invocationsPath)).find((entry) => entry.command === "npx");
+      assert.equal(npx.sawSentinel, "opted-in-value", "explicit opt-in var should reach the spawned server");
+    } finally {
+      for (const [key, value] of Object.entries(saved)) restoreEnv(key, value);
+    }
+  });
+});
+
 test("remote probe refuses private/reserved and non-HTTPS targets (SSRF guard)", async () => {
   const blocked = [
     "https://169.254.169.254/mcp",   // cloud metadata endpoint

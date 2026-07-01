@@ -251,8 +251,12 @@ async function readJsonObject(file: string): Promise<Record<string, unknown>> {
 async function readText(file: string): Promise<string> {
   try {
     return await readFile(file, "utf8");
-  } catch {
-    return "";
+  } catch (error) {
+    // Only a missing file means "start fresh". Any other read error (e.g.
+    // permissions) must not degrade to empty input, or a subsequent merge+write
+    // could replace real content with only the new entry.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw new Error(`Cannot read existing config at ${file}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

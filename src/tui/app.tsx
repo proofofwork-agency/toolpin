@@ -453,7 +453,9 @@ export function MpmTui() {
           ok: true,
           lines: [
             `policy and lock checks passed for ${targetClients.length} client(s)`,
-            `writing ${scopeLabel(scope)} config and mcp-lock.json...`,
+            anyLockWritten
+              ? `writing ${scopeLabel(scope)} config and mcp-lock.json...`
+              : `writing ${scopeLabel(scope)} config (mcp-lock.json already matches)...`,
           ],
         },
       }));
