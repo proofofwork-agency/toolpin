@@ -9,11 +9,14 @@
   infrastructure vars (Docker daemon config, CA cert paths) stay in the
   allowlist; set `TOOLPIN_SPAWN_ENV_ALLOW=VAR1,VAR2` to explicitly pass extra
   variables (e.g. `HTTPS_PROXY`) through to spawned servers when needed.
-- Security (SSRF): remote-probe connections and registry ingestion now go
-  through the `safeFetch` firewall (HTTPS-only, no redirects, public-address-only
-  DNS). This blocks cloud-metadata (`169.254.169.254`) and private-host access
-  via registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`.
-  Self-hosted registries can opt back in with `allowHttp` / `allowPrivateHosts`.
+- Security (SSRF): registry ingestion now goes through the `safeFetch` firewall
+  and remote MCP probe transports go through the matching pinned fetch — both
+  HTTPS-only, both refusing redirects, both restricted to public addresses. This
+  blocks cloud-metadata (`169.254.169.254`) and private-host access via
+  registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`,
+  including a public endpoint that tries to 3xx-redirect the probe to a private
+  IP literal. Self-hosted registries can opt back in with `allowHttp` /
+  `allowPrivateHosts`.
 - Security (execution opt-in): verification never executes package targets
   implicitly anymore. `verify`, `lock --verify`, `install --verify`,
   `ci --verify`, `audit --verify`, and the guided interactive flow run network
@@ -22,9 +25,11 @@
   explicit `--allow-execute` flag (action input `allow-execute: "true"`).
   Without it, reports carry a `package_execution_skipped` warning and the live
   capability pin is `unavailable`; `ci` refuses up front to re-verify live
-  capability pins on package entries. `toolpin test` remains an explicit
-  execution command and now prints the exact command and env var names before
-  launching.
+  capability pins on package entries. `toolpin scan --live` is gated the same
+  way: a live scan of a package target needs `--allow-execute`, otherwise the
+  live tool-description scan is skipped and only the metadata scan runs.
+  `toolpin test` remains an explicit execution command and now prints the exact
+  command and env var names before launching.
 - Security (shell preview): the TUI/interactive command previews single-quote
   untrusted server names and query text so a copied command cannot trigger
   `$(...)`, backtick, or `$VAR` expansion.
@@ -37,7 +42,11 @@
   Behavior note: curated entries now show `conditional`/`REVIEW` until locally
   re-verified — matching the documented meaning of `REVIEW` — and a lockfile
   entry locked at tier `verified` needs `toolpin ci --verify` (which recomputes
-  artifact proof) to avoid a tier-downgrade drift finding in CI.
+  artifact proof) to avoid a tier-downgrade drift finding in CI. Compatibility:
+  existing lockfiles are not rewritten in place, so evidence already recorded as
+  ToolPin-verified in `mcp-lock.json` stays honored until it goes stale or you
+  re-verify/re-lock — the change hardens fresh ingestion, it does not
+  retroactively invalidate committed lock evidence.
 - Fix (data loss): `install`/`remove` refuse to overwrite an existing client
   config that is not valid JSON, instead of silently replacing it with only the
   new entry.

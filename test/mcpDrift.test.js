@@ -164,6 +164,45 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
   });
 });
 
+test("scan --live does not execute a package target without --allow-execute", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha stdio package tool")]);
+    // `scan --live` fetches the registry live (no cache fallback), so serve a
+    // local official-compatible registry and opt it in via allowHttp/allowPrivateHosts
+    // (also exercising the safeFetch registry routing added in this branch).
+    const registry = await startLocalRegistry([packageServer("cargo", { identifier: "tpn-cargo-fixture" })]);
+    try {
+      await writeLocalRegistryConfig(registry.url);
+      const env = fixtureEnv(dir, fixture);
+
+      // Default: live scan of a package target must skip execution.
+      const skipped = await execFileAsync(process.execPath, [
+        CLI, "scan", SERVER_NAME, "--source", TEST_SOURCE, "--live", "--json", "--timeout", "5000",
+      ], { env });
+      const skippedReport = JSON.parse(skipped.stdout);
+      assert.equal(skippedReport.liveProbe.skipped, true);
+      assert.match(skippedReport.liveProbe.message, /--allow-execute/);
+      const noInvocations = await readInvocations(fixture.invocationsPath).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+      assert.equal(noInvocations.length, 0, `scan --live executed the package without --allow-execute: ${JSON.stringify(noInvocations)}`);
+
+      // Opt in: --allow-execute runs the live probe and the package is spawned.
+      const executed = await execFileAsync(process.execPath, [
+        CLI, "scan", SERVER_NAME, "--source", TEST_SOURCE, "--live", "--allow-execute", "--json", "--timeout", "5000",
+      ], { env });
+      const executedReport = JSON.parse(executed.stdout);
+      assert.equal(executedReport.liveProbe.ok, true, executedReport.liveProbe.message);
+      const invocations = await readInvocations(fixture.invocationsPath);
+      assert.ok(invocations.some((entry) => entry.command === "tpn-cargo-fixture"), "expected the package launcher to run under --allow-execute");
+    } finally {
+      await registry.close();
+    }
+  });
+});
+
 test("CLI detects tool-manifest drift without description drift", async () => {
   await withTempCwd(async (dir) => {
     let tools = [tool("alpha", "Stable remote tool", { type: "object", properties: { before: { type: "string" } } })];
@@ -551,6 +590,48 @@ async function writeRegistryConfig() {
         url: "https://example.invalid/registry/v0",
         mode: "installable",
         trust: "private",
+      },
+    ],
+  }, null, 2), "utf8");
+}
+
+async function startLocalRegistry(servers) {
+  const entries = servers.map((server) => ({
+    server: server.raw,
+    _meta: { "io.modelcontextprotocol.registry/official": { isLatest: true } },
+  }));
+  const server = createServer((request, response) => {
+    if ((request.url ?? "").startsWith("/v0/servers")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ servers: entries, metadata: {} }));
+    } else {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    url: `http://127.0.0.1:${port}/v0`,
+    close: () => {
+      server.closeAllConnections();
+      return new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+
+async function writeLocalRegistryConfig(url) {
+  await mkdir(".toolpin", { recursive: true });
+  await writeFile(".toolpin/registries.json", JSON.stringify({
+    registries: [
+      {
+        id: TEST_SOURCE,
+        type: "official-compatible",
+        url,
+        mode: "installable",
+        trust: "private",
+        allowHttp: true,
+        allowPrivateHosts: true,
       },
     ],
   }, null, 2), "utf8");

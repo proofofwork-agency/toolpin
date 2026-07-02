@@ -30,7 +30,7 @@ toolpin i [query] [same options]
 toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
 toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
 toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
-toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
@@ -49,7 +49,11 @@ toolpin export-config <server-name> --client <client|all> [--version <server-ver
 ```
 
 `scan` runs advisory description checks against registry metadata and, with
-`--live`, the returned `tools/list` descriptions when the probe succeeds.
+`--live`, the returned `tools/list` descriptions when the probe succeeds. A live
+scan of a package target executes the package, so — like verification — it needs
+`--allow-execute`; without it the live tool-description scan is skipped and only
+the metadata scan runs. Remote targets are probed over the SSRF-guarded
+transport and never execute anything.
 Findings do not make `scan` fail. `verify` checks registry metadata and, unless
 skipped, live MCP tool metadata for the selected package or remote launch
 target. For package targets, capturing live tool metadata means executing the

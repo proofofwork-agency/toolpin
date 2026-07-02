@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
-import { safeFetch } from "../dist/safeFetch.js";
+import { pinnedFetch, safeFetch } from "../dist/safeFetch.js";
 
 // Flattens an error and its `cause` chain into one string. undici's fetch
 // wraps connection failures ("TypeError: fetch failed") around the underlying
@@ -62,6 +62,40 @@ test("safeFetch connects through the pinned connect-time lookup", async () => {
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "pinned ok");
     assert.ok(lookups >= 1, "expected the connection to resolve through the injected lookup");
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("pinnedFetch refuses to follow a redirect (blocks 3xx to a private IP literal)", async () => {
+  // undici does not run the connect-time lookup hook for IP-literal hosts, so a
+  // followed redirect to http://169.254.169.254 would bypass the pin. pinnedFetch
+  // must refuse the redirect outright, exactly like safeFetch.
+  const server = http.createServer((request, response) => {
+    response.writeHead(302, { Location: "http://169.254.169.254/latest/meta-data" });
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const local = async () => [{ address: "127.0.0.1", family: 4 }];
+
+  try {
+    await assert.rejects(
+      // Internal seam lets the test reach the local fixture; production callers
+      // pass only (url, init) and get strict HTTPS + public-only behavior.
+      pinnedFetch(`http://redirect.invalid:${port}/`, undefined, {
+        lookup: local,
+        allowPrivateHosts: true,
+        allowHttp: true,
+      }),
+      (error) => {
+        // undici surfaces this as "fetch failed" caused by "unexpected redirect";
+        // require the redirect cause so a mere connection failure cannot false-pass.
+        assert.match(messageChain(error), /redirect/i);
+        return true;
+      },
+    );
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

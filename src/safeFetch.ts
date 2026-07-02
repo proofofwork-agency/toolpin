@@ -96,14 +96,32 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   return undiciFetch(url, { ...init, dispatcher: pinnedDispatcher(allowPrivateHosts, lookupImpl) });
 }
 
+// Internal seam used only by tests to reach a local fixture; production callers
+// (tester.ts) invoke pinnedFetch as a bare FetchLike and never set these.
+export interface PinnedFetchInternalOptions {
+  lookup?: Lookup;
+  allowPrivateHosts?: boolean;
+  allowHttp?: boolean;
+}
+
 // Fetch for MCP remote-probe transports: preflights every request URL and pins
 // the connection to the vetted addresses. Loopback probe targets keep the
 // platform fetch (they are intentional local fixtures) — the caller makes that
 // choice per URL (see tester.ts).
-export async function pinnedFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+//
+// redirect:"error" is load-bearing, not cosmetic: undici does NOT run the
+// connect-time lookup hook for IP-literal hosts, so a public endpoint that
+// answers 3xx with `Location: http://169.254.169.254/...` (or any private IP
+// literal) would otherwise be followed straight past the pin. Refusing
+// redirects — exactly as safeFetch does — closes that hop; a probe target must
+// be a stable final URL. If redirect support is ever needed, it must
+// re-run assertSafeUrl on every hop before connecting.
+export async function pinnedFetch(input: string | URL, init?: RequestInit, internal: PinnedFetchInternalOptions = {}): Promise<Response> {
   const url = new URL(input);
-  await assertSafeUrl(url);
-  return undiciFetch(url, { ...(init ?? {}), dispatcher: pinnedDispatcher(false, lookup) });
+  const lookupImpl = internal.lookup ?? lookup;
+  const allowPrivateHosts = internal.allowPrivateHosts ?? false;
+  await assertSafeUrl(url, { allowHttp: internal.allowHttp, allowPrivateHosts, lookup: lookupImpl });
+  return undiciFetch(url, { ...(init ?? {}), redirect: "error", dispatcher: pinnedDispatcher(allowPrivateHosts, lookupImpl) });
 }
 
 export async function safeFetchBuffer(input: string | URL, options: SafeFetchOptions = {}): Promise<Buffer> {

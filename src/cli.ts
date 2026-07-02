@@ -447,18 +447,31 @@ async function auditServer(rest: string[]): Promise<void> {
 
 async function scan(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]");
+  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]");
 
   const server = await findServer(rest, name);
   const generatedAt = new Date().toISOString();
   const scans: ToolDescriptionScan[] = [scanServerMetadata(server, generatedAt)];
   let liveProbe;
+  let liveProbeSkipped: string | undefined;
   if (hasFlag(rest, "--live")) {
-    liveProbe = await testServer(server, numberFlag(rest, "--timeout", 15000));
-    if (liveProbe.ok) {
-      scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
-    } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
-      console.error(`Live probe skipped tool-description scan: ${liveProbe.message}`);
+    // A live probe of a package target executes the package (npx/uvx/docker/...).
+    // Like verification, scan must not execute untrusted code implicitly; require
+    // --allow-execute. Remote targets connect over the SSRF-guarded transport and
+    // never execute anything, so they always probe.
+    const isPackageTarget = selectLaunchTarget(server)?.kind === "package";
+    if (isPackageTarget && !hasFlag(rest, "--allow-execute")) {
+      liveProbeSkipped = "live tool-description scan requires executing the package; rerun with --allow-execute";
+      if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
+        console.error(`Live probe skipped: ${liveProbeSkipped}. Metadata scan still ran.`);
+      }
+    } else {
+      liveProbe = await testServer(server, numberFlag(rest, "--timeout", 15000));
+      if (liveProbe.ok) {
+        scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
+      } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
+        console.error(`Live probe skipped tool-description scan: ${liveProbe.message}`);
+      }
     }
   }
 
@@ -474,7 +487,7 @@ async function scan(rest: string[]): Promise<void> {
         version: server.version,
         registrySource: server.registrySource,
       },
-      liveProbe: liveProbe ? { ok: liveProbe.ok, message: liveProbe.message, toolCount: liveProbe.tools.length } : undefined,
+      liveProbe: liveProbe ? { ok: liveProbe.ok, message: liveProbe.message, toolCount: liveProbe.tools.length } : (liveProbeSkipped ? { ok: false, skipped: true, message: liveProbeSkipped, toolCount: 0 } : undefined),
       scannedDescriptions: scans.reduce((count, entry) => count + entry.scannedDescriptions, 0),
       findings,
       scans,
@@ -1449,7 +1462,7 @@ function commandHelp(command: string): void {
       console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--allow-execute] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
       return;
     case "scan":
-      console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
+      console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
       return;
     case "verify":
       console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]");
