@@ -97,6 +97,7 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
       "--source",
       TEST_SOURCE,
       "--verify",
+      "--allow-execute",
       "--update-lock",
       "--no-policy",
       "--timeout",
@@ -124,6 +125,7 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
         "--source",
         TEST_SOURCE,
         "--verify",
+        "--allow-execute",
         "--no-policy",
         "--timeout",
         "5000",
@@ -136,6 +138,29 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
       },
     );
     assert.equal(await readFile("mcp-lock.json", "utf8"), before);
+
+    // Without --allow-execute, CI must refuse up front to re-verify live pins
+    // on a package entry (that would execute it), with an actionable message.
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [
+        CLI,
+        "ci",
+        "--file",
+        "mcp-lock.json",
+        "--source",
+        TEST_SOURCE,
+        "--verify",
+        "--no-policy",
+        "--timeout",
+        "5000",
+      ], { env }),
+      (error) => {
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        assert.match(stderr, /re-verifying them executes the package/);
+        assert.match(stderr, /--allow-execute/);
+        return true;
+      },
+    );
   });
 });
 
@@ -203,6 +228,7 @@ setTimeout(() => process.exit(0), 250);
       const started = Date.now();
       const report = await verifyServer(packageServer("cargo", { identifier: "tpn-slow-fixture" }), {
         livePackageProbe: true,
+        allowExecute: true,
         timeoutMs: 25,
       });
 
@@ -238,6 +264,7 @@ test("verifyServer live-probes every supported stdio package launcher", async ()
       for (const [registryType, overrides] of cases) {
         const report = await verifyServer(packageServer(registryType, overrides), {
           livePackageProbe: true,
+          allowExecute: true,
           timeoutMs: 5000,
           lookup: publicLookup,
           fetch: npmIntegrityFetch,
@@ -283,6 +310,7 @@ test("live package probe does not leak ambient env vars to the spawned server", 
     try {
       const report = await verifyServer(packageServer("npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }), {
         livePackageProbe: true,
+        allowExecute: true,
         timeoutMs: 5000,
         lookup: publicLookup,
         fetch: npmIntegrityFetch,
@@ -301,6 +329,52 @@ test("live package probe does not leak ambient env vars to the spawned server", 
       restoreEnv("TOOLPIN_TEST_TOOLS", originalToolsPath);
       restoreEnv("TOOLPIN_TEST_INVOCATIONS", originalInvocationsPath);
       restoreEnv("TOOLPIN_SECRET_SENTINEL", originalSentinel);
+    }
+  });
+});
+
+test("live package probe does not execute the package without allowExecute", async () => {
+  await withTempCwd(async (dir) => {
+    const fixture = await writeStdioFixture(dir);
+    await writeToolState(fixture.toolsPath, [tool("alpha", "Alpha package tool")]);
+    const originalPath = process.env.PATH;
+    const originalToolsPath = process.env.TOOLPIN_TEST_TOOLS;
+    const originalInvocationsPath = process.env.TOOLPIN_TEST_INVOCATIONS;
+    process.env.PATH = `${fixture.binDir}${path.delimiter}${originalPath ?? ""}`;
+    process.env.TOOLPIN_TEST_TOOLS = fixture.toolsPath;
+    process.env.TOOLPIN_TEST_INVOCATIONS = fixture.invocationsPath;
+    try {
+      const report = await verifyServer(packageServer("npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }), {
+        livePackageProbe: true,
+        timeoutMs: 5000,
+        lookup: publicLookup,
+        fetch: npmIntegrityFetch,
+      });
+
+      // Execution is denied by default: verification still succeeds on network
+      // artifact checks but must not spawn the package.
+      assert.equal(report.ok, true, report.issues.map((issue) => issue.message).join("; "));
+      assert.ok(
+        report.issues.some((issue) => issue.code === "package_execution_skipped" && issue.severity === "warning"),
+        "expected a package_execution_skipped warning",
+      );
+      assert.ok(
+        report.evidence.some((entry) => entry.code === "tool_description_hash" && entry.status === "unavailable"),
+        "expected tool_description_hash to be unavailable without execution",
+      );
+      assert.ok(!report.badges.includes("tool-description-pinned"), "live pins must not appear without execution");
+
+      // The wrapper only creates the invocations file when something executes,
+      // so a missing file is exactly the expected outcome here.
+      const invocations = await readInvocations(fixture.invocationsPath).catch((error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+      assert.equal(invocations.length, 0, `package was executed without --allow-execute: ${JSON.stringify(invocations)}`);
+    } finally {
+      restoreEnv("PATH", originalPath);
+      restoreEnv("TOOLPIN_TEST_TOOLS", originalToolsPath);
+      restoreEnv("TOOLPIN_TEST_INVOCATIONS", originalInvocationsPath);
     }
   });
 });
@@ -324,6 +398,7 @@ test("TOOLPIN_SPAWN_ENV_ALLOW opts a named var back into the spawned server env"
     try {
       const report = await verifyServer(packageServer("npm", { identifier: "@toolpin/test-mcp-server", version: "1.0.0" }), {
         livePackageProbe: true,
+        allowExecute: true,
         timeoutMs: 5000,
         lookup: publicLookup,
         fetch: npmIntegrityFetch,

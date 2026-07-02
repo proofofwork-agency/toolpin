@@ -322,6 +322,9 @@ async function executeInteractiveAction(selection: InteractiveSelection): Promis
     verificationReport = await verifyServer(server, {
       liveRemoteProbe: true,
       livePackageProbe: true,
+      // The guided flow never executes a package implicitly; verification uses
+      // network artifact checks and remote probes only.
+      allowExecute: false,
       timeoutMs: options.timeoutMs,
       requireVerified: options.requireVerified,
     });

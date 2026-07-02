@@ -14,6 +14,12 @@ import { TRUSTED_MCPB_SOURCES, canonicalizeOciRef, trustedMcpbSourceHost, truste
 export interface VerificationOptions {
   liveRemoteProbe?: boolean;
   livePackageProbe?: boolean;
+  /**
+   * Explicit opt-in to execute the server package for the live probe.
+   * Without it, verification runs only network artifact checks and connects to
+   * remote endpoints; it never spawns npx/uvx/docker/etc. for the target.
+   */
+  allowExecute?: boolean;
   timeoutMs?: number;
   requireVerified?: boolean;
   fetch?: SafeFetchOptions["fetch"];
@@ -63,8 +69,24 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
   } else if (launch.kind === "package") {
     await verifyPackagePins(launch.pkg, issues, badges, evidence, generatedAt, options);
     if (options.livePackageProbe === true) {
-      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package", options.timeoutMs);
-      if (pinned) capabilityManifest = pinned;
+      // Executing the package is a separate trust decision from verifying it:
+      // the artifact checks above never run target code, but the live probe
+      // spawns the (possibly unverified) server. Require an explicit opt-in.
+      if (options.allowExecute === true) {
+        const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package", options.timeoutMs);
+        if (pinned) capabilityManifest = pinned;
+      } else {
+        issues.push({
+          severity: "warning",
+          code: "package_execution_skipped",
+          message: "Live package probe skipped: ToolPin does not execute server packages during verification without --allow-execute. Network artifact checks still ran.",
+        });
+        evidence.push({
+          code: "tool_description_hash",
+          status: "unavailable",
+          message: "Package tools/list hashing requires executing the package; rerun with --allow-execute to capture live capability pins.",
+        });
+      }
     }
   } else {
     badges.push("remote-target");

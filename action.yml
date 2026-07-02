@@ -54,6 +54,10 @@ inputs:
     description: Pass --skip-live-verification when verify is enabled.
     required: false
     default: "false"
+  allow-execute:
+    description: Pass --allow-execute so live verification may execute package targets (required to re-verify live capability pins on package entries).
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -98,6 +102,10 @@ runs:
           cmd+=(--skip-live-verification)
         fi
 
+        if [[ "$TOOLPIN_ALLOW_EXECUTE" == "true" ]]; then
+          cmd+=(--allow-execute)
+        fi
+
         if [[ -n "$TOOLPIN_EXPECT_DIGEST" ]]; then
           cmd+=(--expect-digest "$TOOLPIN_EXPECT_DIGEST")
         fi
@@ -132,3 +140,4 @@ runs:
         TOOLPIN_NO_POLICY: ${{ inputs.no-policy }}
         TOOLPIN_TIMEOUT: ${{ inputs.timeout }}
         TOOLPIN_SKIP_LIVE_VERIFICATION: ${{ inputs.skip-live-verification }}
+        TOOLPIN_ALLOW_EXECUTE: ${{ inputs.allow-execute }}

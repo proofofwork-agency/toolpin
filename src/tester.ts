@@ -22,6 +22,27 @@ export interface ServerTestResult {
   message: string;
 }
 
+export interface ServerLaunchPreview {
+  kind: "remote" | "stdio";
+  target: string;
+  envNames: string[];
+}
+
+// What `toolpin test` is about to do, so the CLI can print the exact command
+// (or remote endpoint) and env var names before anything is executed.
+export function previewServerLaunch(server: NormalizedServer): ServerLaunchPreview | undefined {
+  const launch = selectLaunchTarget(server);
+  if (!launch) return undefined;
+  if (launch.kind === "remote") {
+    const envNames = (launch.remote.headers ?? [])
+      .map((header) => (typeof header.env === "string" ? header.env : extractEnvName(typeof header.value === "string" ? header.value : undefined) ?? header.name))
+      .filter((name): name is string => typeof name === "string" && name.length > 0);
+    return { kind: "remote", target: launch.remote.url, envNames: [...new Set(envNames)] };
+  }
+  const local = packageToStdio(launch.pkg);
+  return { kind: "stdio", target: [local.command, ...local.args].join(" "), envNames: Object.keys(local.env) };
+}
+
 export async function testServer(server: NormalizedServer, timeoutMs = 15000): Promise<ServerTestResult> {
   const startedAt = Date.now();
   const launch = selectLaunchTarget(server);

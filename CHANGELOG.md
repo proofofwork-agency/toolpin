@@ -14,6 +14,17 @@
   DNS). This blocks cloud-metadata (`169.254.169.254`) and private-host access
   via registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`.
   Self-hosted registries can opt back in with `allowHttp` / `allowPrivateHosts`.
+- Security (execution opt-in): verification never executes package targets
+  implicitly anymore. `verify`, `lock --verify`, `install --verify`,
+  `ci --verify`, `audit --verify`, and the guided interactive flow run network
+  artifact checks and remote probes only; spawning the package for live
+  `tools/list` hashing (`npx`, `uvx`, `docker run`, ...) now requires the
+  explicit `--allow-execute` flag (action input `allow-execute: "true"`).
+  Without it, reports carry a `package_execution_skipped` warning and the live
+  capability pin is `unavailable`; `ci` refuses up front to re-verify live
+  capability pins on package entries. `toolpin test` remains an explicit
+  execution command and now prints the exact command and env var names before
+  launching.
 - Security (shell preview): the TUI/interactive command previews single-quote
   untrusted server names and query text so a copied command cannot trigger
   `$(...)`, backtick, or `$VAR` expansion.
