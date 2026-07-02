@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { selectLaunchTarget } from "./config.js";
-import { assertSafeUrl, isLoopbackHostname } from "./safeFetch.js";
+import { assertSafeUrl, isLoopbackHostname, pinnedFetch } from "./safeFetch.js";
 import type { NormalizedServer, RegistryRemote } from "./types.js";
 import { TOOLPIN_VERSION } from "./version.js";
 
@@ -39,9 +39,10 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
         return fail(server, `remote:${launch.remote.type}`, startedAt, `Missing required header/env value: ${headers.missing.join(", ")}`);
       }
 
+      const probeFetch = remoteProbeFetch(launch.remote.url);
       const transport = launch.remote.type === "sse"
-        ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } })
-        : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } });
+        ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values }, fetch: probeFetch })
+        : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values }, fetch: probeFetch });
 
       client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to remote MCP server.");
@@ -98,9 +99,10 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
   try {
     if (launch.kind === "remote") {
       await assertRemoteProbeUrlSafe(launch.url);
+      const probeFetch = remoteProbeFetch(launch.url);
       const transport = launch.type === "sse"
-        ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } })
-        : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } });
+        ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers }, fetch: probeFetch })
+        : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers }, fetch: probeFetch });
 
       client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to installed remote MCP server.");
@@ -235,6 +237,14 @@ async function assertRemoteProbeUrlSafe(rawUrl: string): Promise<void> {
   const url = new URL(rawUrl);
   if (isLoopbackHostname(url.hostname)) return;
   await assertSafeUrl(url);
+}
+
+// Non-loopback probes route every transport request through pinnedFetch so the
+// SSRF check is enforced at connect time (DNS rebinding cannot swap in a
+// private address after the preflight). Loopback targets are intentional local
+// fixtures and keep the platform fetch.
+function remoteProbeFetch(rawUrl: string): typeof pinnedFetch | undefined {
+  return isLoopbackHostname(new URL(rawUrl).hostname) ? undefined : pinnedFetch;
 }
 
 function resolvePackageEnv(variables: Array<{ name: string; default?: string; isRequired?: boolean }>): { values: Record<string, string>; missing: string[] } {

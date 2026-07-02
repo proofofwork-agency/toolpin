@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
+import { Agent, fetch as undiciFetch } from "undici";
 
 type Lookup = (hostname: string, options: { all: true; verbatim: true }) => Promise<Array<{ address: string }>>;
 
@@ -23,6 +24,50 @@ export interface UrlSafetyOptions {
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 
+// Connect-time DNS pinning. undici resolves hostnames through this lookup when
+// it builds the socket, so the addresses vetted here are exactly the addresses
+// the connection uses. A hostname whose DNS answer flips between the preflight
+// check and the connection (DNS rebinding) is re-validated here and refused.
+function makePinnedLookup(lookupImpl: Lookup, allowPrivateHosts: boolean): LookupFunction {
+  return (hostname, options, callback) => {
+    lookupImpl(hostname, { all: true, verbatim: true })
+      .then((addresses) => {
+        const usable = addresses.filter((entry) => isIP(entry.address) !== 0);
+        const vetted = allowPrivateHosts ? usable : usable.filter((entry) => !isBlockedIp(entry.address));
+        if (vetted.length === 0) {
+          callback(new Error(`Refusing private or reserved IP address for ${hostname} at connect time`), []);
+          return;
+        }
+        const results = vetted.map((entry) => ({ address: entry.address, family: isIP(entry.address) }));
+        if (options.all) {
+          callback(null, results);
+        } else {
+          callback(null, results[0].address, results[0].family);
+        }
+      })
+      .catch((error: unknown) => {
+        callback(error instanceof Error ? error : new Error(String(error)), []);
+      });
+  };
+}
+
+const pinnedAgents = new Map<string, Agent>();
+
+function pinnedDispatcher(allowPrivateHosts: boolean, lookupImpl: Lookup): Agent {
+  const connect = { lookup: makePinnedLookup(lookupImpl, allowPrivateHosts) };
+  if (lookupImpl !== lookup) {
+    // An injected lookup is a test seam; keep those agents from holding idle
+    // keep-alive sockets open across the test process.
+    return new Agent({ connect, keepAliveTimeout: 10, keepAliveMaxTimeout: 10 });
+  }
+  const key = allowPrivateHosts ? "allow-private" : "strict";
+  const existing = pinnedAgents.get(key);
+  if (existing) return existing;
+  const agent = new Agent({ connect });
+  pinnedAgents.set(key, agent);
+  return agent;
+}
+
 export async function safeFetch(input: string | URL, options: SafeFetchOptions = {}): Promise<Response> {
   const url = new URL(input);
   await assertSafeUrl(url, {
@@ -36,16 +81,29 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
     maxBytes: _maxBytes,
     allowedHosts: _allowedHosts,
     allowHttp: _allowHttp,
-    allowPrivateHosts: _allowPrivateHosts,
-    fetch: fetchImpl = fetch,
-    lookup: _lookup,
+    allowPrivateHosts = false,
+    fetch: fetchImpl,
+    lookup: lookupImpl = lookup,
     ...fetchOptions
   } = options;
-  return fetchImpl(url, {
+  const init = {
     ...fetchOptions,
-    redirect: "error",
+    redirect: "error" as const,
     signal: fetchOptions.signal ?? AbortSignal.timeout(timeoutMs),
-  });
+  };
+  // An injected fetch is a test seam and cannot carry an undici dispatcher.
+  if (fetchImpl) return fetchImpl(url, init);
+  return undiciFetch(url, { ...init, dispatcher: pinnedDispatcher(allowPrivateHosts, lookupImpl) });
+}
+
+// Fetch for MCP remote-probe transports: preflights every request URL and pins
+// the connection to the vetted addresses. Loopback probe targets keep the
+// platform fetch (they are intentional local fixtures) — the caller makes that
+// choice per URL (see tester.ts).
+export async function pinnedFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  const url = new URL(input);
+  await assertSafeUrl(url);
+  return undiciFetch(url, { ...(init ?? {}), dispatcher: pinnedDispatcher(false, lookup) });
 }
 
 export async function safeFetchBuffer(input: string | URL, options: SafeFetchOptions = {}): Promise<Buffer> {
@@ -66,15 +124,14 @@ export async function safeFetchJson<T>(input: string | URL, options: SafeFetchOp
   return JSON.parse(bytes.toString("utf8")) as T;
 }
 
-// KNOWN LIMITATION (DNS rebinding / TOCTOU): this validates the addresses the
-// hostname resolves to *now*, but the subsequent fetch()/transport resolves the
-// hostname again independently. A hostname whose DNS answer flips from a public
-// address (passes here) to a private/metadata address (used by the real
-// connection) can still be reached. Closing this fully requires pinning the
-// resolved address into the connection (e.g. an undici dispatcher or node:https
-// Agent with a `lookup` that returns the vetted IP) for every caller. This
-// preflight still blocks the common cases (literal private IPs, non-HTTPS,
-// static private DNS) and is a strict improvement over an unguarded fetch.
+// Layer 1 of the two-layer SSRF guard: validate the scheme, the optional host
+// allowlist, and the addresses the hostname resolves to at check time. Layer 2
+// lives in safeFetch/pinnedFetch: the undici dispatcher's connect-time lookup
+// (makePinnedLookup) re-validates every resolved address when the socket is
+// built, so the connection only ever receives vetted IPs. Layer 2 is what
+// closes DNS rebinding — a hostname whose answer flips to a private/metadata
+// address between this check and the connection is refused at connect time.
+// Callers that inject a custom fetch (test seams) bypass layer 2.
 export async function assertSafeUrl(url: URL, options: UrlSafetyOptions = {}): Promise<void> {
   const { allowedHosts, allowHttp = false, allowPrivateHosts = false, lookup: lookupImpl = lookup } = options;
   if (url.protocol !== "https:" && !(allowHttp && url.protocol === "http:")) {

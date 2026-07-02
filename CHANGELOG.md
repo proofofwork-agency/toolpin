@@ -26,11 +26,16 @@
   installed launcher.
 - Fix (CLI parsing): value flags reject a missing or flag-like value and numeric
   flags reject non-integers rather than silently falling back.
-- Known limitation: the `safeFetch` URL guard validates DNS at check time but
-  does not yet pin the resolved address into the connection, so a DNS-rebinding
-  host can still bypass the private-address check. Literal private IPs, non-HTTPS,
-  and static private DNS are blocked; connection-time IP pinning is tracked as a
-  follow-up.
+- Security (DNS rebinding): ToolPin-initiated HTTP(S) connections now pin the
+  vetted DNS answer into the socket. `safeFetch` routes through an `undici`
+  dispatcher whose connect-time lookup re-validates every resolved address, and
+  remote MCP probe transports (SSE / streamable HTTP) use the same pinned fetch
+  for non-loopback targets. A hostname whose DNS answer flips from a public to
+  a private/metadata address between the preflight check and the connection is
+  refused when the socket is built, closing the rebinding TOCTOU in the
+  private-address firewall. (Servers spawned for live probes still perform
+  their own networking; that surface is governed by the probe env isolation
+  above, not by this firewall.)
 
 ## 0.3.2
 
