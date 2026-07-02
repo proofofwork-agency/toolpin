@@ -236,6 +236,53 @@ test("CLI rejects unknown double-dash flags with a clear parser error", async ()
   });
 });
 
+test("default install leaves a matching mcp-lock.json byte-for-byte unchanged", async () => {
+  await withTempCwd(async () => {
+    await writeRegistryCache([
+      packageServer({
+        name: "@proofofwork-agency/contextrelay",
+        identifier: "@proofofwork-agency/contextrelay",
+        runtimeHint: "bun",
+        packageArguments: ["codex-mcp", "server"],
+        clientSupport: contextRelayClientSupport(),
+      }),
+    ]);
+
+    const installArgs = [
+      CLI, "install", "@proofofwork-agency/contextrelay",
+      "--client", "codex", "--scope", "project", "--source", "official", "--no-policy",
+    ];
+
+    await execFileAsync(process.execPath, [...installArgs, "--update-lock"]);
+    const first = await readFile("mcp-lock.json", "utf8");
+
+    // A second default install (no --update-lock) with matching metadata must
+    // not rewrite the lockfile — otherwise lockedAt/integrity churn would break
+    // signed / --expect-digest lockfiles.
+    const rerun = await execFileAsync(process.execPath, installArgs);
+    const second = await readFile("mcp-lock.json", "utf8");
+
+    assert.equal(second, first, "default install must not rewrite a matching lockfile");
+    assert.match(rerun.stdout, /unchanged \(matches lock\)/);
+  });
+});
+
+test("CLI value flags reject a missing or flag-like value", async () => {
+  await withTempCwd(async () => {
+    // A value flag immediately followed by another flag must fail loudly
+    // instead of consuming the next flag as its value.
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "list", "--scope", "--json"]),
+      /--scope requires a value/,
+    );
+    // Non-integer numeric flags are rejected rather than silently falling back.
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "search", "github", "--limit", "abc"]),
+      /--limit requires a non-negative integer/,
+    );
+  });
+});
+
 test("CLI accepts --flag=value syntax and suggests flag typos", async () => {
   await withTempCwd(async () => {
     const { stdout } = await execFileAsync(process.execPath, [CLI, "list", "--scope=global", "--client=continue", "--json"]);

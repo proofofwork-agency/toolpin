@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { canonicalJson } from "./canonicalJson.js";
+import { DEFAULT_POLICY_PATH } from "./constants.js";
 import { isClientName, type ClientName } from "./config.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import type { InstallPlan } from "./plan.js";
 import { hasFreshTrustedArtifactEvidence, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
 import type { RegistrySourceId, TrustTier } from "./types.js";
+import { isRecord } from "./util.js";
 
 export interface PolicyConfig {
   version?: 1;
@@ -57,7 +59,7 @@ const POLICY_KEYS = new Set([
   "requireMcpbSha256",
 ]);
 
-export async function readPolicy(path = ".toolpin/policy.json"): Promise<PolicyConfig | undefined> {
+export async function readPolicy(path = DEFAULT_POLICY_PATH): Promise<PolicyConfig | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -77,7 +79,7 @@ export async function readPolicy(path = ".toolpin/policy.json"): Promise<PolicyC
   }
 }
 
-export async function readPolicyDigest(path = ".toolpin/policy.json"): Promise<string | undefined> {
+export async function readPolicyDigest(path = DEFAULT_POLICY_PATH): Promise<string | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -99,7 +101,7 @@ export async function readPolicyDigest(path = ".toolpin/policy.json"): Promise<s
   return `sha256-${createHash("sha256").update(canonicalJson(policy)).digest("base64")}`;
 }
 
-export async function enforcePolicy(plan: InstallPlan, path = ".toolpin/policy.json"): Promise<PolicyReport> {
+export async function enforcePolicy(plan: InstallPlan, path = DEFAULT_POLICY_PATH): Promise<PolicyReport> {
   const policy = await readPolicy(path);
   return evaluatePolicy(plan, policy);
 }
@@ -358,8 +360,4 @@ function booleanValue(value: unknown, field: string, path: string): boolean | un
     throw new Error(`Invalid policy schema in ${path}: ${field} must be a boolean`);
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

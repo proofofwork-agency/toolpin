@@ -39,7 +39,8 @@
     "tpn": "dist/cli.js"
   },
   "scripts": {
-    "prebuild": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "gen:version": "node scripts/gen-version.mjs",
+    "prebuild": "npm run gen:version && node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.json",
     "postbuild": "node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\"",
     "docs:build": "docusaurus build website",
@@ -73,6 +74,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^7.1.0",
     "react": "^19.2.7",
+    "undici": "^6.27.0",
     "yaml": "^2.9.0"
   }
 }

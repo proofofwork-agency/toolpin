@@ -202,9 +202,12 @@ posture:
 credentials for live MCP probes. Use `skip-live-verification: "true"` when you
 want artifact/metadata verification without a live `tools/list` probe. Treat
 that as a conscious downgrade: it skips capability hashing and CI rejects it for
-entries that already have live capability pins. The signature/public-key pair
-(`signature` + `public-key`) must always be passed together; the action fails
-closed if only one is supplied.
+entries that already have live capability pins. Live probes of package targets
+execute the package (`npx`, `uvx`, `docker run`, ...), which verification never
+does implicitly — add `allow-execute: "true"` to permit it; CI refuses to
+re-verify live capability pins on package entries without it. The
+signature/public-key pair (`signature` + `public-key`) must always be passed
+together; the action fails closed if only one is supplied.
 
 ## What fails
 

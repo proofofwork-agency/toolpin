@@ -120,6 +120,9 @@ export interface RegistrySourceInfo {
   setupHint?: string;
   cacheEntries?: number;
   cachePageInfo?: RegistryFetchPageInfo;
+  /** Opt-in escape hatches for private/self-hosted registries (default: off). */
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
 }
 
 export interface RegistryFetchPageInfo {

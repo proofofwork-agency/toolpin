@@ -1,4 +1,5 @@
 import { readInstalledServerConfig } from "./doctor.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile } from "./plan.js";
 import type { ClientName } from "./config.js";
@@ -35,7 +36,7 @@ const SECRET_PREFIXES: Array<{ label: string; pattern: RegExp }> = [
   { label: "private key", pattern: /^-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
 ];
 
-export async function auditSecrets(lockfilePath = "mcp-lock.json", scope: SecretAuditScope = "all"): Promise<SecretAuditReport> {
+export async function auditSecrets(lockfilePath = DEFAULT_LOCKFILE_PATH, scope: SecretAuditScope = "all"): Promise<SecretAuditReport> {
   const lockfile = await readLockfile(lockfilePath);
   const findings: SecretAuditFinding[] = [];
   const entries = Object.entries(lockfile.servers);

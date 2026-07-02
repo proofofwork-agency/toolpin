@@ -28,20 +28,20 @@ toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit
 toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
 toolpin i [query] [same options]
 toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
-toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
+toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
 toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
-toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute]
 toolpin test <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
 toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
@@ -49,10 +49,20 @@ toolpin export-config <server-name> --client <client|all> [--version <server-ver
 ```
 
 `scan` runs advisory description checks against registry metadata and, with
-`--live`, the returned `tools/list` descriptions when the probe succeeds.
+`--live`, the returned `tools/list` descriptions when the probe succeeds. A live
+scan of a package target executes the package, so — like verification — it needs
+`--allow-execute`; without it the live tool-description scan is skipped and only
+the metadata scan runs. Remote targets are probed over the SSRF-guarded
+transport and never execute anything.
 Findings do not make `scan` fail. `verify` checks registry metadata and, unless
 skipped, live MCP tool metadata for the selected package or remote launch
-target. For packages, OCI verification requires a valid digest
+target. For package targets, capturing live tool metadata means executing the
+package (`npx`, `uvx`, `docker run`, ...); ToolPin never does that implicitly.
+Without `--allow-execute`, verification runs the network artifact checks,
+records a `package_execution_skipped` warning, and leaves the live capability
+pin unavailable. Remote targets are probed over HTTPS without executing
+anything, and `toolpin test` remains an explicit execution command that prints
+the exact command and env var names before launching. For packages, OCI verification requires a valid digest
 pin and best-effort resolves the registry manifest digest when reachable; MCPB
 verification requires a valid `fileSha256` and best-effort recomputes bytes when
 the bundle is available from a code-allowlisted HTTPS artifact host. npm package
@@ -113,11 +123,11 @@ must match `mcp-lock.json`.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
 ```
 

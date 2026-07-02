@@ -53,5 +53,9 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 - Treat `--skip-live-verification` as a conscious downgrade: it skips live
   `tools/list` hashing and cannot be used for CI entries that already have live
   capability pins.
+- Treat `--allow-execute` as a conscious escalation: without it, verification
+  never executes package targets (no `npx`/`uvx`/`docker run`), so live
+  capability pins on package entries require passing it explicitly — in CI,
+  set the action input `allow-execute: "true"`.
 - Use runtime controls from clients, gateways, containers, and secret managers
   for defenses ToolPin does not provide.

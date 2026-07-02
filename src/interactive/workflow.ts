@@ -1,6 +1,7 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
 import { installableClientsForServer } from "../clientSupport.js";
-import { DEFAULT_POLICY_PATH } from "../constants.js";
+import { DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS } from "../constants.js";
+import { shellQuote } from "../shellQuote.js";
 import { buildInstallPlan, type Lockfile } from "../plan.js";
 import { searchServers } from "../search.js";
 import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
@@ -80,7 +81,7 @@ export const DEFAULT_INTERACTIVE_OPTIONS: Omit<InteractiveOptions, "query"> = {
   limit: 10,
   verify: false,
   requireVerified: false,
-  timeoutMs: 15000,
+  timeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
   policyPath: DEFAULT_POLICY_PATH,
   enforcePolicy: true,
 };
@@ -207,7 +208,7 @@ export function buildCommandPreview(options: CommandPreviewOptions): string {
   if (options.verify && action !== "export-config") {
     args.push("--verify");
     if (options.requireVerified) args.push("--require-verified");
-    if (options.timeoutMs && options.timeoutMs !== 15000) args.push("--timeout", String(options.timeoutMs));
+    if (options.timeoutMs && options.timeoutMs !== DEFAULT_PROBE_TIMEOUT_MS) args.push("--timeout", String(options.timeoutMs));
   }
   if (action === "install-lock") {
     if (options.enforcePolicy === false) args.push("--no-policy");
@@ -276,11 +277,6 @@ function clientSupportLabel(server: NormalizedServer, client: InteractiveClient,
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-}
-
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_./:@=-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function escapeRegExp(value: string): string {

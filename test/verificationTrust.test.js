@@ -46,3 +46,32 @@ test("safeFetch blocks non-HTTPS and private hosts before fetching", async () =>
   await assert.rejects(() => assertSafeUrl(new URL("https://[::ffff:a9fe:a9fe]")), /private or reserved/);
   await assert.rejects(() => assertSafeUrl(new URL("https://[::7f00:1]")), /private or reserved/);
 });
+
+test("assertSafeUrl honors explicit http/private opt-ins for self-hosted registries", async () => {
+  // Default posture: reject http and private hosts.
+  await assert.rejects(() => assertSafeUrl(new URL("http://registry.internal/v0")), /non-HTTPS/);
+  await assert.rejects(() => assertSafeUrl(new URL("https://10.0.0.5/v0")), /private or reserved/);
+
+  // Opt-in relaxes exactly and only what was requested.
+  await assert.doesNotReject(() => assertSafeUrl(new URL("https://10.0.0.5/v0"), { allowPrivateHosts: true }));
+  await assert.doesNotReject(() => assertSafeUrl(new URL("http://10.0.0.5/v0"), { allowHttp: true, allowPrivateHosts: true }));
+  // allowHttp alone still blocks a private host; allowPrivateHosts alone still blocks http.
+  await assert.rejects(() => assertSafeUrl(new URL("http://10.0.0.5/v0"), { allowHttp: true }), /private or reserved/);
+  await assert.rejects(() => assertSafeUrl(new URL("http://93.184.216.34/v0"), { allowPrivateHosts: true }), /non-HTTPS/);
+});
+
+test("safeFetch passes through only after the safety gate, honoring opt-ins", async () => {
+  const calls = [];
+  const fakeFetch = async (url) => {
+    calls.push(String(url));
+    return new Response("{}", { status: 200 });
+  };
+  // Blocked before fetch: fake fetch must never be called.
+  await assert.rejects(() => safeFetch("https://169.254.169.254/meta", { fetch: fakeFetch }), /private or reserved/);
+  assert.equal(calls.length, 0, "safeFetch must not reach the network for a blocked host");
+
+  // Allowed with opt-in.
+  const res = await safeFetch("http://10.1.2.3/registry", { fetch: fakeFetch, allowHttp: true, allowPrivateHosts: true });
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, ["http://10.1.2.3/registry"]);
+});

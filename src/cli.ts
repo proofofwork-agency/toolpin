@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { verifyFrozenInstall } from "./ci.js";
-import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, type ClientName } from "./config.js";
+import { clientsForScope, exportClientConfig, isClientName, PROJECT_CLIENTS, selectLaunchTarget, type ClientName } from "./config.js";
 import { codexTomlFromClientConfig } from "./codexToml.js";
 import { continueYamlFromClientConfig } from "./continueYaml.js";
 import { installableClientsForServer, type ToolPinClientSkip } from "./clientSupport.js";
@@ -10,7 +10,7 @@ import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, u
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
-import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_SIGNATURE_PATH } from "./constants.js";
+import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS, DEFAULT_SIGNATURE_PATH } from "./constants.js";
 import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest } from "./policy.js";
 import { CacheSchemaError, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, latestOnly, listRegistrySources, listRegistrySourceStatuses, normalizeEntries, readCache, readCacheMetadata, refreshCache, updateRegistrySourceEnabled } from "./registry.js";
 import { searchServers } from "./search.js";
@@ -19,10 +19,11 @@ import { auditSecrets } from "./secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog, scanSarifResults, verificationSarifResults } from "./sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "./signing.js";
 import { CYAN_COLOR, ERR_COLOR, MUTED_COLOR, OK_COLOR, WARN_COLOR, parseColorMode, terminalStyle } from "./terminalStyle.js";
-import { testServer } from "./tester.js";
+import { previewServerLaunch, testServer } from "./tester.js";
 import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustProfileScore, trustTier } from "./trust.js";
 import { localHttpRuntimeAdvisory } from "./runtimeAdvisory.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
+import { truncate } from "./util.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId, ToolDescriptionScan } from "./types.js";
@@ -55,6 +56,7 @@ const VALUE_FLAGS = new Set([
 const KNOWN_FLAGS = new Set([
   ...VALUE_FLAGS,
   "--all",
+  "--allow-execute",
   "--allow-hosted-directory-targets",
   "--dry-run",
   "--global",
@@ -386,7 +388,8 @@ async function audit(rest: string[]): Promise<void> {
           const verification = await verifyServer(server, {
             liveRemoteProbe: liveVerification,
             livePackageProbe: liveVerification,
-            timeoutMs: numberFlag(rest, "--timeout", 15000),
+            allowExecute: hasFlag(rest, "--allow-execute"),
+            timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
             requireVerified: hasFlag(rest, "--require-verified"),
           });
           verificationReports.push(verification);
@@ -430,7 +433,7 @@ async function audit(rest: string[]): Promise<void> {
 
 async function auditServer(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--live] [--json]");
+  if (!name) throw new Error("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--verify] [--allow-execute] [--require-verified] [--json]\n       toolpin audit server <server-name> [--live] [--json]");
   const server = await findServer(rest, name);
   const trust = scoreServer(server);
   if (hasFlag(rest, "--json")) {
@@ -445,18 +448,31 @@ async function auditServer(rest: string[]): Promise<void> {
 
 async function scan(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]");
+  if (!name) throw new Error("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]");
 
   const server = await findServer(rest, name);
   const generatedAt = new Date().toISOString();
   const scans: ToolDescriptionScan[] = [scanServerMetadata(server, generatedAt)];
   let liveProbe;
+  let liveProbeSkipped: string | undefined;
   if (hasFlag(rest, "--live")) {
-    liveProbe = await testServer(server, numberFlag(rest, "--timeout", 15000));
-    if (liveProbe.ok) {
-      scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
-    } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
-      console.error(`Live probe skipped tool-description scan: ${liveProbe.message}`);
+    // A live probe of a package target executes the package (npx/uvx/docker/...).
+    // Like verification, scan must not execute untrusted code implicitly; require
+    // --allow-execute. Remote targets connect over the SSRF-guarded transport and
+    // never execute anything, so they always probe.
+    const isPackageTarget = selectLaunchTarget(server)?.kind === "package";
+    if (isPackageTarget && !hasFlag(rest, "--allow-execute")) {
+      liveProbeSkipped = "live tool-description scan requires executing the package; rerun with --allow-execute";
+      if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
+        console.error(`Live probe skipped: ${liveProbeSkipped}. Metadata scan still ran.`);
+      }
+    } else {
+      liveProbe = await testServer(server, numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS));
+      if (liveProbe.ok) {
+        scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
+      } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
+        console.error(`Live probe skipped tool-description scan: ${liveProbe.message}`);
+      }
     }
   }
 
@@ -472,7 +488,7 @@ async function scan(rest: string[]): Promise<void> {
         version: server.version,
         registrySource: server.registrySource,
       },
-      liveProbe: liveProbe ? { ok: liveProbe.ok, message: liveProbe.message, toolCount: liveProbe.tools.length } : undefined,
+      liveProbe: liveProbe ? { ok: liveProbe.ok, message: liveProbe.message, toolCount: liveProbe.tools.length } : (liveProbeSkipped ? { ok: false, skipped: true, message: liveProbeSkipped, toolCount: 0 } : undefined),
       scannedDescriptions: scans.reduce((count, entry) => count + entry.scannedDescriptions, 0),
       findings,
       scans,
@@ -491,14 +507,15 @@ async function scan(rest: string[]): Promise<void> {
 
 async function verify(rest: string[]): Promise<void> {
   const name = positional(rest)[0];
-  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
+  if (!name) throw new Error("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]");
 
   const server = await findServer(rest, name);
   const liveVerification = liveVerificationEnabled(rest);
   const report = await verifyServer(server, {
     liveRemoteProbe: liveVerification,
     livePackageProbe: liveVerification,
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
+    allowExecute: hasFlag(rest, "--allow-execute"),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
     requireVerified: hasFlag(rest, "--require-verified"),
   });
 
@@ -589,7 +606,7 @@ async function registry(rest: string[]): Promise<void> {
 }
 
 async function outdated(rest: string[]): Promise<void> {
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const lockfile = await readLockfile(path);
   const rows = [];
   for (const [key, locked] of Object.entries(lockfile.servers)) {
@@ -669,7 +686,7 @@ async function lock(rest: string[]): Promise<void> {
 
   const values = positional(rest);
   const name = values[0];
-  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock key-fingerprint --public-key public.pem [--json]\n       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
+  if (!name) throw new Error(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--live] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]]\n       toolpin lock digest [--file mcp-lock.json] [--json]\n       toolpin lock key-fingerprint --public-key public.pem [--json]\n       toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]\n       toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig]`);
 
   const client = clientFlag(rest, "generic");
   const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
@@ -682,7 +699,8 @@ async function lock(rest: string[]): Promise<void> {
     const report = await verifyServer(server, {
       liveRemoteProbe: liveVerification,
       livePackageProbe: liveVerification,
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      allowExecute: hasFlag(rest, "--allow-execute"),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
       requireVerified: hasFlag(rest, "--require-verified"),
     });
     if (!report.ok) {
@@ -899,7 +917,8 @@ async function install(rest: string[]): Promise<void> {
     const report = await verifyServer(server, {
       liveRemoteProbe: liveVerification,
       livePackageProbe: liveVerification,
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      allowExecute: hasFlag(rest, "--allow-execute"),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
       requireVerified,
     });
     if (!report.ok) {
@@ -933,12 +952,19 @@ async function install(rest: string[]): Promise<void> {
       ].join("\n"));
     }
   }
+  // Default install preserves an existing, matching lock entry byte-for-byte so
+  // signed / --expect-digest lockfiles are not invalidated by a no-op install.
+  // Only write when --update-lock is set or the entry is new (or when drift was
+  // explicitly accepted via --update-lock, handled below).
+  const lockWriteNeeded: boolean[] = plans.map(() => true);
   if (!updateLock) {
     const mismatches = [];
-    for (const plan of plans) {
+    for (const [index, plan] of plans.entries()) {
       const verification = await verifyAgainstLockfile(plan, DEFAULT_LOCKFILE_PATH);
       if (!verification.ok) {
         mismatches.push(`${verification.key}: ${verification.messages.join("; ")}`);
+      } else if (verification.locked) {
+        lockWriteNeeded[index] = false;
       }
     }
     if (mismatches.length) {
@@ -963,10 +989,11 @@ async function install(rest: string[]): Promise<void> {
   printField("clients", clients.join(", "));
   for (const [index, targetClient] of clients.entries()) {
     const result = await installServerConfig(server, targetClient, scope);
-    await writeLockfile(plans[index], DEFAULT_LOCKFILE_PATH);
+    const wroteLock = lockWriteNeeded[index];
+    if (wroteLock) await writeLockfile(plans[index], DEFAULT_LOCKFILE_PATH);
     printSubhead(`${result.client} ${result.scope}`);
     printField("config", `${result.action}: ${result.file}`, OK_COLOR);
-    printField("lock", "mcp-lock.json updated", OK_COLOR);
+    printField("lock", wroteLock ? "mcp-lock.json updated" : "mcp-lock.json unchanged (matches lock)", wroteLock ? OK_COLOR : MUTED_COLOR);
     for (const note of result.notes) printBullet(note);
   }
   printField("done", `installed for ${client === "all" ? "all supported clients in this scope" : clients.join(", ")}`, OK_COLOR);
@@ -986,7 +1013,7 @@ async function testInstalled(rest: string[]): Promise<void> {
   if (client === "all") throw new Error("test-installed requires one --client value, not all.");
   const scope = scopeFlag(rest, "project") as InstallScope;
   if (scope !== "project" && scope !== "global") throw new Error("--scope must be project or global");
-  const timeoutMs = numberFlag(rest, "--timeout", 15000);
+  const timeoutMs = numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS);
 
   const result = await testInstalledServer({ serverName: name, client, scope, timeoutMs });
   if (hasFlag(rest, "--json")) {
@@ -1029,11 +1056,11 @@ async function adoptInstalled(rest: string[]): Promise<void> {
     client,
     scope,
     servers,
-    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
     verify: hasFlag(rest, "--verify"),
     requireVerified: hasFlag(rest, "--require-verified"),
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
-    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+    policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
     dryRun: hasFlag(rest, "--dry-run"),
   });
@@ -1055,11 +1082,11 @@ async function updateInstalled(rest: string[]): Promise<void> {
       scope: scopeFlag(rest, "all"),
       client,
       servers,
-      lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+      lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
       verify: hasFlag(rest, "--verify"),
       requireVerified: hasFlag(rest, "--require-verified"),
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
-      policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+      policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
       enforcePolicy: !hasFlag(rest, "--no-policy"),
       dryRun: hasFlag(rest, "--dry-run"),
     });
@@ -1081,11 +1108,11 @@ async function updateInstalled(rest: string[]): Promise<void> {
     scope,
     servers,
     version: stringFlag(rest, "--version", ""),
-    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
     verify: hasFlag(rest, "--verify"),
     requireVerified: hasFlag(rest, "--require-verified"),
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
-    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+    policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
     dryRun: hasFlag(rest, "--dry-run"),
   });
@@ -1105,7 +1132,7 @@ async function remove(rest: string[], command: "remove" | "uninstall" = "remove"
 
   const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "generic") : "all";
   const scope = scopeFlag(rest, "project") as InstallScope;
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -1228,12 +1255,22 @@ async function ci(rest: string[]): Promise<void> {
     if (hasAnyFlag(rest, ["--skip-live-verification", "--skip-live-verify"]) && lockedHasLivePins(locked)) {
       throw new Error(`${locked.name} has live capability pins in ${path}; --skip-live-verification is not allowed for pinned CI entries.`);
     }
+    if (
+      verifyBeforeUse
+      && liveVerificationEnabled(rest)
+      && !hasFlag(rest, "--allow-execute")
+      && lockedHasLivePins(locked)
+      && selectLaunchTarget(server)?.kind === "package"
+    ) {
+      throw new Error(`${locked.name} has live capability pins in ${path}; re-verifying them executes the package. Add --allow-execute to permit execution in CI.`);
+    }
     if (verifyBeforeUse) {
       const liveVerification = liveVerificationEnabled(rest);
       verification = await verifyServer(server, {
         liveRemoteProbe: liveVerification,
         livePackageProbe: liveVerification,
-        timeoutMs: numberFlag(rest, "--timeout", 15000),
+        allowExecute: hasFlag(rest, "--allow-execute"),
+        timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
         requireVerified,
       });
       if (!verification.ok) {
@@ -1322,7 +1359,7 @@ async function secrets(rest: string[]): Promise<void> {
     throw new Error("Usage: toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]");
   }
 
-  const path = stringFlag(values, "--file", "mcp-lock.json");
+  const path = stringFlag(values, "--file", DEFAULT_LOCKFILE_PATH);
   const scope = scopeFlag(values, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
@@ -1357,7 +1394,7 @@ async function doctor(rest: string[]): Promise<void> {
     return;
   }
 
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const scope = scopeFlag(rest, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
@@ -1385,7 +1422,7 @@ async function doctor(rest: string[]): Promise<void> {
 }
 
 function ciHelp(): void {
-  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
 }
 
 function doctorHelp(): void {
@@ -1423,13 +1460,13 @@ function commandHelp(command: string): void {
       console.log("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
       return;
     case "audit":
-      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
+      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--allow-execute] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
       return;
     case "scan":
-      console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
+      console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
       return;
     case "verify":
-      console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]");
+      console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]");
       return;
     case "versions":
       console.log("Usage: toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]");
@@ -1472,7 +1509,7 @@ function commandHelp(command: string): void {
       console.log(`Usage: toolpin export-config <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]`);
       return;
     case "lock":
-      console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+      console.log(`Usage: toolpin lock <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--file mcp-lock.json] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
        toolpin lock digest [--file mcp-lock.json] [--json]
        toolpin lock key-fingerprint --public-key public.pem [--json]
        toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig]
@@ -1502,11 +1539,20 @@ async function test(rest: string[]): Promise<void> {
   const name = values[0];
   if (!name) throw new Error("Usage: toolpin test <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]");
 
-  const timeout = numberFlag(rest, "--timeout", 15000);
+  const timeout = numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS);
   const server = await findServer(rest, name);
   const json = hasFlag(rest, "--json");
   if (!json) {
     console.error(`Testing ${server.name}@${server.version} (${server.registrySource}) with ${timeout}ms timeout...`);
+  }
+  // `test` is an explicit execution command; be transparent about exactly what
+  // it runs (or connects to) and which env var names it passes, before launch.
+  const preview = previewServerLaunch(server);
+  if (preview) {
+    const envSuffix = preview.envNames.length ? ` (env: ${preview.envNames.join(", ")})` : "";
+    console.error(preview.kind === "stdio"
+      ? `Executing: ${preview.target}${envSuffix}`
+      : `Connecting to remote MCP endpoint: ${preview.target}${envSuffix}`);
   }
   const result = await testServer(server, timeout);
 
@@ -1554,7 +1600,7 @@ Discovery
   toolpin i [query] [same options]
   toolpin info <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
   toolpin scan <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]  # description scan
-  toolpin verify <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--require-verified]
+  toolpin verify <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]
   toolpin versions <server> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
   toolpin test <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
@@ -1571,9 +1617,9 @@ Install and config
   toolpin export-config <server> --client|-c <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
 
 Lock and governance
-  toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--require-verified] [--json]
+  toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--allow-execute] [--require-verified] [--json]
   toolpin audit server <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
@@ -1809,23 +1855,39 @@ function isHelp(values: string[]): boolean {
   return hasAnyFlag(values, ["--help", "-h"]);
 }
 
-function stringFlag(values: string[], flag: string, fallback: string): string {
+// Returns the token after `flag`, or undefined if the flag is absent. Throws if
+// the flag is present but its value is missing or looks like another flag, so a
+// typo like `--file --source official` fails loudly instead of silently using
+// `--source` as the file path (or falling back and ignoring the intent).
+function flagValue(values: string[], flag: string): string | undefined {
   const index = values.indexOf(flag);
-  return index >= 0 ? (values[index + 1] ?? fallback) : fallback;
+  if (index < 0) return undefined;
+  const value = values[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    throw new Error(`${flag} requires a value.`);
+  }
+  return value;
+}
+
+function stringFlag(values: string[], flag: string, fallback: string): string {
+  return flagValue(values, flag) ?? fallback;
 }
 
 function stringAnyFlag(values: string[], flags: string[], fallback: string): string {
   for (const flag of flags) {
-    const index = values.indexOf(flag);
-    if (index >= 0) return values[index + 1] ?? fallback;
+    const value = flagValue(values, flag);
+    if (value !== undefined) return value;
   }
   return fallback;
 }
 
 function numberFlag(values: string[], flag: string, fallback: number): number {
-  const value = stringFlag(values, flag, String(fallback));
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  const raw = flagValue(values, flag);
+  if (raw === undefined) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${flag} requires a non-negative integer (received "${raw}").`);
+  }
+  return Number.parseInt(raw, 10);
 }
 
 function clientFlag(values: string[], fallback: ClientName): ClientSelection {
@@ -1934,10 +1996,6 @@ function lockedHasLivePins(locked: { capabilityManifest?: CapabilityManifest }):
 
 function liveVerificationEnabled(values: string[]): boolean {
   return !hasAnyFlag(values, ["--skip-live-verification", "--skip-live-verify"]);
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
 }
 
 function verificationStatus(verifyRequested: boolean, report?: VerificationReport): string {

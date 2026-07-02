@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep runtime/dev npm dependencies patched.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  # Keep pinned GitHub Actions SHAs current (Dependabot updates the pin + comment).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
 import { canonicalJson } from "./canonicalJson.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import type { InstallScope } from "./install.js";
 import { regateTrustReport, scoreServer, trustTier } from "./trust.js";
 import type { VerificationReport } from "./verify.js";
 import type { CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue, TrustReport, TrustTier } from "./types.js";
+import { dedupeTrustEvidence, isRecord } from "./util.js";
 
 export const LOCKFILE_VERSION = 2;
 
@@ -127,15 +129,6 @@ function mergeVerificationTrust(base: TrustReport, report: VerificationReport): 
   });
 }
 
-function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
-}
-
 function dedupeTrustIssues(issues: TrustIssue[]): TrustIssue[] {
   const byKey = new Map<string, TrustIssue>();
   for (const issue of issues) {
@@ -145,7 +138,7 @@ function dedupeTrustIssues(issues: TrustIssue[]): TrustIssue[] {
   return [...byKey.values()];
 }
 
-export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", key = lockKey(plan.name, plan.client)): Promise<Lockfile> {
+export async function writeLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH, key = lockKey(plan.name, plan.client)): Promise<Lockfile> {
   const existing = await readExistingLockfile(path);
   const now = new Date().toISOString();
   const entry = finalizeLockEntry(plan, now);
@@ -163,7 +156,7 @@ export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", k
   return next;
 }
 
-export async function removeLockfileEntry(serverName: string, client: ClientName, path = "mcp-lock.json"): Promise<{ removed: boolean; key: string; lockfile: Lockfile }> {
+export async function removeLockfileEntry(serverName: string, client: ClientName, path = DEFAULT_LOCKFILE_PATH): Promise<{ removed: boolean; key: string; lockfile: Lockfile }> {
   const existed = await fileExists(path);
   const existing = await readExistingLockfile(path);
   const nextServers = { ...existing.servers };
@@ -194,11 +187,11 @@ export async function removeLockfileEntry(serverName: string, client: ClientName
   return { removed, key, lockfile: next };
 }
 
-export async function readLockfile(path = "mcp-lock.json"): Promise<Lockfile> {
+export async function readLockfile(path = DEFAULT_LOCKFILE_PATH): Promise<Lockfile> {
   return readExistingLockfile(path);
 }
 
-export async function readLockfileDigest(path = "mcp-lock.json"): Promise<string> {
+export async function readLockfileDigest(path = DEFAULT_LOCKFILE_PATH): Promise<string> {
   return computeLockfileDigest(await readExistingLockfile(path));
 }
 
@@ -206,7 +199,7 @@ export function computeLockfileDigest(lockfile: Lockfile): string {
   return `sha256-${createHash("sha256").update(stableJson(lockfileDigestPayload(lockfile))).digest("base64")}`;
 }
 
-export async function verifyAgainstLockfile(plan: InstallPlan, path = "mcp-lock.json"): Promise<LockVerification> {
+export async function verifyAgainstLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH): Promise<LockVerification> {
   const lockfile = await readExistingLockfile(path);
   const key = lockKey(plan.name, plan.client);
   const locked = lockfile.servers[key] ?? lockfile.servers[plan.name];
@@ -238,8 +231,6 @@ async function readExistingLockfile(path: string): Promise<Lockfile> {
     }
     throw error;
   }
-
-  return emptyLockfile();
 }
 
 function emptyLockfile(): Lockfile {
@@ -309,7 +300,6 @@ function parseTrust(value: unknown, key: string): TrustReport {
   if (value.evidence !== undefined && !Array.isArray(value.evidence)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.evidence`);
   if (!Array.isArray(value.badges) || !value.badges.every((badge) => typeof badge === "string")) throw new Error(`Invalid lockfile entry ${key}: invalid trust.badges`);
   if (!Array.isArray(value.issues)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.issues`);
-  if (value.tier !== undefined && !isTrustTier(value.tier)) throw new Error(`Invalid lockfile entry ${key}: invalid trust.tier`);
   if (value.overallScore !== undefined && (typeof value.overallScore !== "number" || !Number.isFinite(value.overallScore))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.overallScore`);
   if (value.metadataCompleteness !== undefined && (typeof value.metadataCompleteness !== "number" || !Number.isFinite(value.metadataCompleteness))) throw new Error(`Invalid lockfile entry ${key}: invalid trust.metadataCompleteness`);
   if (value.capReason !== undefined && typeof value.capReason !== "string") throw new Error(`Invalid lockfile entry ${key}: invalid trust.capReason`);
@@ -574,10 +564,6 @@ function normalizeToolManifestHash(hash: NonNullable<CapabilityManifest["toolMan
 
 function stableJson(value: unknown): string {
   return canonicalJson(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseResolved(value: unknown): InstallPlan["resolved"] {

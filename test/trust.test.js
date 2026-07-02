@@ -218,7 +218,7 @@ test("verified requires provenance plus fresh trusted artifact evidence, not hig
   );
 });
 
-test("ToolPin registry evidence can verify artifact integrity without changing metadata completeness", () => {
+test("registry-declared ToolPin evidence is a claim, not proof: it cannot reach the verified tier", () => {
   const evidence = {
     code: "npm_integrity_verified",
     status: "passed",
@@ -231,7 +231,7 @@ test("ToolPin registry evidence can verify artifact integrity without changing m
     trustAnchor: "registry.npmjs.org",
     verifiedAt: new Date().toISOString(),
   };
-  const verified = scoreServer(packageServer({
+  const declared = scoreServer(packageServer({
     registrySource: "toolpin",
     rawMeta: { "dev.toolpin/evidence": [evidence] },
   }));
@@ -240,13 +240,19 @@ test("ToolPin registry evidence can verify artifact integrity without changing m
     rawMeta: { "dev.toolpin/evidence": [evidence] },
   }));
 
-  assert.equal(verified.score, 74);
-  assert.equal(verified.metadataCompleteness, 74);
-  assert.equal(verified.overallScore, 100);
-  assert.equal(verified.tier, "verified");
-  assert.equal(verified.capReason, undefined);
-  assert.ok(verified.badges.includes("npm-integrity-verified"));
-  assert.equal(trustCapExplanation(verified), undefined);
+  // Metadata completeness is unchanged, but a registry claiming "passed" +
+  // "verifiedByToolPin" is downgraded to declared evidence: no verified tier,
+  // no verified badge, and the cap explains what is missing.
+  assert.equal(declared.score, 74);
+  assert.equal(declared.metadataCompleteness, 74);
+  assert.notEqual(declared.tier, "verified");
+  assert.equal(declared.overallScore < 100, true);
+  assert.equal(declared.capReason, "automated evidence incomplete");
+  assert.equal(declared.badges.includes("npm-integrity-verified"), false);
+  const entry = declared.evidence.find((candidate) => candidate.code === "npm_integrity_verified");
+  assert.equal(entry.status, "declared");
+  assert.equal(entry.verifiedByToolPin, false);
+  assert.match(entry.message, /registry-declared, not locally recomputed/);
 
   assert.equal(ignored.overallScore, 69);
   assert.equal(ignored.tier, "conditional");

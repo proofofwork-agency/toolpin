@@ -152,6 +152,35 @@ test("opencode install preserves existing top-level metadata", async () => {
   });
 });
 
+test("install and remove refuse to overwrite an unparseable existing config", async () => {
+  await withTempCwd(async () => {
+    const broken = '{ "mcp": { "io.github/existing": { "command": ["node"] }  // truncated';
+    await writeFile("opencode.json", broken, "utf8");
+
+    await assert.rejects(
+      () => installServerConfig(packageServer("io.github/new"), "opencode", "project"),
+      /not valid JSON/,
+    );
+    await assert.rejects(
+      () => removeServerConfig("io.github/existing", "opencode", "project"),
+      /not valid JSON/,
+    );
+
+    // The corrupt file must be left exactly as-is, not clobbered.
+    assert.equal(await readFile("opencode.json", "utf8"), broken);
+  });
+});
+
+test("install refuses a config whose top level is valid JSON but not an object", async () => {
+  await withTempCwd(async () => {
+    await writeFile("opencode.json", JSON.stringify(["not", "an", "object"]), "utf8");
+    await assert.rejects(
+      () => installServerConfig(packageServer("io.github/new"), "opencode", "project"),
+      /expected a JSON object/,
+    );
+  });
+});
+
 test("doctor reports scope-incompatible client entries without aborting", async () => {
   await withTempCwd(async () => {
     const server = packageServer("io.github/roo-only");

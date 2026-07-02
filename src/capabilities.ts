@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalJson } from "./canonicalJson.js";
 import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan, ToolManifestHash } from "./types.js";
+import { isRecord } from "./util.js";
 
 export interface ToolDescriptionInput {
   name: string;
@@ -161,8 +162,4 @@ function isToolDescriptionScan(value: unknown): value is ToolDescriptionScan {
 
 function isAttestation(value: unknown): value is Attestation {
   return isRecord(value) && typeof value.type === "string";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

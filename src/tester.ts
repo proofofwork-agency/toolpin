@@ -3,6 +3,8 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { selectLaunchTarget } from "./config.js";
+import { DEFAULT_PROBE_TIMEOUT_MS } from "./constants.js";
+import { assertSafeUrl, isLoopbackHostname, pinnedFetch } from "./safeFetch.js";
 import type { NormalizedServer, RegistryRemote } from "./types.js";
 import { TOOLPIN_VERSION } from "./version.js";
 
@@ -21,7 +23,28 @@ export interface ServerTestResult {
   message: string;
 }
 
-export async function testServer(server: NormalizedServer, timeoutMs = 15000): Promise<ServerTestResult> {
+export interface ServerLaunchPreview {
+  kind: "remote" | "stdio";
+  target: string;
+  envNames: string[];
+}
+
+// What `toolpin test` is about to do, so the CLI can print the exact command
+// (or remote endpoint) and env var names before anything is executed.
+export function previewServerLaunch(server: NormalizedServer): ServerLaunchPreview | undefined {
+  const launch = selectLaunchTarget(server);
+  if (!launch) return undefined;
+  if (launch.kind === "remote") {
+    const envNames = (launch.remote.headers ?? [])
+      .map((header) => (typeof header.env === "string" ? header.env : extractEnvName(typeof header.value === "string" ? header.value : undefined) ?? header.name))
+      .filter((name): name is string => typeof name === "string" && name.length > 0);
+    return { kind: "remote", target: launch.remote.url, envNames: [...new Set(envNames)] };
+  }
+  const local = packageToStdio(launch.pkg);
+  return { kind: "stdio", target: [local.command, ...local.args].join(" "), envNames: Object.keys(local.env) };
+}
+
+export async function testServer(server: NormalizedServer, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<ServerTestResult> {
   const startedAt = Date.now();
   const launch = selectLaunchTarget(server);
 
@@ -32,14 +55,16 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
   let client: Client | undefined;
   try {
     if (launch.kind === "remote") {
+      await assertRemoteProbeUrlSafe(launch.remote.url);
       const headers = resolveRemoteHeaders(launch.remote);
       if (headers.missing.length) {
         return fail(server, `remote:${launch.remote.type}`, startedAt, `Missing required header/env value: ${headers.missing.join(", ")}`);
       }
 
+      const probeFetch = remoteProbeFetch(launch.remote.url);
       const transport = launch.remote.type === "sse"
-        ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } })
-        : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values } });
+        ? new SSEClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values }, fetch: probeFetch })
+        : new StreamableHTTPClientTransport(new URL(launch.remote.url), { requestInit: { headers: headers.values }, fetch: probeFetch });
 
       client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to remote MCP server.");
@@ -52,7 +77,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
       const transport = new StdioClientTransport({
         command: local.command,
         args: local.args,
-        env: { ...definedProcessEnv(), ...local.env },
+        env: { ...minimalSpawnEnv(), ...local.env },
         stderr: "pipe",
       });
 
@@ -78,7 +103,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
   }
 }
 
-export async function testInstalledClientConfig(serverName: string, config: unknown, timeoutMs = 15000): Promise<ServerTestResult> {
+export async function testInstalledClientConfig(serverName: string, config: unknown, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<ServerTestResult> {
   const startedAt = Date.now();
   const launch = installedConfigToLaunch(config);
   if (!launch) {
@@ -95,9 +120,11 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
   let client: Client | undefined;
   try {
     if (launch.kind === "remote") {
+      await assertRemoteProbeUrlSafe(launch.url);
+      const probeFetch = remoteProbeFetch(launch.url);
       const transport = launch.type === "sse"
-        ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } })
-        : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers } });
+        ? new SSEClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers }, fetch: probeFetch })
+        : new StreamableHTTPClientTransport(new URL(launch.url), { requestInit: { headers: launch.headers }, fetch: probeFetch });
 
       client = new Client({ name: "toolpin", version: TOOLPIN_VERSION });
       await withTimeout(client.connect(transport), timeoutMs, "Timed out connecting to installed remote MCP server.");
@@ -105,7 +132,7 @@ export async function testInstalledClientConfig(serverName: string, config: unkn
       const transport = new StdioClientTransport({
         command: launch.command,
         args: launch.args,
-        env: { ...definedProcessEnv(), ...launch.env },
+        env: { ...minimalSpawnEnv(), ...launch.env },
         stderr: "pipe",
       });
 
@@ -199,7 +226,12 @@ function packageToStdio(pkg: {
     case "cargo":
       return { command: pkg.identifier, args: packageArgs, env: env.values, missing: env.missing };
     case "oci":
-      return { command: "docker", args: ["run", "--rm", "-i", pkg.identifier], env: env.values, missing: env.missing };
+      return {
+        command: "docker",
+        args: ["run", "--rm", "-i", ...dockerEnvArgs(pkg.environmentVariables ?? []), pkg.identifier],
+        env: env.values,
+        missing: env.missing,
+      };
     case "mcpb":
       return { command: "mcpb", args: ["run", pkg.identifier], env: env.values, missing: env.missing };
     default:
@@ -209,6 +241,32 @@ function packageToStdio(pkg: {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+// Mirror config.ts dockerEnvArgs so a live OCI probe passes declared env vars
+// into the container exactly as the installed launcher would (`-e NAME`).
+function dockerEnvArgs(variables: Array<{ name: string }>): string[] {
+  const names = [...new Set(variables.map((variable) => variable.name).filter(Boolean))];
+  return names.flatMap((name) => ["-e", name]);
+}
+
+// Before opening a transport to a registry-declared remote MCP URL, apply the
+// same SSRF firewall used for artifact fetches. Loopback targets are permitted
+// as intentional local runtime/dev fixtures (consistent with verify.ts), but
+// every other host must be HTTPS and resolve to a public address — this blocks
+// cloud metadata endpoints (169.254.169.254) and internal/private services.
+async function assertRemoteProbeUrlSafe(rawUrl: string): Promise<void> {
+  const url = new URL(rawUrl);
+  if (isLoopbackHostname(url.hostname)) return;
+  await assertSafeUrl(url);
+}
+
+// Non-loopback probes route every transport request through pinnedFetch so the
+// SSRF check is enforced at connect time (DNS rebinding cannot swap in a
+// private address after the preflight). Loopback targets are intentional local
+// fixtures and keep the platform fetch.
+function remoteProbeFetch(rawUrl: string): typeof pinnedFetch | undefined {
+  return isLoopbackHostname(new URL(rawUrl).hostname) ? undefined : pinnedFetch;
 }
 
 function resolvePackageEnv(variables: Array<{ name: string; default?: string; isRequired?: boolean }>): { values: Record<string, string>; missing: string[] } {
@@ -252,8 +310,67 @@ function extractEnvName(value?: string): string | undefined {
   return match?.[1];
 }
 
-function definedProcessEnv(): Record<string, string> {
-  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+// Environment passed to spawned MCP server processes. ToolPin probes untrusted
+// packages, so we must NOT hand them the caller's full environment (which in CI
+// includes GITHUB_TOKEN, npm/cloud credentials, etc.). Start from a minimal set
+// of non-secret system variables the runtimes need to function; the caller then
+// layers only the server's explicitly-declared env vars on top.
+const SPAWN_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LANGUAGE",
+  "TERM",
+  "TZ",
+  // Non-secret infrastructure config that runtimes need to reach daemons and
+  // trust stores. These are paths / daemon URLs, not credentials, so they are
+  // safe to pass to an untrusted child (unlike proxy vars, which can embed
+  // credentials and require the explicit opt-in below).
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "DOCKER_HOST",
+  "DOCKER_CONTEXT",
+  "DOCKER_CONFIG",
+  "DOCKER_TLS_VERIFY",
+  "DOCKER_CERT_PATH",
+  // Windows
+  "SystemRoot",
+  "SystemDrive",
+  "ComSpec",
+  "PATHEXT",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "windir",
+];
+
+function minimalSpawnEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of SPAWN_ENV_ALLOWLIST) {
+    const value = process.env[name];
+    if (typeof value === "string") env[name] = value;
+  }
+  // Locale variables (LC_ALL, LC_CTYPE, ...) are non-secret and affect output.
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.startsWith("LC_") && typeof value === "string") env[name] = value;
+  }
+  // Explicit opt-in passthrough for operators who must expose extra variables
+  // to spawned servers (e.g. HTTPS_PROXY with embedded credentials on a
+  // corporate network). Off by default so ambient secrets never leak implicitly.
+  const extra = process.env.TOOLPIN_SPAWN_ENV_ALLOW;
+  if (extra) {
+    for (const name of extra.split(",").map((entry) => entry.trim()).filter(Boolean)) {
+      const value = process.env[name];
+      if (typeof value === "string") env[name] = value;
+    }
+  }
+  return env;
 }
 
 function firstString(...values: unknown[]): string | undefined {

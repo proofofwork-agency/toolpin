@@ -1,19 +1,25 @@
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
 import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { verifyNpmPackageIntegrity } from "./packageIntegrity.js";
-import { safeFetch, safeFetchBuffer, safeFetchJson, type SafeFetchOptions } from "./safeFetch.js";
+import { safeFetch, safeFetchBuffer, safeFetchJson, isLoopbackHostname, type SafeFetchOptions } from "./safeFetch.js";
 import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
 import { classifyTrust, scoreServer, trustedArtifactEvidenceProblem } from "./trust.js";
 import type { Attestation, CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue } from "./types.js";
 import { TRUSTED_MCPB_SOURCES, canonicalizeOciRef, trustedMcpbSourceHost, trustedOciAuthHosts, trustedOciRegistry } from "./verificationTrust.js";
+import { dedupeTrustEvidence } from "./util.js";
 
 export interface VerificationOptions {
   liveRemoteProbe?: boolean;
   livePackageProbe?: boolean;
+  /**
+   * Explicit opt-in to execute the server package for the live probe.
+   * Without it, verification runs only network artifact checks and connects to
+   * remote endpoints; it never spawns npx/uvx/docker/etc. for the target.
+   */
+  allowExecute?: boolean;
   timeoutMs?: number;
   requireVerified?: boolean;
   fetch?: SafeFetchOptions["fetch"];
@@ -63,8 +69,24 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
   } else if (launch.kind === "package") {
     await verifyPackagePins(launch.pkg, issues, badges, evidence, generatedAt, options);
     if (options.livePackageProbe === true) {
-      const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package", options.timeoutMs);
-      if (pinned) capabilityManifest = pinned;
+      // Executing the package is a separate trust decision from verifying it:
+      // the artifact checks above never run target code, but the live probe
+      // spawns the (possibly unverified) server. Require an explicit opt-in.
+      if (options.allowExecute === true) {
+        const pinned = await verifyLiveToolManifest(server, generatedAt, issues, badges, evidence, "package", options.timeoutMs);
+        if (pinned) capabilityManifest = pinned;
+      } else {
+        issues.push({
+          severity: "warning",
+          code: "package_execution_skipped",
+          message: "Live package probe skipped: ToolPin does not execute server packages during verification without --allow-execute. Network artifact checks still ran.",
+        });
+        evidence.push({
+          code: "tool_description_hash",
+          status: "unavailable",
+          message: "Package tools/list hashing requires executing the package; rerun with --allow-execute to capture live capability pins.",
+        });
+      }
     }
   } else {
     badges.push("remote-target");
@@ -90,7 +112,7 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     }
   }
 
-  const finalEvidence = dedupeEvidence(evidence);
+  const finalEvidence = dedupeTrustEvidence(evidence);
   if (options.requireVerified) {
     const classified = classifyTrust(scoreServer(server).score, issues, finalEvidence, { verifiedProvenance });
     if (classified.tier !== "verified") {
@@ -186,7 +208,7 @@ function remoteTrustIssue(url: string): { issue: TrustIssue; evidence: TrustEvid
   }
 
   if (parsed.protocol === "https:") return undefined;
-  if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) {
+  if (parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname)) {
     return {
       issue: {
         severity: "warning",
@@ -224,16 +246,6 @@ function remoteTrustIssue(url: string): { issue: TrustIssue; evidence: TrustEvid
     },
     blockProbe: true,
   };
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (isIP(host) === 4) {
-    const first = Number.parseInt(host.split(".")[0] ?? "", 10);
-    return first === 127;
-  }
-  return host === "::1" || host === "0:0:0:0:0:0:0:1";
 }
 
 async function verifyPackagePins(
@@ -574,13 +586,4 @@ async function fetchBearerToken(wwwAuthenticate: string | null, registryHost: st
 
 function normalizeSha256(value: string): string {
   return value.startsWith("sha256:") ? value.slice("sha256:".length).toLowerCase() : value.toLowerCase();
-}
-
-function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
 }
