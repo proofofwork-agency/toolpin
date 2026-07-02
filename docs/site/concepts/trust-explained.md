@@ -98,7 +98,11 @@ labels:
 
 Repository URL presence, registry source trust, `capability-pinned`, and
 self-declared attestations are useful review metadata. They do not make a
-server `verified` by themselves.
+server `verified` by themselves. The same applies to evidence carried in
+registry metadata: a curated-registry entry that declares passed artifact
+evidence is recorded as `declared` on ingestion and shows as `REVIEW` until
+this installation recomputes the proof itself (for example via
+`toolpin verify` or `toolpin ci --verify`).
 
 ## Why a score can be capped
 

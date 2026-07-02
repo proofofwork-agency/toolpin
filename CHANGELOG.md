@@ -28,6 +28,16 @@
 - Security (shell preview): the TUI/interactive command previews single-quote
   untrusted server names and query text so a copied command cannot trigger
   `$(...)`, backtick, or `$VAR` expansion.
+- Security (trust model): evidence carried in registry metadata is now read as
+  a claim, never proof. A curated-registry `_meta` entry declaring
+  `passed`/`verifiedByToolPin` artifact evidence is downgraded to `declared`
+  with `verifiedByToolPin: false` on ingestion, so the `verified` tier,
+  `requireToolPinVerifiedEvidence`, and fresh-artifact gates are only satisfied
+  by this installation's own recompute (`toolpin verify`, `--verify` flows).
+  Behavior note: curated entries now show `conditional`/`REVIEW` until locally
+  re-verified — matching the documented meaning of `REVIEW` — and a lockfile
+  entry locked at tier `verified` needs `toolpin ci --verify` (which recomputes
+  artifact proof) to avoid a tier-downgrade drift finding in CI.
 - Fix (data loss): `install`/`remove` refuse to overwrite an existing client
   config that is not valid JSON, instead of silently replacing it with only the
   new entry.

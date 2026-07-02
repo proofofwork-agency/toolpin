@@ -429,6 +429,15 @@ function countIntegrityBadges(badges: string[]): number {
   return badges.filter((badge) => ["pinned version", "digest-pinned", "fileSha256", "https remote"].includes(badge)).length;
 }
 
+// Evidence read from registry `_meta` is a CLAIM by the registry, not proof
+// this installation verified anything. A claimed "passed" is downgraded to
+// "declared" and `verifiedByToolPin` is forced to false, so registry metadata
+// alone can never satisfy the verified tier, `requireToolPinVerifiedEvidence`,
+// or the fresh-trusted-artifact gate — only the local re-hash path in
+// verify.ts produces `passed` + `verifiedByToolPin` evidence. Negative claims
+// ("failed", especially required ones) keep their teeth as-is. The claimed
+// anchor host is still checked against the code allowlist so the claim's
+// provenance stays visible.
 function readToolPinEvidence(server: NormalizedServer): TrustEvidence[] {
   if (server.registrySource !== "toolpin") return [];
   const rawValue = server.raw._meta?.[TOOLPIN_EVIDENCE_META] ?? server.registryMeta?.[TOOLPIN_EVIDENCE_META];
@@ -442,14 +451,16 @@ function readToolPinEvidence(server: NormalizedServer): TrustEvidence[] {
     const trustedAnchor = declaredTrustedAnchor === true
       ? anchorAllowsEvidenceCode(entry.code, trustAnchorHost)
       : declaredTrustedAnchor;
+    const status = entry.status === "passed" ? "declared" : entry.status as TrustEvidence["status"];
+    const message = entry.status === "passed" ? `${entry.message} (registry-declared, not locally recomputed)` : entry.message;
     return [{
       code: entry.code,
-      status: entry.status as TrustEvidence["status"],
-      message: entry.message,
+      status,
+      message,
+      verifiedByToolPin: false,
       ...(typeof entry.source === "string" ? { source: entry.source } : {}),
       ...(typeof entry.claim === "string" ? { claim: entry.claim } : {}),
       ...(typeof entry.verificationMethod === "string" ? { verificationMethod: entry.verificationMethod } : {}),
-      ...(typeof entry.verifiedByToolPin === "boolean" ? { verifiedByToolPin: entry.verifiedByToolPin } : {}),
       ...(trustedAnchor !== undefined ? { trustedAnchor } : {}),
       ...(trustAnchorHost ? { trustAnchor: trustAnchorHost } : {}),
       ...(typeof entry.verifiedAt === "string" ? { verifiedAt: entry.verifiedAt } : {}),

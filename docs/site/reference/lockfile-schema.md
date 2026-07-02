@@ -163,7 +163,13 @@ required? }`, where `status` is `passed`, `declared`, `failed`, or
 `lock_signature`, `oci_digest_verified`, `mcpb_sha256_verified`,
 `npm_integrity_verified`, and `attestation_declared`. Declared pins, hashes, and
 attestations are not treated as ToolPin-verified unless a future verifier records
-`verifiedByToolPin: true` on a passed evidence entry.
+`verifiedByToolPin: true` on a passed evidence entry. Evidence carried in
+registry metadata (including the ToolPin curated registry's `_meta` evidence)
+is read as a claim: a registry-supplied `passed` entry is downgraded to
+`declared` with `verifiedByToolPin: false` on ingestion. Only this
+installation's own verification (`toolpin verify`, `--verify` flows) records
+`passed` + `verifiedByToolPin: true`, so the `verified` tier and
+`requireToolPinVerifiedEvidence` always reflect a local recompute.
 
 `automated evidence incomplete` means the entry has not satisfied all evidence
 required for `verified`. In practice this usually means an exact package pin
