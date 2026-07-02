@@ -23,6 +23,7 @@ import { previewServerLaunch, testServer } from "./tester.js";
 import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem, trustProfileScore, trustTier } from "./trust.js";
 import { localHttpRuntimeAdvisory } from "./runtimeAdvisory.js";
 import { verifyServer, type VerificationReport } from "./verify.js";
+import { truncate } from "./util.js";
 import { TOOLPIN_VERSION } from "./version.js";
 import { compareLockedToLatest, knownVersions } from "./versions.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId, ToolDescriptionScan } from "./types.js";
@@ -1995,10 +1996,6 @@ function lockedHasLivePins(locked: { capabilityManifest?: CapabilityManifest }):
 
 function liveVerificationEnabled(values: string[]): boolean {
   return !hasAnyFlag(values, ["--skip-live-verification", "--skip-live-verify"]);
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
 }
 
 function verificationStatus(verifyRequested: boolean, report?: VerificationReport): string {

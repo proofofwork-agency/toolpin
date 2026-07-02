@@ -6,6 +6,8 @@ import { parse as parseYaml } from "yaml";
 import type { NormalizedServer, RegistryAdapterKind, RegistryCacheFileV2, RegistryCachePartition, RegistryEntry, RegistryFetchPageInfo, RegistryFetchResult, RegistryListResponse, RegistryPackage, RegistryRemote, RegistryRepository, RegistryServer, RegistrySourceId, RegistrySourceInfo, RegistrySourceMode, RegistrySourceType, SourceStatus } from "./types.js";
 import { safeFetch, safeFetchJson, readResponseTextCapped } from "./safeFetch.js";
 import { compareVersionish } from "./versions.js";
+import { isValidSha256Hex } from "./integrity.js";
+import { isFloatingVersion, isRecord } from "./util.js";
 
 const DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0";
 const TOOLPIN_REGISTRY_FILE = new URL("../registry/v0/servers", import.meta.url);
@@ -1235,16 +1237,8 @@ function isHttpsUrl(value: string | undefined): boolean {
   }
 }
 
-function isValidSha256Hex(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
-}
-
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
-}
-
-function isFloatingVersion(version: string): boolean {
-  return ["latest", "*"].includes(version.trim().toLowerCase()) || /[~^x*]/i.test(version);
 }
 
 function isCacheFile(value: unknown): value is { generatedAt: string; ttlMs?: number; entries: RegistryEntry[] } {
@@ -1847,8 +1841,4 @@ function namesMatch(officialName: string, glamaName: string): boolean {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

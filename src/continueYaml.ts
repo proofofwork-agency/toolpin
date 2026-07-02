@@ -1,4 +1,5 @@
 import { parseDocument, stringify } from "yaml";
+import { isRecord } from "./util.js";
 
 const DEFAULT_CONTINUE_CONFIG = {
   name: "ToolPin Config",
@@ -74,8 +75,4 @@ function parseYamlObject(raw: string): Record<string, unknown> | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

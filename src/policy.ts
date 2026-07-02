@@ -6,6 +6,7 @@ import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./in
 import type { InstallPlan } from "./plan.js";
 import { hasFreshTrustedArtifactEvidence, trustedArtifactEvidenceProblem, trustTier } from "./trust.js";
 import type { RegistrySourceId, TrustTier } from "./types.js";
+import { isRecord } from "./util.js";
 
 export interface PolicyConfig {
   version?: 1;
@@ -358,8 +359,4 @@ function booleanValue(value: unknown, field: string, path: string): boolean | un
     throw new Error(`Invalid policy schema in ${path}: ${field} must be a boolean`);
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -3,6 +3,7 @@ import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./in
 import { scanFindingsToTrustIssues, scanServerMetadata } from "./scan.js";
 import { TRUSTED_MCPB_SOURCES, TRUSTED_NPM_PACKUMENT_HOSTS, TRUSTED_NPM_TARBALL_HOSTS, trustedOciRegistry } from "./verificationTrust.js";
 import type { NormalizedServer, RegistryPackage, RegistryRemote, TrustEvidence, TrustGate, TrustIssue, TrustReport, TrustTier } from "./types.js";
+import { dedupeTrustEvidence, isFloatingVersion, isRecord } from "./util.js";
 
 const STRONG_PACKAGE_TYPES = new Set(["oci", "mcpb"]);
 const SUPPORTED_PACKAGE_TYPES = new Set(["npm", "pypi", "nuget", "cargo", "oci", "mcpb"]);
@@ -94,7 +95,7 @@ export function scoreServer(server: NormalizedServer): TrustReport {
   }
 
   const metadataCompleteness = clamp(score);
-  const uniqueEvidence = dedupeEvidence(evidence);
+  const uniqueEvidence = dedupeTrustEvidence(evidence);
   const verifiedProvenance = Boolean(server.repositoryUrl && (server.registrySource === "toolpin" || server.registrySource === "official" || server.registrySource === "docker" || server.resolvedFromRegistry === "official"));
   const pillars = {
     ...trustPillars(server, metadataCompleteness, issues, integritySignals, verifiedProvenance),
@@ -479,16 +480,8 @@ function anchorAllowsEvidenceCode(code: string, trustAnchor: string | undefined)
   return false;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function isFloatingVersion(version: string): boolean {
-  return ["latest", "*"].includes(version.trim().toLowerCase()) || /[~^x*]/i.test(version);
 }
 
 function hasUsablePinEvidence(evidence: TrustEvidence[]): boolean {
@@ -527,13 +520,4 @@ function artifactMissingReason(stale: boolean, untrusted: boolean): string {
   if (stale) return "fresh ToolPin-verified artifact proof";
   if (untrusted) return "trusted-anchor artifact proof";
   return "ToolPin-verified artifact proof (OCI registry digest, MCPB byte hash, or npm tarball integrity)";
-}
-
-function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
 }

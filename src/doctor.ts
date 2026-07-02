@@ -6,6 +6,7 @@ import { readContinueServerConfig } from "./continueYaml.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile, type InstallPlan } from "./plan.js";
 import type { ClientName } from "./config.js";
+import { isRecord } from "./util.js";
 
 export type DoctorIssueKind = "missing" | "drift" | "unreadable" | "invalid";
 
@@ -195,8 +196,4 @@ function stableJson(value: unknown): string {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

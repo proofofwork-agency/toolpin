@@ -1,5 +1,6 @@
 import type { ClientName } from "./config.js";
 import type { NormalizedServer } from "./types.js";
+import { isRecord } from "./util.js";
 
 export const TOOLPIN_CLIENT_SUPPORT_META = "dev.toolpin/clientSupport";
 
@@ -96,8 +97,4 @@ function statusValue(value: unknown): ToolPinClientSupportStatus | undefined {
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

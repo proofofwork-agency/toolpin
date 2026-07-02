@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { readLockfileDigest } from "./plan.js";
 import { readPolicyDigest } from "./policy.js";
 import { canonicalJson } from "./canonicalJson.js";
+import { isRecord } from "./util.js";
 
 export interface LockSignatureEnvelope {
   schema: "dev.toolpin.lock-signature";
@@ -177,8 +178,4 @@ function keyFingerprint(key: KeyObject): string {
 
 export async function readPublicKeyFingerprint(publicKeyPath: string): Promise<string> {
   return keyFingerprint(createPublicKey(await readFile(publicKeyPath, "utf8")));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
 import { selectLaunchTarget } from "./config.js";
 import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { verifyNpmPackageIntegrity } from "./packageIntegrity.js";
-import { safeFetch, safeFetchBuffer, safeFetchJson, type SafeFetchOptions } from "./safeFetch.js";
+import { safeFetch, safeFetchBuffer, safeFetchJson, isLoopbackHostname, type SafeFetchOptions } from "./safeFetch.js";
 import { scanFindingsToTrustIssues, scanServerMetadata, scanToolDescriptions } from "./scan.js";
 import { testServer } from "./tester.js";
 import { classifyTrust, scoreServer, trustedArtifactEvidenceProblem } from "./trust.js";
 import type { Attestation, CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue } from "./types.js";
 import { TRUSTED_MCPB_SOURCES, canonicalizeOciRef, trustedMcpbSourceHost, trustedOciAuthHosts, trustedOciRegistry } from "./verificationTrust.js";
+import { dedupeTrustEvidence } from "./util.js";
 
 export interface VerificationOptions {
   liveRemoteProbe?: boolean;
@@ -112,7 +112,7 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     }
   }
 
-  const finalEvidence = dedupeEvidence(evidence);
+  const finalEvidence = dedupeTrustEvidence(evidence);
   if (options.requireVerified) {
     const classified = classifyTrust(scoreServer(server).score, issues, finalEvidence, { verifiedProvenance });
     if (classified.tier !== "verified") {
@@ -208,7 +208,7 @@ function remoteTrustIssue(url: string): { issue: TrustIssue; evidence: TrustEvid
   }
 
   if (parsed.protocol === "https:") return undefined;
-  if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) {
+  if (parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname)) {
     return {
       issue: {
         severity: "warning",
@@ -246,16 +246,6 @@ function remoteTrustIssue(url: string): { issue: TrustIssue; evidence: TrustEvid
     },
     blockProbe: true,
   };
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  if (isIP(host) === 4) {
-    const first = Number.parseInt(host.split(".")[0] ?? "", 10);
-    return first === 127;
-  }
-  return host === "::1" || host === "0:0:0:0:0:0:0:1";
 }
 
 async function verifyPackagePins(
@@ -596,13 +586,4 @@ async function fetchBearerToken(wwwAuthenticate: string | null, registryHost: st
 
 function normalizeSha256(value: string): string {
   return value.startsWith("sha256:") ? value.slice("sha256:".length).toLowerCase() : value.toLowerCase();
-}
-
-function dedupeEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
 }

@@ -7,6 +7,7 @@ import type { InstallScope } from "./install.js";
 import { regateTrustReport, scoreServer, trustTier } from "./trust.js";
 import type { VerificationReport } from "./verify.js";
 import type { CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue, TrustReport, TrustTier } from "./types.js";
+import { dedupeTrustEvidence, isRecord } from "./util.js";
 
 export const LOCKFILE_VERSION = 2;
 
@@ -125,15 +126,6 @@ function mergeVerificationTrust(base: TrustReport, report: VerificationReport): 
     badges,
     verifiedProvenance: report.verifiedProvenance === true,
   });
-}
-
-function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
-  const byKey = new Map<string, TrustEvidence>();
-  for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
-    if (!byKey.has(key)) byKey.set(key, entry);
-  }
-  return [...byKey.values()];
 }
 
 function dedupeTrustIssues(issues: TrustIssue[]): TrustIssue[] {
@@ -571,10 +563,6 @@ function normalizeToolManifestHash(hash: NonNullable<CapabilityManifest["toolMan
 
 function stableJson(value: unknown): string {
   return canonicalJson(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseResolved(value: unknown): InstallPlan["resolved"] {
