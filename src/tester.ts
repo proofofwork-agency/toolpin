@@ -3,6 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { selectLaunchTarget } from "./config.js";
+import { DEFAULT_PROBE_TIMEOUT_MS } from "./constants.js";
 import { assertSafeUrl, isLoopbackHostname, pinnedFetch } from "./safeFetch.js";
 import type { NormalizedServer, RegistryRemote } from "./types.js";
 import { TOOLPIN_VERSION } from "./version.js";
@@ -43,7 +44,7 @@ export function previewServerLaunch(server: NormalizedServer): ServerLaunchPrevi
   return { kind: "stdio", target: [local.command, ...local.args].join(" "), envNames: Object.keys(local.env) };
 }
 
-export async function testServer(server: NormalizedServer, timeoutMs = 15000): Promise<ServerTestResult> {
+export async function testServer(server: NormalizedServer, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<ServerTestResult> {
   const startedAt = Date.now();
   const launch = selectLaunchTarget(server);
 
@@ -102,7 +103,7 @@ export async function testServer(server: NormalizedServer, timeoutMs = 15000): P
   }
 }
 
-export async function testInstalledClientConfig(serverName: string, config: unknown, timeoutMs = 15000): Promise<ServerTestResult> {
+export async function testInstalledClientConfig(serverName: string, config: unknown, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Promise<ServerTestResult> {
   const startedAt = Date.now();
   const launch = installedConfigToLaunch(config);
   if (!launch) {

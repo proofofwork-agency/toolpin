@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { deriveCapabilityManifest, isCapabilityManifest } from "./capabilities.js";
 import { canonicalJson } from "./canonicalJson.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import type { InstallScope } from "./install.js";
 import { regateTrustReport, scoreServer, trustTier } from "./trust.js";
@@ -137,7 +138,7 @@ function dedupeTrustIssues(issues: TrustIssue[]): TrustIssue[] {
   return [...byKey.values()];
 }
 
-export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", key = lockKey(plan.name, plan.client)): Promise<Lockfile> {
+export async function writeLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH, key = lockKey(plan.name, plan.client)): Promise<Lockfile> {
   const existing = await readExistingLockfile(path);
   const now = new Date().toISOString();
   const entry = finalizeLockEntry(plan, now);
@@ -155,7 +156,7 @@ export async function writeLockfile(plan: InstallPlan, path = "mcp-lock.json", k
   return next;
 }
 
-export async function removeLockfileEntry(serverName: string, client: ClientName, path = "mcp-lock.json"): Promise<{ removed: boolean; key: string; lockfile: Lockfile }> {
+export async function removeLockfileEntry(serverName: string, client: ClientName, path = DEFAULT_LOCKFILE_PATH): Promise<{ removed: boolean; key: string; lockfile: Lockfile }> {
   const existed = await fileExists(path);
   const existing = await readExistingLockfile(path);
   const nextServers = { ...existing.servers };
@@ -186,11 +187,11 @@ export async function removeLockfileEntry(serverName: string, client: ClientName
   return { removed, key, lockfile: next };
 }
 
-export async function readLockfile(path = "mcp-lock.json"): Promise<Lockfile> {
+export async function readLockfile(path = DEFAULT_LOCKFILE_PATH): Promise<Lockfile> {
   return readExistingLockfile(path);
 }
 
-export async function readLockfileDigest(path = "mcp-lock.json"): Promise<string> {
+export async function readLockfileDigest(path = DEFAULT_LOCKFILE_PATH): Promise<string> {
   return computeLockfileDigest(await readExistingLockfile(path));
 }
 
@@ -198,7 +199,7 @@ export function computeLockfileDigest(lockfile: Lockfile): string {
   return `sha256-${createHash("sha256").update(stableJson(lockfileDigestPayload(lockfile))).digest("base64")}`;
 }
 
-export async function verifyAgainstLockfile(plan: InstallPlan, path = "mcp-lock.json"): Promise<LockVerification> {
+export async function verifyAgainstLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH): Promise<LockVerification> {
   const lockfile = await readExistingLockfile(path);
   const key = lockKey(plan.name, plan.client);
   const locked = lockfile.servers[key] ?? lockfile.servers[plan.name];

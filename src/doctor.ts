@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { canonicalJson } from "./canonicalJson.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { readCodexServerConfig } from "./codexToml.js";
 import { clientConfigRootKey } from "./config.js";
 import { readContinueServerConfig } from "./continueYaml.js";
@@ -28,7 +29,7 @@ export interface DoctorReport {
 
 export type DoctorScope = InstallScope | "all";
 
-export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: DoctorScope = "all"): Promise<DoctorReport> {
+export async function doctorLockfile(lockfilePath = DEFAULT_LOCKFILE_PATH, scope: DoctorScope = "all"): Promise<DoctorReport> {
   const lockfile = await readLockfile(lockfilePath);
   const issues: DoctorIssue[] = [];
   const entries = Object.entries(lockfile.servers);

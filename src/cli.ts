@@ -10,7 +10,7 @@ import { adoptInstalledServer, testInstalledServer, updateAllInstalledServers, u
 import { installServerConfig, removeServerConfig, type InstallScope } from "./install.js";
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, removeLockfileEntry, verifyAgainstLockfile, writeLockfile } from "./plan.js";
-import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_SIGNATURE_PATH } from "./constants.js";
+import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS, DEFAULT_SIGNATURE_PATH } from "./constants.js";
 import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest } from "./policy.js";
 import { CacheSchemaError, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, latestOnly, listRegistrySources, listRegistrySourceStatuses, normalizeEntries, readCache, readCacheMetadata, refreshCache, updateRegistrySourceEnabled } from "./registry.js";
 import { searchServers } from "./search.js";
@@ -389,7 +389,7 @@ async function audit(rest: string[]): Promise<void> {
             liveRemoteProbe: liveVerification,
             livePackageProbe: liveVerification,
             allowExecute: hasFlag(rest, "--allow-execute"),
-            timeoutMs: numberFlag(rest, "--timeout", 15000),
+            timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
             requireVerified: hasFlag(rest, "--require-verified"),
           });
           verificationReports.push(verification);
@@ -467,7 +467,7 @@ async function scan(rest: string[]): Promise<void> {
         console.error(`Live probe skipped: ${liveProbeSkipped}. Metadata scan still ran.`);
       }
     } else {
-      liveProbe = await testServer(server, numberFlag(rest, "--timeout", 15000));
+      liveProbe = await testServer(server, numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS));
       if (liveProbe.ok) {
         scans.push(scanToolDescriptions(liveProbe.tools, { generatedAt }));
       } else if (!hasAnyFlag(rest, ["--json", "--sarif"])) {
@@ -515,7 +515,7 @@ async function verify(rest: string[]): Promise<void> {
     liveRemoteProbe: liveVerification,
     livePackageProbe: liveVerification,
     allowExecute: hasFlag(rest, "--allow-execute"),
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
     requireVerified: hasFlag(rest, "--require-verified"),
   });
 
@@ -606,7 +606,7 @@ async function registry(rest: string[]): Promise<void> {
 }
 
 async function outdated(rest: string[]): Promise<void> {
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const lockfile = await readLockfile(path);
   const rows = [];
   for (const [key, locked] of Object.entries(lockfile.servers)) {
@@ -700,7 +700,7 @@ async function lock(rest: string[]): Promise<void> {
       liveRemoteProbe: liveVerification,
       livePackageProbe: liveVerification,
       allowExecute: hasFlag(rest, "--allow-execute"),
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
       requireVerified: hasFlag(rest, "--require-verified"),
     });
     if (!report.ok) {
@@ -918,7 +918,7 @@ async function install(rest: string[]): Promise<void> {
       liveRemoteProbe: liveVerification,
       livePackageProbe: liveVerification,
       allowExecute: hasFlag(rest, "--allow-execute"),
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
       requireVerified,
     });
     if (!report.ok) {
@@ -1013,7 +1013,7 @@ async function testInstalled(rest: string[]): Promise<void> {
   if (client === "all") throw new Error("test-installed requires one --client value, not all.");
   const scope = scopeFlag(rest, "project") as InstallScope;
   if (scope !== "project" && scope !== "global") throw new Error("--scope must be project or global");
-  const timeoutMs = numberFlag(rest, "--timeout", 15000);
+  const timeoutMs = numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS);
 
   const result = await testInstalledServer({ serverName: name, client, scope, timeoutMs });
   if (hasFlag(rest, "--json")) {
@@ -1056,11 +1056,11 @@ async function adoptInstalled(rest: string[]): Promise<void> {
     client,
     scope,
     servers,
-    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
     verify: hasFlag(rest, "--verify"),
     requireVerified: hasFlag(rest, "--require-verified"),
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
-    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+    policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
     dryRun: hasFlag(rest, "--dry-run"),
   });
@@ -1082,11 +1082,11 @@ async function updateInstalled(rest: string[]): Promise<void> {
       scope: scopeFlag(rest, "all"),
       client,
       servers,
-      lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+      lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
       verify: hasFlag(rest, "--verify"),
       requireVerified: hasFlag(rest, "--require-verified"),
-      timeoutMs: numberFlag(rest, "--timeout", 15000),
-      policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+      timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+      policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
       enforcePolicy: !hasFlag(rest, "--no-policy"),
       dryRun: hasFlag(rest, "--dry-run"),
     });
@@ -1108,11 +1108,11 @@ async function updateInstalled(rest: string[]): Promise<void> {
     scope,
     servers,
     version: stringFlag(rest, "--version", ""),
-    lockfilePath: stringFlag(rest, "--file", "mcp-lock.json"),
+    lockfilePath: stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH),
     verify: hasFlag(rest, "--verify"),
     requireVerified: hasFlag(rest, "--require-verified"),
-    timeoutMs: numberFlag(rest, "--timeout", 15000),
-    policyPath: stringFlag(rest, "--policy", ".toolpin/policy.json"),
+    timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
+    policyPath: stringFlag(rest, "--policy", DEFAULT_POLICY_PATH),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
     dryRun: hasFlag(rest, "--dry-run"),
   });
@@ -1132,7 +1132,7 @@ async function remove(rest: string[], command: "remove" | "uninstall" = "remove"
 
   const client = hasAnyFlag(rest, ["--client", "-c"]) ? clientFlag(rest, "generic") : "all";
   const scope = scopeFlag(rest, "project") as InstallScope;
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   if (scope !== "project" && scope !== "global") {
     throw new Error("--scope must be project or global");
   }
@@ -1270,7 +1270,7 @@ async function ci(rest: string[]): Promise<void> {
         liveRemoteProbe: liveVerification,
         livePackageProbe: liveVerification,
         allowExecute: hasFlag(rest, "--allow-execute"),
-        timeoutMs: numberFlag(rest, "--timeout", 15000),
+        timeoutMs: numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS),
         requireVerified,
       });
       if (!verification.ok) {
@@ -1359,7 +1359,7 @@ async function secrets(rest: string[]): Promise<void> {
     throw new Error("Usage: toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]");
   }
 
-  const path = stringFlag(values, "--file", "mcp-lock.json");
+  const path = stringFlag(values, "--file", DEFAULT_LOCKFILE_PATH);
   const scope = scopeFlag(values, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
@@ -1394,7 +1394,7 @@ async function doctor(rest: string[]): Promise<void> {
     return;
   }
 
-  const path = stringFlag(rest, "--file", "mcp-lock.json");
+  const path = stringFlag(rest, "--file", DEFAULT_LOCKFILE_PATH);
   const scope = scopeFlag(rest, "all");
   if (scope !== "all" && scope !== "project" && scope !== "global") {
     throw new Error("--scope must be all, project, or global");
@@ -1539,7 +1539,7 @@ async function test(rest: string[]): Promise<void> {
   const name = values[0];
   if (!name) throw new Error("Usage: toolpin test <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]");
 
-  const timeout = numberFlag(rest, "--timeout", 15000);
+  const timeout = numberFlag(rest, "--timeout", DEFAULT_PROBE_TIMEOUT_MS);
   const server = await findServer(rest, name);
   const json = hasFlag(rest, "--json");
   if (!json) {

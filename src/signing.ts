@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify, type KeyOb
 import { readFile, writeFile } from "node:fs/promises";
 import { readLockfileDigest } from "./plan.js";
 import { readPolicyDigest } from "./policy.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { canonicalJson } from "./canonicalJson.js";
 import { isRecord } from "./util.js";
 
@@ -26,7 +27,7 @@ export interface SignatureVerificationReport {
 }
 
 export async function signLockfile(
-  lockfilePath = "mcp-lock.json",
+  lockfilePath = DEFAULT_LOCKFILE_PATH,
   privateKeyPath: string,
   signaturePath = "mcp-lock.sig",
   options: { policyPath?: string } = {},
@@ -57,7 +58,7 @@ export async function signLockfile(
 }
 
 export async function verifyLockfileSignature(
-  lockfilePath = "mcp-lock.json",
+  lockfilePath = DEFAULT_LOCKFILE_PATH,
   publicKeyPath: string,
   signaturePath = "mcp-lock.sig",
   options: { policyPath?: string } = {},

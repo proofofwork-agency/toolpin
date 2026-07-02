@@ -19,6 +19,7 @@ import {
   SERVER_VIEWS,
   TUI_COMMANDS,
 } from "./constants.js";
+import { DEFAULT_LOCKFILE_PATH, DEFAULT_PROBE_TIMEOUT_MS } from "../constants.js";
 import { formatClientConfigSnippet } from "./configSnippet.js";
 import { clamp, safeFileName, truncate, unique } from "./format.js";
 import { buildTuiHitZones, hitTestTui } from "./layout.js";
@@ -209,7 +210,7 @@ export function MpmTui() {
       });
       const servers = normalizeEntries(entries);
       const visibleServers = filterByEnabledSources(servers, sourceMode, nextRegistrySources);
-      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       void refreshInstalledRows(servers, lockfile);
       setState((prev) => ({
         ...prev,
@@ -245,7 +246,7 @@ export function MpmTui() {
       const registrySources = await listRegistrySourceStatuses().catch(() => REGISTRY_SOURCES);
       const servers = normalizeEntries(entries);
       const visibleServers = filterByEnabledSources(servers, source, registrySources);
-      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       const ingestLog = fetched.lastError ? {
         title: "ingest",
         command: "toolpin ingest",
@@ -330,7 +331,7 @@ export function MpmTui() {
       for (const client of clients) {
         lockfile = await writeLockfile(
           buildInstallPlan(selectedServer, client, { scope: state.installScope }),
-          "mcp-lock.json",
+          DEFAULT_LOCKFILE_PATH,
           lockKey(selectedServer.name, client),
         );
       }
@@ -437,7 +438,7 @@ export function MpmTui() {
       // only write when the entry is new or drifted. `w` performs an explicit update.
       const lockWriteNeeded: boolean[] = plans.map(() => true);
       for (const [index, plan] of plans.entries()) {
-        const verification = await verifyAgainstLockfile(plan, "mcp-lock.json");
+        const verification = await verifyAgainstLockfile(plan, DEFAULT_LOCKFILE_PATH);
         if (!verification.ok) mismatches.push(`${verification.key}: ${verification.messages.join("; ")}`);
         else if (verification.locked) lockWriteNeeded[index] = false;
       }
@@ -464,13 +465,13 @@ export function MpmTui() {
         if (lockWriteNeeded[index]) {
           lockfile = await writeLockfile(
             plans[index],
-            "mcp-lock.json",
+            DEFAULT_LOCKFILE_PATH,
             lockKey(server.name, client),
           );
         }
         files.push(result.file);
       }
-      if (!lockfile) lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      if (!lockfile) lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -553,14 +554,14 @@ export function MpmTui() {
   async function removeSelected(): Promise<void> {
     if (!selectedServer) return;
     try {
-      await readLockfile("mcp-lock.json");
+      await readLockfile(DEFAULT_LOCKFILE_PATH);
       const results: string[] = [];
       for (const client of selectedClientsForScope(state.client, state.installScope)) {
         const configResult = await removeServerConfig(selectedServer.name, client, state.installScope);
-        const lockResult = await removeLockfileEntry(selectedServer.name, client, "mcp-lock.json");
+        const lockResult = await removeLockfileEntry(selectedServer.name, client, DEFAULT_LOCKFILE_PATH);
         results.push(`${client}:config=${configResult.action},lock=${lockResult.removed ? "removed" : "missing"}`);
       }
-      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -661,7 +662,7 @@ export function MpmTui() {
       lastAction: `testing ${selectedServer.name}`,
     }));
     try {
-      const result = await testServer(selectedServer, 15000);
+      const result = await testServer(selectedServer, DEFAULT_PROBE_TIMEOUT_MS);
       setState((prev) => ({
         ...prev,
         testing: false,
@@ -765,7 +766,7 @@ export function MpmTui() {
             scope: row.scope,
             servers: state.servers,
           });
-      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -819,7 +820,7 @@ export function MpmTui() {
         client: "all",
         servers: state.servers,
       });
-      const lockfile = await readLockfile("mcp-lock.json").catch(() => undefined);
+      const lockfile = await readLockfile(DEFAULT_LOCKFILE_PATH).catch(() => undefined);
       setState((prev) => ({
         ...prev,
         lockfile,
@@ -852,7 +853,7 @@ export function MpmTui() {
     try {
       const runtimeAdvisory = await localHttpRuntimeAdvisory(target.serverName, target.client, target.scope).catch(() => undefined);
       const configResult = await removeServerConfig(target.serverName, target.client, target.scope);
-      const lockResult = await removeLockfileEntry(target.serverName, target.client, "mcp-lock.json");
+      const lockResult = await removeLockfileEntry(target.serverName, target.client, DEFAULT_LOCKFILE_PATH);
       const lockfile = lockResult.lockfile;
       const lines = [`config ${configResult.action}: ${configResult.file}`, `lock ${lockResult.removed ? "removed" : "missing"}`];
       if (runtimeAdvisory && configResult.action === "removed") lines.push(`runtime ${runtimeAdvisory.message}`);
@@ -906,7 +907,7 @@ export function MpmTui() {
     }));
 
     try {
-      const result = await testInstalledServer({ serverName: row.serverName, client: row.client, scope: row.scope, timeoutMs: 15000 });
+      const result = await testInstalledServer({ serverName: row.serverName, client: row.client, scope: row.scope, timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
       const tests = { ...installedTests, [installedId(row.serverName, row.client, row.scope)]: result };
       setInstalledTests(tests);
       setState((prev) => ({
@@ -945,7 +946,7 @@ export function MpmTui() {
     }));
 
     try {
-      const report = await doctorLockfile("mcp-lock.json", installed.scope);
+      const report = await doctorLockfile(DEFAULT_LOCKFILE_PATH, installed.scope);
       await refreshInstalledRows();
       setState((prev) => ({
         ...prev,
@@ -1094,7 +1095,7 @@ export function MpmTui() {
           },
         }));
         try {
-          const report = await doctorLockfile("mcp-lock.json", state.installScope);
+          const report = await doctorLockfile(DEFAULT_LOCKFILE_PATH, state.installScope);
           setState((prev) => ({
             ...prev,
             checking: false,
