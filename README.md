@@ -5,9 +5,15 @@
 [![npm](https://img.shields.io/npm/v/@proofofwork-agency/toolpin)](https://www.npmjs.com/package/@proofofwork-agency/toolpin)
 [![Status: pre-1.0 beta](https://img.shields.io/badge/status-pre--1.0%20beta-yellow)](https://github.com/proofofwork-agency/toolpin/releases)
 
-ToolPin is a review gate for MCP server installs. It helps teams inspect what
-an MCP server will run, generate client config, commit an enforcing
-`mcp-lock.json`, and fail CI when the reviewed install drifts.
+ToolPin is a review gate for MCP server installs — a lockfile for what your
+agent actually sees and runs. It verifies what it can about a server's
+artifact (npm SRI, OCI digest, MCPB hash), hashes the live tool surface the
+agent reads at connection time, writes correct client config, commits all of
+it to an enforcing `mcp-lock.json`, and fails CI when any of it drifts.
+
+NSA and OWASP guidance for MCP prescribes exactly this control — pin server
+versions, hash tool definitions, alert on drift. ToolPin implements it as one
+command: `toolpin init ci`.
 
 Use `toolpin` for explicit commands or the shorter `tpn` alias for daily work.
 
@@ -35,17 +41,28 @@ or newer.
 
 ## Highlights
 
-- **Review before install:** inspect registry metadata, selected target, trust
-  score, evidence tier, required secrets, and generated config before writing.
-- **One lockfile across clients:** write `mcp-lock.json` entries for Claude,
-  Cursor, VS Code, Codex, OpenCode, Continue, Gemini CLI, and more.
-- **CI drift checks:** reject changes in registry metadata, selected target,
-  config output, capability manifest, policy, signature, or evidence state.
-- **Registry-aware discovery:** ingest Official MCP Registry, Docker MCP
-  Catalog, the ToolPin curated registry, and configured custom registries.
-- **Local policy gate:** enforce minimum trust tier/score, source and client
-  allow/deny rules, remote endpoint rules, required-secret rules, and pinning
-  requirements.
+- **An enforcing lockfile:** `mcp-lock.json` records the reviewed artifact,
+  the live tool surface hash, and the generated config — with per-entry
+  integrity and optional ed25519 signatures. CI rejects drift in any of them.
+- **One command to protected:** `toolpin init ci` writes a minimal, SHA-pinned
+  GitHub workflow plus a starter policy. Rug pulls — a server changing its
+  tool descriptions after you approved it — fail your build instead of
+  steering your agent.
+- **Three-verdict output:** every server is `verified`, `needs-review`, or
+  `blocked`, with the reason. `--explain` shows the full evidence when you
+  want it.
+- **One lockfile across clients:** correct config for Claude, Cursor, VS Code,
+  Codex, OpenCode, Continue, Gemini CLI, and more — reviewed once, written
+  everywhere.
+- **Registry-aware, registry-neutral:** reads the Official MCP Registry,
+  Docker MCP Catalog, the ToolPin curated registry, and custom registries; it
+  is a verification layer over them, not a competing catalog.
+- **Local policy gate:** minimum verdict floor, source/client allow/deny
+  rules, remote endpoint rules, required-secret rules, and pinning
+  requirements — enforced at install and in CI.
+- **An open format:** the lockfile is a
+  [vendor-neutral draft spec](docs/spec/mcp-lockfile-v1.md) with JSON Schemas
+  and byte-exact test vectors, so other tools can read and enforce it too.
 - **Terminal UI:** browse, inspect, install, update, adopt, remove, and test MCP
   servers from an Ink-based TUI.
 
@@ -74,16 +91,35 @@ agent new tools, local process access, network access, and credentials. Today
 that decision is often a copied JSON snippet with no reviewed artifact and no
 CI check that says "this is still the server and config we approved."
 
-ToolPin turns that into a normal engineering control:
+The failure modes are no longer theoretical: postmark-mcp shipped an email
+BCC backdoor in a patch release, mcp-remote had a CVSS 9.6 RCE
+(CVE-2025-6514), and the quietest one — the rug pull — needs no new release
+at all: a server you approved changes its tool descriptions upstream, your
+agent reads them live at the next connection, and nothing in your repo
+changed. MCP clients do not notify you.
 
-1. Inspect the server and install plan.
+ToolPin turns MCP installs into a normal engineering control:
+
+1. Inspect the server and install plan (`verified` / `needs-review` /
+   `blocked`, with reasons).
 2. Generate the right config for the MCP client.
-3. Commit `mcp-lock.json` as the reviewed record.
-4. Run `toolpin ci` so drift is caught before it reaches users.
+3. Commit `mcp-lock.json` as the reviewed record — artifact digests, tool
+   surface hash, config, evidence.
+4. Run `toolpin init ci` once; from then on drift fails the build.
 
-ToolPin is not a hosted gateway, runtime sandbox, secret vault, or broad MCP
-marketplace. It sits between registries and clients as a local, repo-owned
-reproducibility layer.
+ToolPin is deliberately one layer, and not the others:
+
+| Layer | Examples | What it checks | What it misses |
+|---|---|---|---|
+| Identity allowlists | GitHub/VS Code enterprise MCP policies | server name/URL is on the list | artifact bytes, tool surface, config — and CI is uncovered |
+| File/package pinning | generic agent package managers | files on disk match a hash | the live tool surface the agent actually reads |
+| Static scanners | MCP security scanners | known-bad patterns at scan time | day-7 changes to an approved server |
+| Runtime gateways | hosted MCP proxies | traffic at runtime | nothing — but you must route everything through them |
+| **ToolPin** | this repo | **artifact + live tool surface + config, enforced in CI** | runtime behavior (by design — see threat model) |
+
+It is not a hosted gateway, runtime sandbox, secret vault, or marketplace. It
+sits between registries and clients as a local, repo-owned verification
+layer — the part every registry and client currently leaves to you.
 
 ## Getting Started
 
@@ -126,6 +162,20 @@ npm run dev -- --help
 ```
 
 ## Usage
+
+### The 30-second version
+
+```bash
+toolpin search github --live                                  # find a server
+toolpin install io.github.github/github-mcp-server \
+  --client claude --update-lock                               # review, write config + lock
+toolpin init ci                                               # workflow + starter policy
+git add mcp-lock.json .toolpin .github && git commit          # protected
+```
+
+From here on, a PR that changes the server's artifact, its tool surface, the
+generated config, or the lockfile itself fails CI with the exact remediation
+command.
 
 ### Search Registries
 
@@ -211,63 +261,55 @@ for the full command list.
 
 ## GitHub Actions
 
-Run ToolPin against committed project config and a committed MCP lockfile:
+The fastest path is the scaffold — it writes the workflow and a starter
+policy, and refuses to set up a repo that has no lockfile yet:
 
-```yaml
-name: ToolPin
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-jobs:
-  toolpin:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install -g @proofofwork-agency/toolpin
-      - run: toolpin doctor --file mcp-lock.json --scope project
-      - run: toolpin ci --file mcp-lock.json --live --verify
+```bash
+toolpin init ci
 ```
 
-Run `toolpin doctor --scope project` when project client config files such as
-`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, or `.codex/config.toml` are
-committed and should match `mcp-lock.json`.
-
-If you only need lockfile enforcement, the composite Action builds ToolPin from
-the action source by default, then runs `toolpin ci`:
+Which produces the whole setup:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 - uses: proofofwork-agency/toolpin@v0.3.2
-  with:
-    live: "true"
-    verify: "true"
-    file: mcp-lock.json
 ```
 
-Set `toolpin-version` to an npm version specifier if you want the Action to
-install `@proofofwork-agency/toolpin` from npm instead.
+Useful inputs on the composite Action:
 
-Recommended CI posture for reviewed lockfiles is `toolpin ci --live --verify`
-for capability drift. Use `--skip-live-verification` only as an explicit downgrade
-when live `tools/list` hashing is unavailable.
+- `strict: "true"` — require verified artifact evidence (`--verify
+  --require-verified`). Remote tool-surface pins are re-probed over the
+  network; package live pins additionally need `allow-execute: "true"`
+  because re-verifying them executes the package.
+- `doctor: auto|true|false` — also check committed client config files
+  (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`)
+  against the lockfile. `auto` runs it when such files exist.
+- `sarif: "true"` — write SARIF and expose `sarif-path` for
+  `github/codeql-action/upload-sarif`.
+- `toolpin-version` — install from npm instead of building the action source.
+
+Conflicting inputs (for example `strict: "true"` with `verify: "false"`) fail
+closed with an explanation rather than silently downgrading. See the
+[drift-in-CI guide](https://proofofwork-agency.github.io/toolpin/docs/how-to/catch-drift-in-ci)
+for the full matrix, digest pinning, and signature verification.
+
+For direct CLI workflows, `toolpin ci --live --verify` re-runs verification
+before comparing locked plans. Use `--skip-live-verification` only as an explicit downgrade when you accept skipping live `tools/list` capability
+hashing; CI refuses that downgrade for entries that already have live pins.
 
 ## Safety Model
 
 ToolPin is intentionally conservative:
 
+- It answers with three verdicts — `verified`, `needs-review`, `blocked` —
+  and always says why. `--explain` exposes the underlying tier, profile
+  score, evidence list, and caps.
+- `verified` requires ToolPin-verified artifact proof (npm integrity, OCI
+  digest, or MCPB hash evidence) — publisher claims alone never earn it;
+  they are reported as declared, and capped until re-verified locally.
 - It fails closed when a client config path is not verified.
 - It keeps structured output on stdout and progress/errors on stderr.
 - It does not print raw secret values during secret audits.
-- It treats score as triage, not proof.
-- It separates evidence tier from metadata completeness.
-- It caps trusted-source conditional entries at 69% until ToolPin verifies
-  artifact proof, such as npm integrity, OCI digest, or MCPB hash evidence.
 - It rejects lockfile drift unless you deliberately review and update the lock.
 
 Verification currently covers install metadata and selected evidence paths:

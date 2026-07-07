@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { clientsForScope, PROJECT_CLIENTS, selectLaunchTarget, type ClientName } from "../config.js";
 import { installableClientsForServer } from "../clientSupport.js";
-import { verifyFrozenInstall } from "../ci.js";
+import { verifyFrozenInstall, type FrozenInstallIssue, type FrozenInstallReport } from "../ci.js";
 import { doctorLockfile } from "../doctor.js";
 import { type InstallScope } from "../install.js";
 import { listInstalledServers } from "../inventory.js";
@@ -29,6 +29,16 @@ const RECOMMENDED_POLICY: PolicyConfig = {
   requireDigestPinnedOci: true,
   requireMcpbSha256: true,
 };
+type CiProtectionStatus = "ok" | "skipped" | "failed" | "pending";
+
+interface CiProtectionState {
+  path: string;
+  signatureStatus: CiProtectionStatus;
+  digestStatus: CiProtectionStatus;
+  policyStatus: CiProtectionStatus;
+  verificationStatus: CiProtectionStatus;
+  lockedClients?: Map<string, ClientName>;
+}
 
 export async function init(rest: string[]): Promise<void> {
   if (isHelp(rest)) {
@@ -386,6 +396,13 @@ export async function ci(rest: string[]): Promise<void> {
   const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   const enforcePolicies = !hasFlag(rest, "--no-policy");
   const sarif = hasFlag(rest, "--sarif");
+  const json = hasFlag(rest, "--json");
+  let signatureStatus: CiProtectionStatus = "skipped";
+  let digestStatus: CiProtectionStatus = expectedDigest ? "pending" : "skipped";
+  let policyStatus: CiProtectionStatus = enforcePolicies ? "pending" : "skipped";
+  let verificationStatus: CiProtectionStatus = verifyBeforeUse ? "pending" : "skipped";
+  const policyConfig = enforcePolicies ? await readPolicy(policyPath) : undefined;
+  if (enforcePolicies && !policyConfig) policyStatus = "skipped";
   if (signaturePath || publicKeyPath) {
     if (!signaturePath || !publicKeyPath) throw new Error("toolpin ci requires both --signature and --public-key when verifying a lock signature.");
     let signature;
@@ -393,33 +410,54 @@ export async function ci(rest: string[]): Promise<void> {
       signature = await verifyLockfileSignature(path, publicKeyPath, signaturePath, { policyPath });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      signatureStatus = "failed";
       if (sarif) {
         console.log(JSON.stringify(sarifLog([ciSarifResult("ci_signature_failed", `Lockfile signature verification failed for ${path}: ${message}`, path)], { executionSuccessful: false }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
+      if (json) {
+        console.log(JSON.stringify(ciJsonReport({ ok: false, checked: 0, issues: [{ key: path, messages: [message] }] }, { path, signatureStatus, digestStatus, policyStatus, verificationStatus }), null, 2));
         process.exitCode = 1;
         return;
       }
       throw error;
     }
     if (!signature.ok) {
+      signatureStatus = "failed";
       if (sarif) {
         console.log(JSON.stringify(sarifLog([ciSarifResult("ci_signature_failed", `Lockfile signature verification failed for ${path}: ${signature.message}`, path)], { executionSuccessful: false }), null, 2));
         process.exitCode = 1;
         return;
       }
+      if (json) {
+        console.log(JSON.stringify(ciJsonReport({ ok: false, checked: 0, issues: [{ key: path, messages: [signature.message] }] }, { path, signatureStatus, digestStatus, policyStatus, verificationStatus }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
       throw new Error(`Lockfile signature verification failed for ${path}: ${signature.message}`);
     }
+    signatureStatus = "ok";
   }
   if (expectedDigest) {
     const actualDigest = await readLockfileDigest(path);
     if (actualDigest !== expectedDigest) {
+      digestStatus = "failed";
       if (sarif) {
         console.log(JSON.stringify(sarifLog([ciSarifResult("ci_digest_mismatch", `Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`, path)], { executionSuccessful: false }), null, 2));
         process.exitCode = 1;
         return;
       }
+      if (json) {
+        console.log(JSON.stringify(ciJsonReport({ ok: false, checked: 0, issues: [{ key: path, messages: [`Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`] }] }, { path, signatureStatus, digestStatus, policyStatus, verificationStatus }), null, 2));
+        process.exitCode = 1;
+        return;
+      }
       throw new Error(`Lockfile digest mismatch for ${path}: expected ${expectedDigest}, got ${actualDigest}`);
     }
+    digestStatus = "ok";
   }
+  const lockedClients = await lockedClientMap(path).catch(() => new Map<string, ClientName>());
   const report = await verifyFrozenInstall(path, async (locked) => {
     const server = await findExactServer(rest, locked.name, locked.resolved?.source ?? sourceFlag(rest, "all"));
     let verifiedCapabilityManifest: CapabilityManifest | undefined;
@@ -451,17 +489,22 @@ export async function ci(rest: string[]): Promise<void> {
           ...verification.issues.map((issue) => `- ${issue.severity}: ${issue.code}: ${issue.message}`),
         ].join("\n"));
       }
+      verificationStatus = "ok";
       verifiedCapabilityManifest = verification.capabilityManifest;
     }
     const plan = buildInstallPlan(server, locked.client, { capabilityManifest: verifiedCapabilityManifest, verificationReport: verification, scope: locked.scope ?? "project" });
-    if (enforcePolicies) {
-      const policy = await enforcePolicy(plan, policyPath);
+    if (enforcePolicies && policyConfig) {
+      const policy = evaluatePolicy(plan, policyConfig);
       if (!policy.ok) {
+        policyStatus = "failed";
         throw new Error(policy.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; "));
       }
+      policyStatus = "ok";
     }
     return plan;
   });
+  if (verifyBeforeUse && verificationStatus === "pending") verificationStatus = report.ok ? "ok" : "failed";
+  if (enforcePolicies && policyConfig && policyStatus === "pending") policyStatus = report.ok ? "ok" : "failed";
 
   if (sarif) {
     console.log(JSON.stringify(sarifLog(ciSarifResults(report, path), { executionSuccessful: report.ok }), null, 2));
@@ -469,16 +512,24 @@ export async function ci(rest: string[]): Promise<void> {
     return;
   }
 
+  const protectionStatus = { path, signatureStatus, digestStatus, policyStatus, verificationStatus, lockedClients };
+  if (json) {
+    console.log(JSON.stringify(ciJsonReport(report, protectionStatus), null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
+
   if (!report.ok) {
     throw new Error([
       `Frozen install failed for ${path}.`,
-      ...report.issues.flatMap((issue) => [`- ${issue.key}:`, ...issue.messages.map((message) => `  - ${message}`)]),
+      ...report.issues.flatMap((issue) => [`- ${issue.key}:`, ...issue.messages.map((message) => `  - ${message}`), `  - remediate: ${remediationCommand(issue.key, lockedClients)}`]),
     ].join("\n"));
   }
 
   printHeader("Frozen install OK");
   printField("file", path);
   printField("checked", `${report.checked} locked server/client entrie(s)`);
+  printCiChecklist(protectionStatus);
 }
 
 export async function policy(rest: string[]): Promise<void> {
@@ -627,7 +678,7 @@ export async function doctor(rest: string[]): Promise<void> {
 }
 
 export function ciHelp(): void {
-  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]");
 }
 
 export function initHelp(): void {
@@ -636,6 +687,83 @@ export function initHelp(): void {
 
 export function doctorHelp(): void {
   console.log("Usage: toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]");
+}
+
+async function lockedClientMap(path: string): Promise<Map<string, ClientName>> {
+  const lockfile = await readLockfile(path);
+  const clients = new Map<string, ClientName>();
+  for (const [key, entry] of Object.entries(lockfile.servers)) {
+    clients.set(key, entry.client);
+  }
+  return clients;
+}
+
+function ciJsonReport(report: FrozenInstallReport, state: CiProtectionState): {
+  ok: boolean;
+  checkedEntries: number;
+  failures: Array<{ entryName: string; client: string; condition: string; remediation: string }>;
+  lockIntegrity: { status: CiProtectionStatus };
+  registryDrift: { status: CiProtectionStatus };
+  policy: { status: CiProtectionStatus };
+  verification: { status: CiProtectionStatus };
+  signature: { status: CiProtectionStatus };
+  digest: { status: CiProtectionStatus };
+} {
+  return {
+    ok: report.ok,
+    checkedEntries: report.checked,
+    failures: report.issues.flatMap((issue) => issue.messages.map((message) => ({
+      entryName: entryName(issue.key),
+      client: clientForIssue(issue.key, state.lockedClients),
+      condition: message,
+      remediation: remediationCommand(issue.key, state.lockedClients),
+    }))),
+    lockIntegrity: { status: report.ok ? "ok" : "failed" },
+    registryDrift: { status: report.ok ? "ok" : "failed" },
+    policy: { status: normalizeStatus(state.policyStatus) },
+    verification: { status: normalizeStatus(state.verificationStatus) },
+    signature: { status: normalizeStatus(state.signatureStatus) },
+    digest: { status: normalizeStatus(state.digestStatus) },
+  };
+}
+
+function printCiChecklist(state: CiProtectionState): void {
+  printField("lock integrity", "OK");
+  printField("registry drift", "OK");
+  printField("policy", checklistStatus(state.policyStatus));
+  printField("verification", checklistStatus(state.verificationStatus));
+  printField("signature", checklistStatus(state.signatureStatus));
+  printField("digest", checklistStatus(state.digestStatus));
+}
+
+function checklistStatus(status: CiProtectionStatus): string {
+  const normalized = normalizeStatus(status);
+  return normalized === "ok" ? "OK" : normalized === "failed" ? "FAILED" : "SKIPPED";
+}
+
+function normalizeStatus(status: CiProtectionStatus): CiProtectionStatus {
+  return status === "pending" ? "skipped" : status;
+}
+
+function remediationCommand(key: string, clients = new Map<string, ClientName>()): string {
+  const name = entryName(key);
+  const client = clientForIssue(key, clients);
+  if (client !== "unknown") {
+    return `toolpin install ${name} --client ${client} --update-lock`;
+  }
+  return `toolpin install ${name} --client <client> --update-lock`;
+}
+
+function entryName(key: string): string {
+  const index = key.lastIndexOf(":");
+  return index > 0 ? key.slice(0, index) : key;
+}
+
+function clientForIssue(key: string, clients = new Map<string, ClientName>()): string {
+  const known = clients.get(key);
+  if (known) return known;
+  const index = key.lastIndexOf(":");
+  return index > 0 ? key.slice(index + 1) : "unknown";
 }
 
 async function plannedWrite(path: string, content: string, options: { dryRun: boolean }): Promise<"created" | "would write" | "already configured" | "conflict"> {

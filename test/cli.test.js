@@ -204,6 +204,61 @@ test("CLI ci --verify --skip-live-verification rejects description and manifest 
   }
 });
 
+test("CLI ci --json emits machine-readable success status", async () => {
+  await withTempCwd(async () => {
+    const server = packageServer({ name: "io.github/json-ok" });
+    await writeRegistryCache([server]);
+    await writeLockfile(buildInstallPlan(server, "claude"));
+
+    const { stdout, stderr } = await execFileAsync(process.execPath, [
+      CLI,
+      "ci",
+      "--source",
+      "official",
+      "--no-policy",
+      "--json",
+    ]);
+    const parsed = JSON.parse(stdout);
+
+    assert.equal(stderr, "");
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.checkedEntries, 1);
+    assert.deepEqual(parsed.failures, []);
+    assert.equal(parsed.lockIntegrity.status, "ok");
+    assert.equal(parsed.registryDrift.status, "ok");
+    assert.equal(parsed.policy.status, "skipped");
+    assert.equal(parsed.verification.status, "skipped");
+    assert.equal(parsed.signature.status, "skipped");
+  });
+});
+
+test("CLI ci --json emits remediations for failed entries", async () => {
+  await withTempCwd(async () => {
+    await writeFile("mcp-lock.json", JSON.stringify({
+      lockfileVersion: 2,
+      generatedAt: new Date().toISOString(),
+      servers: {},
+    }, null, 2), "utf8");
+
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "ci", "--no-policy", "--json"]),
+      (error) => {
+        const stdout = error && typeof error === "object" && "stdout" in error ? String(error.stdout) : "";
+        const parsed = JSON.parse(stdout);
+        assert.equal(parsed.ok, false);
+        assert.equal(parsed.checkedEntries, 0);
+        assert.equal(parsed.failures[0].entryName, "mcp-lock.json");
+        assert.equal(parsed.failures[0].client, "unknown");
+        assert.match(parsed.failures[0].condition, /lockfile has no server entries/);
+        assert.match(parsed.failures[0].remediation, /toolpin install mcp-lock\.json --client <client> --update-lock/);
+        assert.equal(parsed.lockIntegrity.status, "failed");
+        assert.equal(parsed.registryDrift.status, "failed");
+        return true;
+      },
+    );
+  });
+});
+
 test("CLI policy init --recommended writes starter policy and refuses accidental overwrite", async () => {
   await withTempCwd(async () => {
     const created = await execFileAsync(process.execPath, [CLI, "policy", "init", "--recommended"]);

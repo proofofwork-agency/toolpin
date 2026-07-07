@@ -1,157 +1,151 @@
 # Catch Drift in CI
 
-Use `toolpin ci` when `mcp-lock.json` is committed to a repository and pull
-requests should fail if registry metadata, generated install-plan config,
-policy, or optional signatures no longer match the reviewed lockfile.
+Use `toolpin ci` when `mcp-lock.json` is committed and pull requests should
+fail if reviewed MCP installs drift against registry metadata, generated
+install-plan config, lock integrity, policy, signatures, or verification
+inputs.
 
 `toolpin ci` is read-only. It re-resolves locked entries, rebuilds install
 plans, checks lock integrity, enforces policy unless bypassed, and exits
 non-zero on drift. It does not update `mcp-lock.json`.
 
-Use `toolpin doctor --scope project` as a separate gate when project client
-config files are committed and must match `mcp-lock.json`. `doctor` reads files
-such as `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, and
-`.codex/config.toml`; `ci` does not read local client config files.
+## Five-line Setup
 
-`toolpin ci --sarif` emits SARIF 2.1.0 JSON to stdout and still exits non-zero
-on drift:
+After you have at least one reviewed lock entry, initialize CI:
 
 ```bash
-toolpin ci --file mcp-lock.json --live --sarif > toolpin.sarif
+toolpin init ci
 ```
 
-Automatic GitHub code-scanning upload is not wired into the composite action in
-this pass; add an explicit upload step after reviewing the desired repository
-permissions.
+This writes:
 
-## Project Config and Lockfile Workflow
+- `.github/workflows/toolpin.yml`
+- `.toolpin/policy.json` when it does not already exist
 
-Use this workflow when project client config files are committed and should
-match `mcp-lock.json`:
+If `mcp-lock.json` is missing, `init ci` writes nothing and tells you to create
+a lock first:
+
+```bash
+toolpin install <server> --client <client> --update-lock
+# or
+toolpin lock <server> --client <client>
+```
+
+Commit the workflow, policy, and lockfile together. CI now fails on MCP drift.
+
+The generated workflow uses the composite action:
 
 ```yaml
 name: ToolPin
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
+on: [pull_request, push]
 permissions:
   contents: read
-
 jobs:
-  mcp-lock:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install -g @proofofwork-agency/toolpin
-      - run: toolpin doctor --file mcp-lock.json --scope project
-      - run: toolpin ci --file mcp-lock.json --live
-```
-
-Omit the `doctor` step only when the repository does not commit project client
-config files.
-
-## Composite Action for Lockfile-Only CI
-
-After the repository is public and tagged, call the composite action when you
-only need `mcp-lock.json` enforcement. The action installs ToolPin from the
-action source by default, so it does not require npm publish:
-
-```yaml
-name: ToolPin
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  mcp-lock:
+  toolpin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: proofofwork-agency/toolpin@v0.3.2
-        with:
-          file: mcp-lock.json
-          live: "true"
 ```
 
-The action builds ToolPin from `$GITHUB_ACTION_PATH` and runs:
+By default the action runs `toolpin ci --file mcp-lock.json --live` and lets the
+CLI use each lockfile entry's recorded registry source. Older lockfiles without
+a recorded source still fall back to `--source all`.
 
-```bash
-toolpin ci --file mcp-lock.json --source all --live --policy .toolpin/policy.json
-```
+## Doctor Mode
 
-When `.toolpin/policy.json` is absent, the current CLI treats policy enforcement
-as a no-op.
+The action has a `doctor` input:
 
-## Direct CLI Workflow
+| Input | Behavior |
+|---|---|
+| `doctor: auto` | Default. Runs `toolpin doctor --scope project` when known project MCP config files exist. |
+| `doctor: "true"` | Always runs doctor before CI. Doctor failure fails the action. |
+| `doctor: "false"` | Never runs doctor. |
 
-Use this form when you want the workflow to install the npm package directly
-instead of using the composite Action, and you only need lockfile enforcement:
+`doctor:auto` looks for project config files such as `.mcp.json`,
+`.cursor/mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`, `opencode.json`,
+`.gemini/settings.json`, and `.roo/mcp.json`.
+
+Use `doctor: "false"` only when project client config files are intentionally
+not committed.
+
+## Strict Mode
+
+Use strict mode when CI should require fresh ToolPin-verified artifact proof:
 
 ```yaml
-name: ToolPin
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-
-jobs:
-  mcp-lock:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install -g @proofofwork-agency/toolpin
-      - run: toolpin ci --file mcp-lock.json --live
+- uses: proofofwork-agency/toolpin@v0.3.2
+  with:
+    strict: "true"
 ```
 
-For unreleased source-checkout development, run `npm ci`, `npm test`, and
-`npm run dev -- ci --file mcp-lock.json --live`. Add
-`npm run dev -- doctor --file mcp-lock.json --scope project` before `ci` when
-project client config files are committed.
+`strict: "true"` expands to:
+
+```bash
+toolpin ci --verify --require-verified
+```
+
+It does not automatically pass `--skip-live-verification`. Remote live pins are
+re-probed over the guarded network transport. Package live pins require
+execution to re-verify; CI fails with an actionable error unless you opt in:
+
+```yaml
+- uses: proofofwork-agency/toolpin@v0.3.2
+  with:
+    strict: "true"
+    allow-execute: "true"
+```
+
+Conflicting inputs fail closed. For example, `strict: "true"` with
+`verify: "false"` or `require-verified: "false"` exits before running ToolPin.
+`require-verified: "true"` also requires `verify: "true"`.
+
+## SARIF
+
+To write SARIF for code scanning, enable `sarif` and upload the file in a
+separate step. The composite action does not upload SARIF itself because upload
+permissions belong to the caller's workflow.
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+
+steps:
+  - uses: actions/checkout@v4
+  - id: toolpin
+    uses: proofofwork-agency/toolpin@v0.3.2
+    with:
+      sarif: "true"
+  - uses: github/codeql-action/upload-sarif@v3
+    if: always()
+    with:
+      sarif_file: ${{ steps.toolpin.outputs.sarif-path }}
+```
+
+The SARIF file is `toolpin-ci.sarif`.
 
 ## Digest Pin
 
-`--expect-digest` compares the whole-lock digest against a value provided by
-CI. Store the expected digest outside the pull request being checked, for
-example as a GitHub Actions variable or secret.
-
-Generate the digest after reviewing a lockfile change:
+`expect-digest` compares the whole-lock digest against a value from outside the
+pull request.
 
 ```bash
 toolpin lock digest --file mcp-lock.json
 ```
 
-Use it in CI:
+Store the digest as a CI variable or secret, then run:
 
 ```yaml
 - uses: proofofwork-agency/toolpin@v0.3.2
   with:
-    file: mcp-lock.json
-    live: "true"
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
 ```
 
-Do not commit the expected digest next to `mcp-lock.json`; a PR that changes
-both files would defeat the check.
+Do not commit the expected digest next to `mcp-lock.json`; a pull request could
+change both.
 
-## Detached Signature
-
-ToolPin can verify a detached Ed25519 signature before registry resolution:
+## Signature Check
 
 ```bash
 toolpin lock sign --policy .toolpin/policy.json --key private.pem --file mcp-lock.json --signature mcp-lock.sig
@@ -163,17 +157,19 @@ Then in CI:
 ```yaml
 - uses: proofofwork-agency/toolpin@v0.3.2
   with:
-    file: mcp-lock.json
-    live: "true"
     signature: mcp-lock.sig
     public-key: public.pem
 ```
 
-Commit `mcp-lock.sig` and the public key only after review. Never commit the
-private key. A signature is meaningful only when the private key and public
-trust root are controlled outside the PR path.
+The `signature` and `public-key` inputs must always be supplied together. The
+action fails closed if only one is set. Keep the private key outside the pull
+request path.
 
-## Policy and Live Verification
+## Policy
+
+`toolpin init ci` creates a starter `.toolpin/policy.json` if one is absent.
+The default policy blocks unsafe entries while allowing `needs-review` entries
+so fresh repos can adopt locking before requiring verified proof.
 
 To enforce a non-default policy path:
 
@@ -183,7 +179,7 @@ To enforce a non-default policy path:
     policy: security/toolpin-policy.json
 ```
 
-To make CI skip policy enforcement explicitly:
+To skip policy enforcement explicitly:
 
 ```yaml
 - uses: proofofwork-agency/toolpin@v0.3.2
@@ -191,43 +187,44 @@ To make CI skip policy enforcement explicitly:
     no-policy: "true"
 ```
 
-To re-run verification before comparing locked plans, use the stricter CI
-posture:
+## Direct CLI
+
+Use the CLI directly when you do not want the composite action:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.3.2
-  with:
-    live: "true"
-    verify: "true"
-    timeout: "15000"
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-node@v4
+    with:
+      node-version: 22
+  - run: npm install -g @proofofwork-agency/toolpin
+  - run: toolpin doctor --file mcp-lock.json --scope project
+  - run: toolpin ci --file mcp-lock.json --live
 ```
 
-`verify: "true"` can require network access, local runtimes, and server
-credentials for live MCP probes. Use `skip-live-verification: "true"` when you
-want artifact/metadata verification without live `tools/list` probing. Treat
-that as a conscious downgrade: it skips capability hashing and CI rejects it for
-entries that already have live capability pins. Live probes of package targets
-execute the package (`npx`, `uvx`, `docker run`, ...), which verification never
-does implicitly — add `allow-execute: "true"` to permit it; CI refuses to
-re-verify live capability pins on package entries without it.
+`toolpin ci --json` emits a machine-readable result with `ok`,
+`checkedEntries`, protection statuses, and per-entry remediation commands.
+`toolpin ci --sarif` emits SARIF 2.1.0 JSON to stdout and still exits non-zero
+on drift.
 
-## What Fails the Build
+## What Fails
 
 CI exits non-zero when:
 
-- `toolpin doctor --scope project` is included and a committed project client
-  config entry is missing, unreadable, or different from `mcp-lock.json`.
+- Doctor runs and a committed project client config entry is missing,
+  unreadable, or different from `mcp-lock.json`.
 - `mcp-lock.json` is missing, empty, malformed, or has an unsupported version.
 - Per-entry lock integrity is missing or invalid.
 - A locked server/client no longer resolves to the reviewed install plan
   (version, target, trust, generated config, or capability manifest drifted).
-- The whole-lock digest (`--expect-digest`) does not match.
-- Detached signature verification fails, or `signature` and `public-key` are not
-  supplied as a pair.
+- The whole-lock digest (`expect-digest`) does not match.
+- Detached signature verification fails, or `signature` and `public-key` are
+  not supplied as a pair.
 - The selected policy rejects a locked entry.
-- `--verify` finds critical verification findings.
-- `--sarif` changes the output format only; it does not make failing checks
-  advisory.
+- Strict verification or explicit `verify: "true"` finds critical verification
+  findings.
+- Live package-pin reverification would execute a package and
+  `allow-execute: "true"` was not set.
 
 Use `toolpin install --update-lock` or `toolpin lock <server> --client <client>`
 only after reviewing the drift locally. CI should not update the lockfile.
