@@ -192,6 +192,9 @@ function serverConfigFromWrapped(config: unknown, serverName: string, client: Cl
 }
 
 function stableJson(value: unknown): string {
+  // Unlike plan.ts digest hashing, config comparison must prune empty objects:
+  // Codex TOML omits empty env tables on write, so `{env: {}}` and no-env must
+  // compare equal or every Codex install would report false drift.
   return canonicalJson(value, { pruneEmptyObjects: true });
 }
 
