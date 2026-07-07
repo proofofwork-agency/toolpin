@@ -463,7 +463,7 @@ const TRUST_TIER_LABEL_WIDTH = 10;
 function TrustTierMeter({ tier, score, issues, cells: cellCount = 9, showLabel = true }: { tier?: TrustTier; score: number; issues: SearchResult["trust"]["issues"]; cells?: number; showLabel?: boolean }) {
   const tone = trustRiskTone({ score, issues, tier });
   const filled = tierFill(tone.tier, cellCount);
-  const label = tone.tier === "verified" ? "EVIDENCE" : tone.label;
+  const label = tone.label;
   return (
     <Text>
       <Text color={tierColor(tone.tier)}>{"▓".repeat(filled)}</Text>
@@ -814,14 +814,13 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <Text bold color={BLUE}>scoring</Text>
           <HelpNote width={lineWidth} label="score" text="0-100 metadata completeness score for review priority, not a security guarantee or install blocker." />
           <HelpNote width={lineWidth} label="inputs" text="Source trust, repository metadata, namespace, transport, package pinning, secrets, and description-scan findings." />
-          <HelpNote width={lineWidth} label="EVIDENCE" text="Pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, or MCPB byte hash." />
-          <HelpNote width={lineWidth} label="REVIEW" text="Metadata may be useful, but required artifact proof is missing, stale, unavailable, or only declared." />
-          <HelpNote width={lineWidth} label="UNVERIFIED" text="Evidence or required pins are weak/failed, such as a mutable OCI tag or missing MCPB fileSha256." />
+          <HelpNote width={lineWidth} label="VERIFIED" text="Pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, or MCPB byte hash." />
+          <HelpNote width={lineWidth} label="NEEDS REVIEW" text="Metadata may be useful, but artifact proof is missing, stale, unavailable, declared only, weak, or failed." />
           <HelpNote width={lineWidth} label="BLOCKED" text="Critical issue: no install target, insecure/invalid remote URL, or failed required evidence." />
           <HelpNote width={lineWidth} label="summary" text="Overview's top block is registry metadata summary; the evidence row and cap notes say what proof exists or is missing." />
           <HelpNote width={lineWidth} label="69% cap" text="Conditional trusted-source entries stay capped until npm/OCI/MCPB artifact proof is verified." />
           <HelpNote width={lineWidth} label="cap notes" text="Cap notes appear below the score bars and name the missing proof or gate." />
-          <HelpNote width={lineWidth} label="colors" text="Green is verified evidence, yellow needs review, red means blocked or unverified evidence." />
+          <HelpNote width={lineWidth} label="colors" text="Green is verified, yellow needs review, red means blocked." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
           <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, trust data, and integrity digest." />
@@ -1223,15 +1222,13 @@ export function TrustStateLegend({ width }: { width: number }) {
   const compact = width < 150;
   const items = compact
     ? [
-        { label: "OK", color: OK, text: "verified" },
-        { label: "REVIEW", color: WARN, text: "needs npm/OCI/MCPB proof" },
-        { label: "UNVERIFIED", color: ERR, text: "weak/failed pins" },
+        { label: "VERIFIED", color: OK, text: "fresh proof" },
+        { label: "NEEDS REVIEW", color: WARN, text: "missing/weak proof" },
         { label: "BLOCKED", color: ERR, text: "stop" },
       ]
     : [
-        { label: "OK", color: OK, text: "verified" },
-        { label: "REVIEW", color: WARN, text: "needs npm/OCI/MCPB proof" },
-        { label: "UNVERIFIED", color: ERR, text: "weak or failed pins/evidence" },
+        { label: "VERIFIED", color: OK, text: "fresh ToolPin-verified proof" },
+        { label: "NEEDS REVIEW", color: WARN, text: "missing, declared, weak, or failed proof" },
         { label: "BLOCKED", color: ERR, text: "stop" },
       ];
   return (

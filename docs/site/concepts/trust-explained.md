@@ -4,10 +4,19 @@ title: Trust Explained
 
 # Trust explained
 
-ToolPin separates metadata completeness from evidence. The numeric score is a
-deterministic review score over registry metadata and the selected install
-target. The tier is evidence-gated: `verified` means automated evidence checks
-passed, not that a server is safe to run.
+ToolPin separates metadata completeness from evidence. The default CLI and TUI
+surface uses three public verdicts:
+
+- `verified`: fresh ToolPin-verified artifact proof passed for a pinned target.
+- `needs-review`: metadata may be useful, but proof is missing, stale, declared
+  only, weak, or failed in a non-fatal context.
+- `blocked`: the entry is unsafe, uninstallable, or failed a fatal policy/CI
+  gate.
+
+The numeric score remains a deterministic review score over registry metadata
+and the selected install target. The internal tier is evidence-gated:
+`verified` means automated evidence checks passed, not that a server is safe to
+run.
 
 ## Score scale and computation
 
@@ -79,29 +88,31 @@ signal there.
 | `tool_description_hash` | `passed` / `failed` / `unavailable` | Live package or remote `tools/list` descriptions were hashed, failed, or were skipped. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
-Tiering is conservative. These are the same meanings surfaced by the TUI status
-labels:
+Tiering is conservative. By default the human output collapses these details
+into the public verdicts above. Use `--explain` to see the internal tier,
+profile score, evidence phrase, gates, and cap details:
 
-- `verified` / `EVIDENCE`: no critical issues, a pinned install target, and
-  passed evidence with `verifiedByToolPin: true`, such as
+- `verified` maps to public `verified`: no critical issues, a pinned install
+  target, and passed evidence with `verifiedByToolPin: true`, such as
   `oci_digest_verified`, `mcpb_sha256_verified`, `npm_integrity_verified`, or
   future verified attestations.
-- `conditional` / `REVIEW`: usable metadata or pinning exists, but artifact
-  proof is incomplete, stale, unavailable, or only declared. Review the `cap`
-  and evidence rows before installing.
-- `unverified` / `UNVERIFIED`: required pins or evidence are weak or failed,
+- `conditional` maps to public `needs-review`: usable metadata or pinning
+  exists, but artifact proof is incomplete, stale, unavailable, or only
+  declared. Review the `cap` and evidence rows before installing.
+- `unverified` maps to public `needs-review` unless the current command or
+  policy makes the issue fatal: required pins or evidence are weak or failed,
   such as mutable OCI tags, missing MCPB hashes, failed optional evidence, or
   other non-blocking critical trust gaps.
-- `blocked` / `BLOCKED`: unsafe or uninstallable cases such as no install
-  target, insecure remote URLs, invalid remote URLs, or failed required evidence
-  checks.
+- `blocked` maps to public `blocked`: unsafe or uninstallable cases such as no
+  install target, insecure remote URLs, invalid remote URLs, or failed required
+  evidence checks.
 
 Repository URL presence, registry source trust, `capability-pinned`, and
 self-declared attestations are useful review metadata. They do not make a
 server `verified` by themselves. The same applies to evidence carried in
 registry metadata: a curated-registry entry that declares passed artifact
-evidence is recorded as `declared` on ingestion and shows as `REVIEW` until
-this installation recomputes the proof itself (for example via
+evidence is recorded as `declared` on ingestion and shows as `needs-review`
+until this installation recomputes the proof itself (for example via
 `toolpin verify` or `toolpin ci --verify`).
 
 ## Why a score can be capped
@@ -124,8 +135,8 @@ Common cap reasons:
 | `missing_mcpb_hash` | The MCPB target does not declare `fileSha256`. |
 | `veto: ...` | A blocked critical issue, such as no install target or an insecure/invalid remote URL, forces the score down. |
 
-CLI and TUI output include a `cap` line with a human-readable explanation when
-one of these caps applies.
+`--explain` CLI output and TUI details include a `cap` line with a
+human-readable explanation when one of these caps applies.
 
 ### Badges and findings that do not change the score
 
@@ -141,6 +152,8 @@ through policy. Warnings and info issues are surfaced for human review and
 policy decisions. `minTrustScore` in `.toolpin/policy.json` (an optional
 0–100 number; there is no built-in default) enforces a numeric floor against
 the metadata/profile score, while `minTrustTier` enforces evidence-gated status.
+The public verdict reports those fatal contexts as `blocked`; the same weak
+pin can remain `needs-review` in passive discovery output.
 
 ## Verification boundaries
 

@@ -147,7 +147,7 @@ function commandHelp(command: string): void {
       console.log("Usage: toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]");
       return;
     case "info":
-      console.log("Usage: toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]");
+      console.log("Usage: toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live] [--explain]");
       return;
     case "interactive":
     case "i":
@@ -161,13 +161,13 @@ function commandHelp(command: string): void {
       console.log("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
       return;
     case "audit":
-      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--allow-execute] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json]");
+      console.log("Usage: toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify] [--allow-execute] [--require-verified] [--json]\n       toolpin audit server <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]");
       return;
     case "scan":
       console.log("Usage: toolpin scan <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]\nDescription scan only; use `toolpin verify` for artifact evidence verification and `toolpin audit` for local install audit.");
       return;
     case "verify":
-      console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]");
+      console.log("Usage: toolpin verify <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified] [--explain]");
       return;
     case "versions":
       console.log("Usage: toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]");
@@ -191,7 +191,7 @@ function commandHelp(command: string): void {
       console.log(`Usage: toolpin plan <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]`);
       return;
     case "install":
-      console.log(`Usage: toolpin install <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy]`);
+      console.log(`Usage: toolpin install <server-name> --client ${CLIENT_USAGE} [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy] [--explain]`);
       return;
     case "adopt":
       console.log(`Usage: toolpin adopt <installed-name> --client ${CLIENT_USAGE.replace("|all", "")} --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]`);
@@ -253,11 +253,11 @@ Discovery
   toolpin registry disable <source-id>
   toolpin sources [--json]
   toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
-  toolpin interactive [query] [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--client ${CLIENT_USAGE}] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+  toolpin interactive [query] [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--client ${CLIENT_USAGE}] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--explain] [--color auto|always|never]
   toolpin i [query] [same options]
-  toolpin info <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
+  toolpin info <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live] [--explain]
   toolpin scan <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]  # description scan
-  toolpin verify <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified]
+  toolpin verify <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification] [--allow-execute] [--require-verified] [--explain]
   toolpin versions <server> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
   toolpin test <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
   toolpin test-installed <server> --client|-c <client> --scope|-s project|global [--timeout 15000] [--json]
@@ -265,7 +265,7 @@ Discovery
 Install and config
   toolpin list|installed [--scope|-s all|project|global] [--client|-c <client|all>] [--json]
   toolpin plan <server> --client|-c <client> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
-  toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--source toolpin|official|docker|all|custom-id] [--global|-g] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy]
+  toolpin install <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--source toolpin|official|docker|all|custom-id] [--global|-g] [--update-lock] [--verify] [--require-verified] [--policy .toolpin/policy.json] [--no-policy] [--explain]
   toolpin adopt <installed> --client|-c <client> --scope|-s project|global [--source toolpin|official|docker|all|custom-id] [--live] [--dry-run] [--json]
   toolpin update <server> --client|-c <client> --scope|-s project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--dry-run] [--json]
   toolpin update --all [--scope|-s all|project|global] [--client|-c <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--dry-run] [--json]
@@ -275,7 +275,7 @@ Install and config
 
 Lock and governance
   toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--allow-execute] [--require-verified] [--json]
-  toolpin audit server <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
+  toolpin audit server <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
   toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
@@ -294,9 +294,8 @@ Maintenance
   tpn -v
 
 Trust output
-  score is metadata completeness; tier is evidence-gated
-  verified requires a pinned target plus artifact proof
-  cap explains why an otherwise strong score was limited
+  verdict is verified, needs-review, or blocked
+  use --explain to show internal tier, profile score, evidence, and cap details
 
 Common options
   --source toolpin|official|docker|all|id

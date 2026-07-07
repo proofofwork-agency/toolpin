@@ -3,11 +3,9 @@ import { type InstallScope } from "../install.js";
 import { type InventoryScope } from "../inventory.js";
 import { CacheSchemaError, enrichGlamaTarget, enrichSmitheryTarget, fetchRegistry, latestOnly, listRegistrySources, normalizeEntries, readCache } from "../registry.js";
 import { searchServers } from "../search.js";
-import { CYAN_COLOR, ERR_COLOR, MUTED_COLOR, OK_COLOR, WARN_COLOR, parseColorMode, terminalStyle } from "../terminalStyle.js";
-import { evidenceSummary, hasFreshTrustedArtifactEvidence, trustCapExplanation, trustTier } from "../trust.js";
+import { MUTED_COLOR, parseColorMode, terminalStyle } from "../terminalStyle.js";
 import type { ToolPinClientSkip } from "../clientSupport.js";
 import type { CapabilityManifest, NormalizedServer, RegistryEntry, RegistrySourceId } from "../types.js";
-import type { VerificationReport } from "../verify.js";
 
 export type ClientSelection = ClientName | "all";
 export const CLIENT_USAGE = "claude|cursor|vscode|codex|opencode|windsurf|cline|continue|gemini|zed|roo|generic|all";
@@ -37,6 +35,7 @@ export const KNOWN_FLAGS = new Set([
   "--allow-execute",
   "--allow-hosted-directory-targets",
   "--dry-run",
+  "--explain",
   "--global",
   "-g",
   "--help",
@@ -67,6 +66,7 @@ export const INTERACTIVE_FLAGS = new Set([
   "--policy",
   "--no-policy",
   "--no-input",
+  "--explain",
   "--color",
   "--help",
   "-h",
@@ -167,11 +167,6 @@ export function printSubhead(title: string): void {
 
 export function printField(label: string, value: string, color?: string): void {
   console.log(`  ${label.padEnd(10)} ${colorize(value, color)}`);
-}
-
-export function printCapExplanation(report: Parameters<typeof trustCapExplanation>[0]): void {
-  const explanation = trustCapExplanation(report);
-  if (explanation) printField("cap", explanation, WARN_COLOR);
 }
 
 export function printBullet(value: string): void {
@@ -359,24 +354,6 @@ export function liveVerificationEnabled(values: string[]): boolean {
   return !hasAnyFlag(values, ["--skip-live-verification", "--skip-live-verify"]);
 }
 
-export function verificationStatus(verifyRequested: boolean, report?: VerificationReport): string {
-  if (!verifyRequested) return "skipped";
-  return verificationOutcome(report);
-}
-
-export function verificationOutcome(report?: VerificationReport): "verified" | "incomplete" | "failed" {
-  if (!report || !report.ok) return "failed";
-  const hasPin = report.evidence.some((entry) => (entry.status === "passed" || entry.status === "declared") && ["package_pin", "digest_present", "file_hash_present"].includes(entry.code));
-  if (report.verifiedProvenance === true && hasPin && hasFreshTrustedArtifactEvidence(report.evidence)) return "verified";
-  return "incomplete";
-}
-
-export function trustTierColor(tier: ReturnType<typeof trustTier>): string {
-  if (tier === "verified") return OK_COLOR;
-  if (tier === "conditional") return MUTED_COLOR;
-  return ERR_COLOR;
-}
-
 export function colorize(value: string, color?: string): string {
   cliStyleCache ??= terminalStyle({
     color: parseColorMode(stringFlag(cliArgs, "--color", "auto")),
@@ -385,33 +362,3 @@ export function colorize(value: string, color?: string): string {
   });
   return cliStyleCache.colorize(value, color);
 }
-
-export function printVerificationReport(report: VerificationReport): void {
-  printHeader(`Verification ${verificationOutcome(report)}: ${report.serverName}@${report.serverVersion}`);
-  if (report.badges.length) printField("badges", report.badges.join(", "));
-  printField("evidence", evidenceSummary(report));
-  for (const entry of report.evidence) {
-    if (entry.verificationMethod) {
-      const anchor = entry.trustAnchor ? ` via ${entry.trustAnchor}` : "";
-      printField("method", `${entry.code}: ${entry.verificationMethod}${anchor}`);
-    }
-  }
-  printField("packages", report.capabilityManifest.packageTypes.join(", ") || "none");
-  printField("transport", report.capabilityManifest.transports.join(", ") || "none");
-  if (report.capabilityManifest.remoteHosts.length) printField("hosts", report.capabilityManifest.remoteHosts.join(", "));
-  if (report.capabilityManifest.secrets.length) {
-    printField("secrets", report.capabilityManifest.secrets.map((secret) => `${secret.source}:${secret.name}`).join(", "));
-  }
-  if (report.capabilityManifest.toolDescriptionHash) {
-    const hash = report.capabilityManifest.toolDescriptionHash;
-    printField("tools hash", `${hash.algorithm}-${hash.value} (${hash.toolCount} tool(s))`);
-  }
-  if (report.capabilityManifest.toolDescriptionScan) {
-    const scan = report.capabilityManifest.toolDescriptionScan;
-    printField("scan", `${scan.findings.length} advisory finding(s) across ${scan.scannedDescriptions} description(s)`);
-  }
-  for (const issue of report.issues) {
-    printBullet(`${issue.severity.toUpperCase()}: ${issue.code}: ${issue.message}`);
-  }
-}
-

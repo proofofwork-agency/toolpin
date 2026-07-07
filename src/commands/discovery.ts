@@ -4,14 +4,15 @@ import { latestOnly, listRegistrySourceStatuses, normalizeEntries, readCacheMeta
 import { searchServers } from "../search.js";
 import { scanServerMetadata, scanToolDescriptions } from "../scan.js";
 import { scanSarifResults, sarifLog, verificationSarifResults } from "../sarif.js";
-import { CYAN_COLOR, WARN_COLOR } from "../terminalStyle.js";
+import { ERR_COLOR, OK_COLOR, WARN_COLOR } from "../terminalStyle.js";
 import { previewServerLaunch, testServer } from "../tester.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
+import { evidenceStatus, evidenceSummary, scoreServer, trustCapExplanation, trustProfileScore, trustTier } from "../trust.js";
 import { truncate } from "../util.js";
+import { publicVerdict, trustDetailLine, verdictLine, verificationOutcome } from "../verdict.js";
 import { knownVersions } from "../versions.js";
-import { verifyServer } from "../verify.js";
+import { verifyServer, type VerificationReport } from "../verify.js";
 import type { ToolDescriptionScan } from "../types.js";
-import { findServer, hasAnyFlag, hasFlag, liveVerificationEnabled, loadServers, numberFlag, positional, printBullet, printCapExplanation, printField, printHeader, printSubhead, printVerificationReport, sourceFlag, verificationOutcome } from "./shared.js";
+import { findServer, hasAnyFlag, hasFlag, liveVerificationEnabled, loadServers, numberFlag, positional, printBullet, printField, printHeader, printSubhead, sourceFlag } from "./shared.js";
 export async function ingest(rest: string[]): Promise<void> {
   const limit = numberFlag(rest, "--limit", 100);
   const pages = numberFlag(rest, "--pages", 10);
@@ -46,7 +47,7 @@ export async function search(rest: string[]): Promise<void> {
     printField("source", `${server.registrySource}  trust ${trustTier(result.trust)} / ${trustProfileScore(result.trust)}% profile / ${evidenceStatus(result.trust)}`);
     printField("targets", `packages ${packages}; remotes ${remotes}`);
     printField("evidence", evidenceSummary(result.trust));
-    printCapExplanation(result.trust);
+    printCap(result.trust);
     if (result.trust.badges.length) printField("badges", result.trust.badges.join(", "));
   }
 }
@@ -58,10 +59,11 @@ export async function info(rest: string[]): Promise<void> {
   const trust = scoreServer(server);
 
   if (hasFlag(rest, "--json")) {
-    console.log(JSON.stringify({ server, trust }, null, 2));
+    console.log(JSON.stringify({ server, trust, verdict: publicVerdict(trust) }, null, 2));
     return;
   }
 
+  const verdict = publicVerdict(trust);
   printHeader(`${server.name}@${server.version}`);
   printField("title", server.title);
   if (server.description) printField("about", server.description);
@@ -70,13 +72,16 @@ export async function info(rest: string[]): Promise<void> {
   printField("remotes", server.remoteTypes.join(", ") || "none");
   printField("registry", server.registrySource);
   if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
-  printField("trust", `${trustTier(trust)} / ${trustProfileScore(trust)}% profile / ${evidenceStatus(trust)}`);
-  printField("evidence", evidenceSummary(trust));
-  printCapExplanation(trust);
-  if (trust.gatedBy?.length) printField("gated by", trust.gatedBy.join(", "));
-  if (trust.badges.length) printField("badges", trust.badges.join(", "));
-  for (const issue of trust.issues) {
-    printBullet(`${issue.severity.toUpperCase()}: ${issue.message}`);
+  printField("verdict", verdictLine(verdict), verdictColor(verdict.verdict));
+  if (hasFlag(rest, "--explain")) {
+    printField("trust", trustDetailLine(trust));
+    printField("evidence", evidenceSummary(trust));
+    printCap(trust);
+    if (trust.gatedBy?.length) printField("gated by", trust.gatedBy.join(", "));
+    if (trust.badges.length) printField("badges", trust.badges.join(", "));
+    for (const issue of trust.issues) {
+      printBullet(`${issue.severity.toUpperCase()}: ${issue.message}`);
+    }
   }
 }
 
@@ -156,9 +161,9 @@ export async function verify(rest: string[]): Promise<void> {
   if (hasFlag(rest, "--sarif")) {
     console.log(JSON.stringify(sarifLog(verificationSarifResults(report), { executionSuccessful: report.ok }), null, 2));
   } else if (hasFlag(rest, "--json")) {
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify({ ...report, verdict: publicVerdict(report, { command: "verify" }) }, null, 2));
   } else {
-    printVerificationReport(report);
+    printVerificationReport(report, hasFlag(rest, "--explain"));
   }
 
   if (!report.ok) {
@@ -277,4 +282,50 @@ export async function test(rest: string[]): Promise<void> {
     }
   }
   if (!result.ok) process.exitCode = 1;
+}
+
+function printCap(report: Parameters<typeof trustCapExplanation>[0]): void {
+  const explanation = trustCapExplanation(report);
+  if (explanation) printField("cap", explanation, WARN_COLOR);
+}
+
+function printVerificationReport(report: VerificationReport, explain: boolean): void {
+  if (explain) {
+    printHeader(`Verification ${verificationOutcome(report)}: ${report.serverName}@${report.serverVersion}`);
+    if (report.badges.length) printField("badges", report.badges.join(", "));
+    printField("evidence", evidenceSummary(report));
+    for (const entry of report.evidence) {
+      if (entry.verificationMethod) {
+        const anchor = entry.trustAnchor ? ` via ${entry.trustAnchor}` : "";
+        printField("method", `${entry.code}: ${entry.verificationMethod}${anchor}`);
+      }
+    }
+  } else {
+    const verdict = publicVerdict(report, { command: "verify" });
+    printHeader(`Verification ${verdict.verdict}: ${report.serverName}@${report.serverVersion}`);
+    printField("verdict", verdictLine(verdict), verdictColor(verdict.verdict));
+  }
+  printField("packages", report.capabilityManifest.packageTypes.join(", ") || "none");
+  printField("transport", report.capabilityManifest.transports.join(", ") || "none");
+  if (report.capabilityManifest.remoteHosts.length) printField("hosts", report.capabilityManifest.remoteHosts.join(", "));
+  if (report.capabilityManifest.secrets.length) {
+    printField("secrets", report.capabilityManifest.secrets.map((secret) => `${secret.source}:${secret.name}`).join(", "));
+  }
+  if (report.capabilityManifest.toolDescriptionHash) {
+    const hash = report.capabilityManifest.toolDescriptionHash;
+    printField("tools hash", `${hash.algorithm}-${hash.value} (${hash.toolCount} tool(s))`);
+  }
+  if (report.capabilityManifest.toolDescriptionScan) {
+    const scan = report.capabilityManifest.toolDescriptionScan;
+    printField("scan", `${scan.findings.length} advisory finding(s) across ${scan.scannedDescriptions} description(s)`);
+  }
+  for (const issue of report.issues) {
+    printBullet(`${issue.severity.toUpperCase()}: ${issue.code}: ${issue.message}`);
+  }
+}
+
+function verdictColor(verdict: ReturnType<typeof publicVerdict>["verdict"]): string {
+  if (verdict === "verified") return OK_COLOR;
+  if (verdict === "needs-review") return WARN_COLOR;
+  return ERR_COLOR;
 }

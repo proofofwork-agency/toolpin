@@ -25,11 +25,11 @@ toolpin registry enable <source-id>
 toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
-toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--explain] [--color auto|always|never]
 toolpin i [query] [same options]
-toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
+toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live] [--explain]
 toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
-toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
+toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
 toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
@@ -37,11 +37,11 @@ toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute]
+toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute] [--explain]
 toolpin test <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
-toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--explain]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
@@ -71,16 +71,17 @@ trusted npm tarball bytes. PyPI, NuGet, and Cargo targets are checked for
 declared exact versions and drift only; ToolPin does not verify their artifact
 bytes in this release.
 
-Human-readable `search`, `info`, and `install` output separates trust tier from
-metadata/profile completeness. If the evidence-gated `overallScore` is capped,
-the output includes a `cap` line explaining why, for example that automated
-evidence is incomplete because artifact proof is missing. Human-facing numeric
-ranking uses the profile score inside the evidence tier, so conditional entries
-do not all collapse to a visible 69%. A 69% cap means the entry has trusted
-provenance and usable metadata, but ToolPin has not yet verified artifact proof:
-npm tarball SRI from `registry.npmjs.org`, OCI registry digest resolution, or
-MCPB byte hashing from a code-allowlisted HTTPS artifact host. Declared pins or
-attestations alone do not count as ToolPin-verified proof.
+Human-readable `info`, `audit server`, `verify`, `install`, and interactive
+`--no-input` output leads with one public verdict: `verified`, `needs-review`,
+or `blocked`. Use `--explain` to show the internal trust tier, metadata/profile
+score, evidence phrase, gates, badges, and cap detail. JSON output keeps the
+existing fields and adds a `verdict` object. Human-facing numeric ranking still
+uses the profile score internally, so conditional entries do not all collapse to
+a visible 69%. A 69% cap means the entry has trusted provenance and usable
+metadata, but ToolPin has not yet verified artifact proof: npm tarball SRI from
+`registry.npmjs.org`, OCI registry digest resolution, or MCPB byte hashing from
+a code-allowlisted HTTPS artifact host. Declared pins or attestations alone do
+not count as ToolPin-verified proof.
 
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
@@ -148,13 +149,12 @@ toolpin tui
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
 
-The TUI Browse list shows evidence labels next to the meter:
+The TUI Browse list shows the same public verdict labels next to the meter:
 
 | Label | Meaning |
 |---|---|
-| `EVIDENCE` | A pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, MCPB byte hash, or future verified attestation. |
-| `REVIEW` | Metadata may be useful, but required artifact proof is missing, stale, unavailable, or only declared. Check the `evidence`, `cap`, and `gated by` rows. |
-| `UNVERIFIED` | Required pins or evidence are weak or failed, such as a mutable OCI tag, missing MCPB `fileSha256`, or failed optional evidence. |
+| `VERIFIED` | A pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, MCPB byte hash, or future verified attestation. |
+| `NEEDS REVIEW` | Metadata may be useful, but required artifact proof is missing, stale, unavailable, declared only, weak, or failed. Check the `evidence`, `cap`, and `gated by` rows. |
 | `BLOCKED` | A critical issue makes the entry unsafe or uninstallable, such as no install target, insecure/invalid remote URL, or failed required evidence. |
 
 The Overview panel's top block is a registry metadata summary, not a verification

@@ -5,6 +5,7 @@ import { shellQuote } from "../shellQuote.js";
 import { buildInstallPlan, type Lockfile } from "../plan.js";
 import { searchServers } from "../search.js";
 import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
+import { publicVerdict, verdictLine, type PublicVerdict, type PublicVerdictResult } from "../verdict.js";
 import type { InstallScope } from "../install.js";
 import type { NormalizedServer, RegistrySourceId, SearchResult } from "../types.js";
 
@@ -25,6 +26,7 @@ export interface InteractiveOptions {
   timeoutMs: number;
   policyPath: string;
   enforcePolicy: boolean;
+  explain: boolean;
 }
 
 export interface InteractivePrefill {
@@ -39,6 +41,8 @@ export interface InteractivePrefill {
 
 export interface InteractiveReview {
   server: NormalizedServer;
+  verdict: PublicVerdict;
+  verdictReason: string;
   trustTier: string;
   profileScore: number;
   evidenceLabel: string;
@@ -84,6 +88,7 @@ export const DEFAULT_INTERACTIVE_OPTIONS: Omit<InteractiveOptions, "query"> = {
   timeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
   policyPath: DEFAULT_POLICY_PATH,
   enforcePolicy: true,
+  explain: false,
 };
 
 export function interactiveSearch(servers: NormalizedServer[], query: string, limit: number): SearchResult[] {
@@ -159,9 +164,12 @@ export function buildPrefill(server: NormalizedServer, options: InteractiveOptio
 
 export function buildReview(server: NormalizedServer, options: InteractiveOptions, lockfile?: Lockfile, action: InteractiveAction = "install-lock"): InteractiveReview {
   const trust = scoreServer(server);
+  const verdict = publicVerdict(trust);
   const prefill = buildPrefill(server, options, lockfile);
   return {
     server,
+    verdict: verdict.verdict,
+    verdictReason: verdict.reason,
     trustTier: trustTier(trust),
     profileScore: trustProfileScore(trust),
     evidenceLabel: evidenceStatus(trust),
@@ -232,7 +240,10 @@ export function noInputGuidance(options: InteractiveOptions, results: SearchResu
   const result = results[selectInitialResult(results, options.query)];
   const review = buildReview(result.server, options);
   lines.push(`Top result: ${result.server.name}@${result.server.version}`);
-  lines.push(`Trust: ${review.trustTier.toUpperCase()} ${review.profileScore}% profile; ${review.evidenceLabel}`);
+  lines.push(`Verdict: ${formatNoInputVerdict({ verdict: review.verdict, reason: review.verdictReason, detailTier: trustTier(scoreServer(result.server)) })}`);
+  if (options.explain) {
+    lines.push(`Trust: ${review.trustTier.toUpperCase()} ${review.profileScore}% profile; ${review.evidenceLabel}`);
+  }
   lines.push(`Secrets: ${review.secretsLabel}`);
   lines.push("");
   lines.push("Equivalent one-shot command:");
@@ -277,6 +288,10 @@ function clientSupportLabel(server: NormalizedServer, client: InteractiveClient,
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+function formatNoInputVerdict(result: PublicVerdictResult): string {
+  return verdictLine(result).toUpperCase();
 }
 
 function escapeRegExp(value: string): string {

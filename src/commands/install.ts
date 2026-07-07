@@ -9,12 +9,13 @@ import { buildInstallPlan, readLockfile, removeLockfileEntry, verifyAgainstLockf
 import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS } from "../constants.js";
 import { enforcePolicy } from "../policy.js";
 import { localHttpRuntimeAdvisory } from "../runtimeAdvisory.js";
-import { OK_COLOR, CYAN_COLOR, MUTED_COLOR, WARN_COLOR } from "../terminalStyle.js";
-import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
+import { OK_COLOR, CYAN_COLOR, ERR_COLOR, MUTED_COLOR, WARN_COLOR } from "../terminalStyle.js";
+import { evidenceSummary, scoreServer, trustCapExplanation } from "../trust.js";
 import { truncate } from "../util.js";
 import { verifyServer, type VerificationReport } from "../verify.js";
 import type { CapabilityManifest } from "../types.js";
-import { CLIENT_USAGE, clientFlag, findServer, hasAnyFlag, hasFlag, isHelp, liveVerificationEnabled, loadServers, noInstallableClientsError, numberFlag, positional, printBullet, printCapExplanation, printClientSkips, printField, printHeader, printSubhead, scopeDescription, scopeFlag, sourceFlag, stringFlag, verificationOutcome, verificationStatus, trustTierColor } from "./shared.js";
+import { publicVerdict, trustDetailLine, verdictLine, verificationOutcome, verificationStatus } from "../verdict.js";
+import { CLIENT_USAGE, clientFlag, findServer, hasAnyFlag, hasFlag, isHelp, liveVerificationEnabled, loadServers, noInstallableClientsError, numberFlag, positional, printBullet, printClientSkips, printField, printHeader, printSubhead, scopeDescription, scopeFlag, sourceFlag, stringFlag } from "./shared.js";
 export async function plan(rest: string[]): Promise<void> {
   const values = positional(rest);
   const name = values[0];
@@ -26,9 +27,9 @@ export async function plan(rest: string[]): Promise<void> {
     const { clients, skipped } = installableClientsForServer(server, PROJECT_CLIENTS);
     printClientSkips(skipped);
     if (!clients.length) throw noInstallableClientsError(server.name, skipped);
-    console.log(JSON.stringify(clients.map((targetClient) => buildInstallPlan(server, targetClient)), null, 2));
+    console.log(JSON.stringify(clients.map((targetClient) => planWithVerdict(buildInstallPlan(server, targetClient))), null, 2));
   } else {
-    console.log(JSON.stringify(buildInstallPlan(server, client), null, 2));
+    console.log(JSON.stringify(planWithVerdict(buildInstallPlan(server, client)), null, 2));
   }
 }
 
@@ -148,9 +149,13 @@ export async function install(rest: string[]): Promise<void> {
   printField("registry", server.registrySource, CYAN_COLOR);
   if (server.resolutionNote) printField("resolved", server.resolutionNote, WARN_COLOR);
   const installTrust = plans[0]?.trust ?? scoreServer(server);
-  printField("trust", `${trustTier(installTrust)} / ${trustProfileScore(installTrust)}% profile / ${evidenceStatus(installTrust)}`, trustTierColor(trustTier(installTrust)));
-  printField("evidence", evidenceSummary(installTrust));
-  printCapExplanation(installTrust);
+  const verdict = publicVerdict(installTrust, { command: "install" });
+  printField("verdict", verdictLine(verdict), verdictColor(verdict.verdict));
+  if (hasFlag(rest, "--explain")) {
+    printField("trust", trustDetailLine(installTrust));
+    printField("evidence", evidenceSummary(installTrust));
+    printCap(installTrust);
+  }
   printField("verify", verificationStatus(verifyBeforeInstall, verificationReport), verifyBeforeInstall ? (verificationOutcome(verificationReport) === "verified" ? OK_COLOR : WARN_COLOR) : MUTED_COLOR);
   printField("scope", scope === "project" ? "project folder" : "global current user");
   printField("clients", clients.join(", "));
@@ -408,4 +413,19 @@ function printInstalledUpdateAllResult(result: InstalledUpdateAllResult, json: b
       printBullet(`${entry.serverName} -> ${entry.targetName} (${entry.client}/${entry.scope}); run toolpin adopt ${entry.serverName} --client ${entry.client} --scope ${entry.scope}`);
     }
   }
+}
+
+function planWithVerdict(plan: ReturnType<typeof buildInstallPlan>): ReturnType<typeof buildInstallPlan> & { verdict: ReturnType<typeof publicVerdict> } {
+  return { ...plan, verdict: publicVerdict(plan.trust) };
+}
+
+function printCap(report: Parameters<typeof trustCapExplanation>[0]): void {
+  const explanation = trustCapExplanation(report);
+  if (explanation) printField("cap", explanation, WARN_COLOR);
+}
+
+function verdictColor(verdict: ReturnType<typeof publicVerdict>["verdict"]): string {
+  if (verdict === "verified") return OK_COLOR;
+  if (verdict === "needs-review") return WARN_COLOR;
+  return ERR_COLOR;
 }

@@ -435,12 +435,10 @@ test("TUI empty browse state renders loader only while initial registry data is 
 test("TUI footer trust legend explains review-state colors", () => {
   const rendered = renderToString(React.createElement(TrustStateLegend, { width: 130 }));
 
-  assert.match(rendered, /OK/);
-  assert.match(rendered, /verified/);
-  assert.match(rendered, /REVIEW/);
-  assert.match(rendered, /needs npm\/OCI\/MCPB proof/);
-  assert.match(rendered, /UNVERIFIED/);
-  assert.match(rendered, /weak\/failed pins/);
+  assert.match(rendered, /VERIFIED/);
+  assert.match(rendered, /fresh proof/);
+  assert.match(rendered, /NEEDS REVIEW/);
+  assert.match(rendered, /missing\/weak proof/);
   assert.match(rendered, /BLOCKED/);
   assert.match(rendered, /stop/);
 });
@@ -467,7 +465,7 @@ test("TUI overview leads with profile score and cap reason instead of capped ove
   assert.match(rendered, /registry summary/);
   assert.match(rendered, /review\s+context, not runtime proof/);
   assert.match(rendered, /verification gates/);
-  assert.match(rendered, /evidence\s+REVIEW/);
+  assert.match(rendered, /evidence\s+NEEDS REVIEW/);
   assert.match(rendered, /profile\s+74%/);
   assert.match(rendered, /cap\s+evidence gate max 69%: automated evidence incomplete/);
   assert.doesNotMatch(rendered, /overall\s+69%/);
@@ -477,7 +475,7 @@ test("TUI overview leads with profile score and cap reason instead of capped ove
 test("TUI help explains why conditional trusted entries cap at 69 percent", () => {
   const rendered = renderToString(React.createElement(HelpView, {
     width: 180,
-    height: 60,
+    height: 72,
   }));
 
   assert.match(rendered, /69% cap/);

@@ -10,12 +10,13 @@ import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest } from "../
 import { auditSecrets } from "../secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog } from "../sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "../signing.js";
-import { OK_COLOR, WARN_COLOR } from "../terminalStyle.js";
-import { evidenceStatus, evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustProfileScore, trustTier, trustedArtifactEvidenceProblem } from "../trust.js";
+import { ERR_COLOR, OK_COLOR, WARN_COLOR } from "../terminalStyle.js";
+import { evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem } from "../trust.js";
+import { publicVerdict, trustDetailLine, verdictLine, verificationOutcome } from "../verdict.js";
 import { compareLockedToLatest } from "../versions.js";
 import { verifyServer, type VerificationReport } from "../verify.js";
 import type { CapabilityManifest } from "../types.js";
-import { CLIENT_USAGE, clientFlag, findExactServer, findServer, hasAnyFlag, hasFlag, isHelp, liveVerificationEnabled, loadServers, lockedHasLivePins, noInstallableClientsError, numberFlag, positional, printBullet, printCapExplanation, printClientSkips, printField, printHeader, printSubhead, scopeDescription, scopeFlag, sourceFlag, stringAnyFlag, stringFlag, verificationOutcome } from "./shared.js";
+import { CLIENT_USAGE, clientFlag, findExactServer, findServer, hasAnyFlag, hasFlag, isHelp, liveVerificationEnabled, loadServers, lockedHasLivePins, noInstallableClientsError, numberFlag, positional, printBullet, printClientSkips, printField, printHeader, printSubhead, scopeDescription, scopeFlag, sourceFlag, stringAnyFlag, stringFlag } from "./shared.js";
 export async function audit(rest: string[]): Promise<void> {
   const values = positional(rest);
   if (values[0] === "server") {
@@ -108,13 +109,15 @@ export async function audit(rest: string[]): Promise<void> {
     policy: policyConfig ? { ok: policyReports.every((entry) => entry.ok), reports: policyReports } : undefined,
     verification: hasFlag(rest, "--verify") ? { ok: verificationReports.every((entry) => entry.ok), reports: verificationReports } : undefined,
   };
+  const verdict = auditVerdict(report.ok, findings.length);
 
   if (hasFlag(rest, "--json")) {
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify({ ...report, verdict }, null, 2));
   } else {
     printHeader(report.ok ? "Audit OK" : "Audit findings");
     printField("lockfile", path);
     printField("checked", `${report.checked.lockfile} locked, ${report.checked.inventory} config file(s)`);
+    printField("verdict", verdictLine(verdict), verdictColor(verdict.verdict));
     for (const finding of findings) printBullet(`${finding.severity.toUpperCase()}: ${finding.code}${finding.key ? ` ${finding.key}` : ""}: ${finding.message}`);
   }
   if (!report.ok) process.exitCode = 1;
@@ -126,13 +129,17 @@ export async function auditServer(rest: string[]): Promise<void> {
   const server = await findServer(rest, name);
   const trust = scoreServer(server);
   if (hasFlag(rest, "--json")) {
-    console.log(JSON.stringify({ kind: "server_trust_report", name: server.name, version: server.version, trust }, null, 2));
+    console.log(JSON.stringify({ kind: "server_trust_report", name: server.name, version: server.version, trust, verdict: publicVerdict(trust) }, null, 2));
     return;
   }
+  const verdict = publicVerdict(trust);
   printHeader(`Server trust report: ${server.name}@${server.version}`);
-  printField("trust", `${trustTier(trust)} / ${trustProfileScore(trust)}% profile / ${evidenceStatus(trust)}`);
-  printField("evidence", evidenceSummary(trust));
-  printCapExplanation(trust);
+  printField("verdict", verdictLine(verdict), verdictColor(verdict.verdict));
+  if (hasFlag(rest, "--explain")) {
+    printField("trust", trustDetailLine(trust));
+    printField("evidence", evidenceSummary(trust));
+    printCap(trust);
+  }
 }
 
 export async function outdated(rest: string[]): Promise<void> {
@@ -530,4 +537,21 @@ export function ciHelp(): void {
 
 export function doctorHelp(): void {
   console.log("Usage: toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]");
+}
+
+function auditVerdict(ok: boolean, findingCount: number): ReturnType<typeof publicVerdict> {
+  return ok
+    ? { verdict: "verified", reason: findingCount ? "audit checks passed with review notes" : "audit checks passed", detailTier: "verified" }
+    : { verdict: "blocked", reason: "critical audit findings", detailTier: "blocked" };
+}
+
+function printCap(report: Parameters<typeof trustCapExplanation>[0]): void {
+  const explanation = trustCapExplanation(report);
+  if (explanation) printField("cap", explanation, WARN_COLOR);
+}
+
+function verdictColor(verdict: ReturnType<typeof publicVerdict>["verdict"]): string {
+  if (verdict === "verified") return OK_COLOR;
+  if (verdict === "needs-review") return WARN_COLOR;
+  return ERR_COLOR;
 }
