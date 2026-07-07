@@ -29,6 +29,8 @@
     "CONTRIBUTING.md",
     "action.yml",
     "registry",
+    "schemas",
+    "docs/spec",
     "docs/assets/readme",
     "docs/how-to/catch-drift-in-ci.md",
     "docs/how-to/custom-registries.md",
