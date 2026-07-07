@@ -204,6 +204,90 @@ test("CLI ci --verify --skip-live-verification rejects description and manifest 
   }
 });
 
+test("CLI policy init --recommended writes starter policy and refuses accidental overwrite", async () => {
+  await withTempCwd(async () => {
+    const created = await execFileAsync(process.execPath, [CLI, "policy", "init", "--recommended"]);
+    const policy = JSON.parse(await readFile(".toolpin/policy.json", "utf8"));
+
+    assert.match(created.stdout, /Policy initialized/);
+    assert.equal(policy.version, 1);
+    assert.equal(policy.minTrustTier, "conditional");
+    assert.equal(policy.requireToolPinVerifiedEvidence, false);
+    assert.equal(policy.requireDigestPinnedOci, true);
+    assert.equal(policy.requireMcpbSha256, true);
+    assert.equal(policy.allowedSources, undefined);
+    assert.match(created.stdout, /verdict floor\s+needs-review or better; blocked entries fail/);
+    assert.match(created.stdout, /verified proof\s+not required yet/);
+
+    await writeFile(".toolpin/policy.json", "{\"version\":1}\n", "utf8");
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [CLI, "policy", "init", "--recommended"]),
+      (error) => {
+        const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+        assert.match(stderr, /already exists; rerun with --force/);
+        return true;
+      },
+    );
+
+    const replaced = await execFileAsync(process.execPath, [CLI, "policy", "init", "--recommended", "--force"]);
+    assert.match(replaced.stdout, /status\s+replaced/);
+    assert.equal(JSON.parse(await readFile(".toolpin/policy.json", "utf8")).minTrustTier, "conditional");
+  });
+});
+
+test("CLI init ci writes GitHub workflow and recommended policy idempotently", async () => {
+  await withTempCwd(async () => {
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/ci-init" }), "claude"));
+
+    const initialized = await execFileAsync(process.execPath, [CLI, "init", "ci"]);
+    const workflow = await readFile(".github/workflows/toolpin.yml", "utf8");
+    const policy = JSON.parse(await readFile(".toolpin/policy.json", "utf8"));
+    const firstWorkflow = workflow;
+    const firstPolicy = JSON.stringify(policy);
+
+    assert.match(initialized.stdout, /ToolPin CI initialized/);
+    assert.match(initialized.stdout, /\.github\/workflows\/toolpin\.yml\s+created/);
+    assert.match(initialized.stdout, /\.toolpin\/policy\.json\s+created/);
+    assert.match(initialized.stdout, /commit these files; CI now fails on MCP drift/);
+    assert.match(workflow, /permissions:\n  contents: read/);
+    assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
+    assert.match(workflow, /proofofwork-agency\/toolpin@v0\.3\.2/);
+    assert.equal(policy.minTrustTier, "conditional");
+
+    const second = await execFileAsync(process.execPath, [CLI, "init", "ci", "--github"]);
+    assert.match(second.stdout, /already configured/);
+    assert.equal(await readFile(".github/workflows/toolpin.yml", "utf8"), firstWorkflow);
+    assert.equal(JSON.stringify(JSON.parse(await readFile(".toolpin/policy.json", "utf8"))), firstPolicy);
+  });
+});
+
+test("CLI init ci dry-run reports files without writing", async () => {
+  await withTempCwd(async () => {
+    await writeLockfile(buildInstallPlan(packageServer({ name: "io.github/ci-dry-run" }), "claude"));
+
+    const { stdout } = await execFileAsync(process.execPath, [CLI, "init", "ci", "--dry-run"]);
+    assert.match(stdout, /ToolPin CI dry run/);
+    assert.match(stdout, /\.github\/workflows\/toolpin\.yml\s+would write/);
+    assert.match(stdout, /\.toolpin\/policy\.json\s+would write/);
+    await assert.rejects(() => access(".github/workflows/toolpin.yml"));
+    await assert.rejects(() => access(".toolpin/policy.json"));
+  });
+});
+
+test("CLI init ci guides instead of writing when lockfile is missing", async () => {
+  await withTempCwd(async () => {
+    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI, "init", "ci"]);
+
+    assert.equal(stderr, "");
+    assert.match(stdout, /ToolPin CI not configured/);
+    assert.match(stdout, /missing\s+mcp-lock\.json/);
+    assert.match(stdout, /toolpin install <server> --client <client> --update-lock/);
+    assert.match(stdout, /CI would fail immediately/);
+    await assert.rejects(() => access(".github/workflows/toolpin.yml"));
+    await assert.rejects(() => access(".toolpin/policy.json"));
+  });
+});
+
 test("CLI boolean flags do not consume positional arguments", async () => {
   await withTempCwd(async () => {
     const { stdout } = await execFileAsync(process.execPath, [

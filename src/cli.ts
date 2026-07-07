@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { ingest, info, registry, scan, search, test, verify, versions } from "./commands/discovery.js";
 import { adoptInstalled, exportConfig, install, listInstalled, plan, remove, testInstalled, updateInstalled } from "./commands/install.js";
-import { audit, ci, ciHelp, doctor, doctorHelp, lock, outdated, policy, secrets } from "./commands/governance.js";
+import { audit, ci, ciHelp, doctor, doctorHelp, init, initHelp, lock, outdated, policy, secrets } from "./commands/governance.js";
 import { interactiveHelp, printTuiHelp, runInteractive, runTui } from "./commands/ui.js";
 import { upgrade, upgradeHelp } from "./commands/upgrade.js";
 import { CLIENT_USAGE, configureCliOutput, isHelp, normalizeArgs, validateColorFlag, validateFlags } from "./commands/shared.js";
@@ -90,6 +90,9 @@ async function main(): Promise<void> {
     case "policy":
       await policy(rest);
       return;
+    case "init":
+      await init(rest);
+      return;
     case "secrets":
       await secrets(rest);
       return;
@@ -156,6 +159,9 @@ function commandHelp(command: string): void {
     case "ci":
       ciHelp();
       return;
+    case "init":
+      initHelp();
+      return;
     case "registry":
     case "sources":
       console.log("Usage: toolpin registry list [--json]\n       toolpin registry enable <source-id>\n       toolpin registry disable <source-id>");
@@ -218,7 +224,8 @@ function commandHelp(command: string): void {
       return;
     case "policy":
       console.log(`Usage: toolpin policy digest [--policy .toolpin/policy.json] [--json]
-       toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]`);
+       toolpin policy check <server-name> --client ${CLIENT_USAGE} [--scope project|global] [--policy .toolpin/policy.json] [--json] [--live]
+       toolpin policy init --recommended [--policy .toolpin/policy.json] [--force] [--dry-run]`);
       return;
     case "secrets":
       console.log("Usage: toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]");
@@ -245,6 +252,7 @@ Quick start
   toolpin ingest
   toolpin search github
   toolpin install <server> --client claude --update-lock
+  toolpin init ci
 
 Discovery
   toolpin ingest [--source toolpin|official|docker|all|custom-id] [--limit 100] [--pages 10]
@@ -274,6 +282,7 @@ Install and config
   toolpin export-config <server> --client|-c <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
 
 Lock and governance
+  toolpin init ci [--github] [--dry-run]
   toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--allow-execute] [--require-verified] [--json]
   toolpin audit server <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
   toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
@@ -282,6 +291,7 @@ Lock and governance
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin policy digest [--policy .toolpin/policy.json] [--json]
   toolpin policy check <server> --client|-c <client|all> [--version <server-version>] [--scope|-s project|global] [--source toolpin|official|docker|all|custom-id] [--policy .toolpin/policy.json] [--json] [--live]
+  toolpin policy init --recommended [--policy .toolpin/policy.json] [--force] [--dry-run]
   toolpin lock <server> --client|-c <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--scope project|global] [--file mcp-lock.json]
   toolpin lock digest [--file mcp-lock.json] [--json]
   toolpin lock key-fingerprint --public-key public.pem [--json]

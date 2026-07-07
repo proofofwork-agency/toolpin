@@ -1,3 +1,5 @@
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { clientsForScope, PROJECT_CLIENTS, selectLaunchTarget, type ClientName } from "../config.js";
 import { installableClientsForServer } from "../clientSupport.js";
 import { verifyFrozenInstall } from "../ci.js";
@@ -6,17 +8,77 @@ import { type InstallScope } from "../install.js";
 import { listInstalledServers } from "../inventory.js";
 import { buildInstallPlan, readLockfile, readLockfileDigest, writeLockfile } from "../plan.js";
 import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS, DEFAULT_SIGNATURE_PATH } from "../constants.js";
-import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest } from "../policy.js";
+import { enforcePolicy, evaluatePolicy, readPolicy, readPolicyDigest, type PolicyConfig } from "../policy.js";
 import { auditSecrets } from "../secrets.js";
 import { ciSarifResult, ciSarifResults, sarifLog } from "../sarif.js";
 import { readPublicKeyFingerprint, signLockfile, verifyLockfileSignature } from "../signing.js";
 import { ERR_COLOR, OK_COLOR, WARN_COLOR } from "../terminalStyle.js";
 import { evidenceSummary, hasFreshTrustedArtifactEvidence, scoreServer, trustCapExplanation, trustedArtifactEvidenceProblem } from "../trust.js";
 import { publicVerdict, trustDetailLine, verdictLine, verificationOutcome } from "../verdict.js";
+import { TOOLPIN_VERSION } from "../version.js";
 import { compareLockedToLatest } from "../versions.js";
 import { verifyServer, type VerificationReport } from "../verify.js";
 import type { CapabilityManifest } from "../types.js";
 import { CLIENT_USAGE, clientFlag, findExactServer, findServer, hasAnyFlag, hasFlag, isHelp, liveVerificationEnabled, loadServers, lockedHasLivePins, noInstallableClientsError, numberFlag, positional, printBullet, printClientSkips, printField, printHeader, printSubhead, scopeDescription, scopeFlag, sourceFlag, stringAnyFlag, stringFlag } from "./shared.js";
+
+const GITHUB_WORKFLOW_PATH = ".github/workflows/toolpin.yml";
+const RECOMMENDED_POLICY: PolicyConfig = {
+  version: 1,
+  minTrustTier: "conditional",
+  requireToolPinVerifiedEvidence: false,
+  requireDigestPinnedOci: true,
+  requireMcpbSha256: true,
+};
+
+export async function init(rest: string[]): Promise<void> {
+  if (isHelp(rest)) {
+    initHelp();
+    return;
+  }
+  const subcommand = rest[0] ?? "help";
+  const values = rest.slice(1);
+  if (subcommand !== "ci") {
+    throw new Error("Usage: toolpin init ci [--github] [--dry-run]");
+  }
+  await initCi(values);
+}
+
+export async function initCi(rest: string[]): Promise<void> {
+  if (positional(rest).length) {
+    throw new Error("Usage: toolpin init ci [--github] [--dry-run]");
+  }
+  const dryRun = hasFlag(rest, "--dry-run");
+  const workflowPath = GITHUB_WORKFLOW_PATH;
+  const policyPath = DEFAULT_POLICY_PATH;
+  const lockPath = DEFAULT_LOCKFILE_PATH;
+
+  if (!await fileExists(lockPath)) {
+    printHeader("ToolPin CI not configured");
+    printField("missing", lockPath, WARN_COLOR);
+    printField("next", `run toolpin install <server> --client <client> --update-lock or toolpin lock <server> --client <client> first`);
+    printField("reason", "CI would fail immediately without a committed mcp-lock.json");
+    return;
+  }
+
+  const workflow = githubWorkflowYaml();
+  const workflowState = await plannedWrite(workflowPath, workflow, { dryRun });
+  if (workflowState === "conflict") {
+    throw new Error(`${workflowPath} already exists and differs; leaving it unchanged.`);
+  }
+  const policyState = await fileExists(policyPath)
+    ? "already configured"
+    : await plannedWrite(policyPath, recommendedPolicyJson(), { dryRun });
+
+  printHeader(dryRun ? "ToolPin CI dry run" : "ToolPin CI initialized");
+  printField(workflowPath, workflowState);
+  printField(policyPath, policyState);
+  if (workflowState === "already configured" && policyState === "already configured") {
+    printField("status", "already configured");
+  }
+  printField("enforces", "blocked entries fail CI; needs-review entries are allowed so fresh repos can lock before requiring verified proof");
+  printField("next", "commit these files; CI now fails on MCP drift");
+}
+
 export async function audit(rest: string[]): Promise<void> {
   const values = positional(rest);
   if (values[0] === "server") {
@@ -422,6 +484,10 @@ export async function ci(rest: string[]): Promise<void> {
 export async function policy(rest: string[]): Promise<void> {
   const subcommand = rest[0] ?? "help";
   const values = rest.slice(1);
+  if (subcommand === "init") {
+    await policyInit(values);
+    return;
+  }
   if (subcommand === "digest") {
     const policyPath = stringFlag(values, "--policy", stringFlag(values, "--file", DEFAULT_POLICY_PATH));
     const digest = await readPolicyDigest(policyPath);
@@ -460,6 +526,35 @@ export async function policy(rest: string[]): Promise<void> {
   }
 
   if (reports.some((report) => !report.ok)) process.exitCode = 1;
+}
+
+export async function policyInit(rest: string[]): Promise<void> {
+  const policyPath = stringFlag(rest, "--policy", stringFlag(rest, "--file", DEFAULT_POLICY_PATH));
+  const recommended = hasFlag(rest, "--recommended");
+  const force = hasFlag(rest, "--force");
+  const dryRun = hasFlag(rest, "--dry-run");
+  if (!recommended) {
+    throw new Error("Usage: toolpin policy init --recommended [--policy .toolpin/policy.json] [--force] [--dry-run]");
+  }
+
+  const content = recommendedPolicyJson();
+  const existing = await readExistingText(policyPath);
+  if (existing !== undefined && existing !== content && !force) {
+    throw new Error(`${policyPath} already exists; rerun with --force to replace it.`);
+  }
+
+  const state = existing === content ? "already configured" : dryRun ? "would write" : force && existing !== undefined ? "replaced" : "created";
+  if (!dryRun && existing !== content) {
+    await writeTextFile(policyPath, content);
+  }
+
+  printHeader(dryRun ? "Policy dry run" : "Policy initialized");
+  printField("file", policyPath);
+  printField("status", state);
+  printField("verdict floor", "needs-review or better; blocked entries fail");
+  printField("artifact pins", "OCI digest pins and MCPB fileSha256 required when those package types are selected");
+  printField("verified proof", "not required yet; enable requireToolPinVerifiedEvidence after your first verified lock");
+  printField("sources", "not restricted by default");
 }
 
 export async function secrets(rest: string[]): Promise<void> {
@@ -535,8 +630,62 @@ export function ciHelp(): void {
   console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]");
 }
 
+export function initHelp(): void {
+  console.log("Usage: toolpin init ci [--github] [--dry-run]\nCreates .github/workflows/toolpin.yml and .toolpin/policy.json when mcp-lock.json exists.");
+}
+
 export function doctorHelp(): void {
   console.log("Usage: toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]");
+}
+
+async function plannedWrite(path: string, content: string, options: { dryRun: boolean }): Promise<"created" | "would write" | "already configured" | "conflict"> {
+  const existing = await readExistingText(path);
+  if (existing === content) return "already configured";
+  if (existing !== undefined) return "conflict";
+  if (!options.dryRun) await writeTextFile(path, content);
+  return options.dryRun ? "would write" : "created";
+}
+
+async function readExistingText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function writeTextFile(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, "utf8");
+}
+
+function recommendedPolicyJson(): string {
+  return `${JSON.stringify(RECOMMENDED_POLICY, null, 2)}\n`;
+}
+
+function githubWorkflowYaml(): string {
+  return `name: ToolPin
+on: [pull_request, push]
+permissions:
+  contents: read
+jobs:
+  toolpin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: proofofwork-agency/toolpin@v${TOOLPIN_VERSION}
+`;
 }
 
 function auditVerdict(ok: boolean, findingCount: number): ReturnType<typeof publicVerdict> {
