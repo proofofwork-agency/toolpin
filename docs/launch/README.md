@@ -25,6 +25,20 @@ posted, or PR'd anywhere until explicitly approved.
 - Kill/park criterion: no external CI adoption within 2 quarters of public
   launch → reassess.
 
+## Launch prereqs (human-gated)
+
+- **Version bump + tag + npm publish** — `release:check` is green through the
+  refuse-to-republish guard; bump (0.4.0 suggested: verdicts, init ci, strict,
+  toolSurfaceHash are additive features) and publish when ready.
+- **Curated registry seed (2–3 entries)** — requires honest human review
+  (`reviewedBy`, riskNotes, testedClients) plus live evidence generation;
+  machine-generated "reviewed" status would violate the project's own
+  evidence-honesty rule. Do together with a maintainer session.
+- **Trademark policy** for ToolPin/toolpin/tpn (SAAS_ROADMAP pre-work #1).
+- **Real-infrastructure Action run** — the composite Action's command matrix
+  is fully tested locally, but it has never executed on GitHub runners; the
+  first post-push CI run is the last validation step.
+
 ## Files
 
 - `show-hn.md` — Show HN post draft.
