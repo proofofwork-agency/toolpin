@@ -1,0 +1,26 @@
+{
+  "specVersion": 1,
+  "generatedAt": "2026-07-07T12:00:00.000Z",
+  "updatedAt": "2026-07-07T12:00:00.000Z",
+  "entries": [
+    {
+      "name": "io.github.example/postgres",
+      "version": "1.4.2",
+      "client": "claude-code",
+      "scope": "project",
+      "source": {
+        "registry": "https://registry.modelcontextprotocol.io",
+        "id": "io.github.example/postgres"
+      },
+      "target": {
+        "type": "package",
+        "registryType": "oci",
+        "identifier": "ghcr.io/example/mcp:latest"
+      },
+      "configDigest": "sha256-4rLmVYm0eXBg4dp2v9O4t2c1FQnb0m9uS0T5b8n7hVQ=",
+      "resolvedAt": "2026-07-07T11:59:58.120Z",
+      "lockedAt": "2026-07-07T12:00:00.000Z",
+      "integrity": "sha256-zfKL+OBvc4s7Rp7NDKz6tK1KjjHPrpvlCWL2PEd+6yI="
+    }
+  ]
+}
