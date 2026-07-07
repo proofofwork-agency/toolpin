@@ -530,6 +530,9 @@ export async function ci(rest: string[]): Promise<void> {
   printField("file", path);
   printField("checked", `${report.checked} locked server/client entrie(s)`);
   printCiChecklist(protectionStatus);
+  for (const advisory of await legacySurfacePinAdvisories(path)) {
+    printField("advisory", advisory);
+  }
 }
 
 export async function policy(rest: string[]): Promise<void> {
@@ -764,6 +767,16 @@ function clientForIssue(key: string, clients = new Map<string, ClientName>()): s
   if (known) return known;
   const index = key.lastIndexOf(":");
   return index > 0 ? key.slice(index + 1) : "unknown";
+}
+
+async function legacySurfacePinAdvisories(path: string): Promise<string[]> {
+  const lockfile = await readLockfile(path);
+  const hasLegacyOnlyPin = Object.values(lockfile.servers).some((entry) =>
+    Boolean(entry.capabilityManifest?.toolDescriptionHash && !entry.capabilityManifest.toolSurfaceHash)
+  );
+  return hasLegacyOnlyPin
+    ? ["surface pin covers name+description only; re-lock with --update-lock to pin input schemas."]
+    : [];
 }
 
 async function plannedWrite(path: string, content: string, options: { dryRun: boolean }): Promise<"created" | "would write" | "already configured" | "conflict"> {

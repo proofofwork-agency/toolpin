@@ -194,6 +194,34 @@ test("verifyAgainstLockfile rejects rechecked tool-description hash drift", asyn
   });
 });
 
+test("verifyAgainstLockfile rejects tool input schema drift before legacy hash comparison", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: surfaceCapabilityManifest(server, "surface-old", "description-same") }), lockfilePath);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude", { capabilityManifest: surfaceCapabilityManifest(server, "surface-new", "description-same") }), lockfilePath);
+
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool input schemas changed"));
+    assert.equal(verification.messages.includes("tool-description hash changed"), false);
+  });
+});
+
+test("verifyAgainstLockfile fails closed on tool surface coverage downgrade", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: surfaceCapabilityManifest(server, "surface", "description") }), lockfilePath);
+    const downgraded = surfaceCapabilityManifest(server, "surface", "description", ["name", "description"]);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude", { capabilityManifest: downgraded }), lockfilePath);
+
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.includes("tool surface coverage downgraded"));
+  });
+});
+
 test("verifyAgainstLockfile rejects tampered locked tool-description hashes", async () => {
   await withTempDir(async (tempDir) => {
     const lockfilePath = path.join(tempDir, "mcp-lock.json");
@@ -209,6 +237,43 @@ test("verifyAgainstLockfile rejects tampered locked tool-description hashes", as
     assert.equal(verification.ok, false);
     assert.ok(verification.messages.includes("locked entry integrity does not match its contents"));
     assert.ok(verification.messages.includes("tool-description hash changed"));
+  });
+});
+
+test("toolSurfaceHash changes entry integrity and whole-lock digest when present", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = packageServer();
+    await writeLockfile(buildInstallPlan(server, "claude", { capabilityManifest: capabilityManifest(server, "description") }), lockfilePath);
+    const legacy = await readLockfile(lockfilePath);
+    const legacyEntry = legacy.servers["io.github/example:claude"];
+    const legacyIntegrity = computePlanIntegrity(legacyEntry);
+    const legacyDigest = computeLockfileDigest(legacy);
+
+    const withSurfaceEntry = {
+      ...legacyEntry,
+      capabilityManifest: {
+        ...legacyEntry.capabilityManifest,
+        toolSurfaceHash: surfaceHash("surface"),
+      },
+      locked: {
+        ...legacyEntry.locked,
+        capabilityManifest: {
+          ...legacyEntry.locked.capabilityManifest,
+          toolSurfaceHash: surfaceHash("surface"),
+        },
+      },
+    };
+    const withSurface = {
+      ...legacy,
+      servers: {
+        ...legacy.servers,
+        "io.github/example:claude": withSurfaceEntry,
+      },
+    };
+
+    assert.notEqual(computePlanIntegrity(withSurfaceEntry), legacyIntegrity);
+    assert.notEqual(computeLockfileDigest(withSurface), legacyDigest);
   });
 });
 
@@ -448,6 +513,23 @@ function capabilityManifest(server, value, scanCode) {
           ],
         }
       : undefined,
+  };
+}
+
+function surfaceCapabilityManifest(server, surfaceValue, descriptionValue, coverage = ["name", "description", "inputSchema"]) {
+  return {
+    ...capabilityManifest(server, descriptionValue),
+    toolSurfaceHash: surfaceHash(surfaceValue, coverage),
+  };
+}
+
+function surfaceHash(value, coverage = ["name", "description", "inputSchema"]) {
+  return {
+    algorithm: "sha256",
+    coverage,
+    value,
+    toolCount: 1,
+    generatedAt: "2026-01-01T00:00:00.000Z",
   };
 }
 

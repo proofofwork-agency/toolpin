@@ -39,6 +39,26 @@ test("publicVerdict maps incomplete artifact proof to needs-review", () => {
   });
 });
 
+test("publicVerdict maps legacy-only surface pins to needs-review", () => {
+  const result = publicVerdict({
+    score: 74,
+    metadataCompleteness: 74,
+    tier: "conditional",
+    badges: [],
+    issues: [],
+    evidence: [
+      passedEvidence("tool_description_hash"),
+      { code: "tool_surface_hash", status: "unavailable", message: "Input schemas are not pinned." },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    verdict: "needs-review",
+    reason: "input schemas not pinned",
+    detailTier: "conditional",
+  });
+});
+
 test("publicVerdict keeps weak pins needs-review in passive context", () => {
   const result = publicVerdict({
     score: 63,

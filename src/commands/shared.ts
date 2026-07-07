@@ -350,7 +350,7 @@ export function positional(values: string[]): string[] {
 }
 
 export function lockedHasLivePins(locked: { capabilityManifest?: CapabilityManifest }): boolean {
-  return Boolean(locked.capabilityManifest?.toolDescriptionHash || locked.capabilityManifest?.toolManifestHash);
+  return Boolean(locked.capabilityManifest?.toolSurfaceHash || locked.capabilityManifest?.toolDescriptionHash || locked.capabilityManifest?.toolManifestHash);
 }
 
 export function liveVerificationEnabled(values: string[]): boolean {

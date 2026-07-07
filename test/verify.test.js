@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { hashToolDescriptions } from "../dist/capabilities.js";
+import { hashToolDescriptions, hashToolSurface } from "../dist/capabilities.js";
 import { scoreServer } from "../dist/trust.js";
 import { verifyServer } from "../dist/verify.js";
 
@@ -227,6 +227,42 @@ test("tool-description hash is stable across order and generatedAt", () => {
 
   assert.equal(left.value, right.value);
   assert.notEqual(left.generatedAt, right.generatedAt);
+});
+
+test("tool-surface hash is stable across order and changes when input schema changes", () => {
+  const left = hashToolSurface(
+    [
+      { name: "second", description: "B", inputSchema: { type: "object", properties: { value: { type: "string" } } } },
+      { name: "first", description: "A", inputSchema: { type: "object", properties: {} } },
+    ],
+    "2026-01-01T00:00:00.000Z",
+  );
+  const reordered = hashToolSurface(
+    [
+      { name: "first", description: "A", inputSchema: { type: "object", properties: {} } },
+      { name: "second", description: "B", inputSchema: { type: "object", properties: { value: { type: "string" } } } },
+    ],
+    "2027-01-01T00:00:00.000Z",
+  );
+  const changed = hashToolSurface(
+    [
+      { name: "first", description: "A", inputSchema: { type: "object", properties: {} } },
+      { name: "second", description: "B", inputSchema: { type: "object", properties: { value: { type: "number" } } } },
+    ],
+    "2026-01-01T00:00:00.000Z",
+  );
+
+  assert.equal(left.value, reordered.value);
+  assert.notEqual(left.generatedAt, reordered.generatedAt);
+  assert.notEqual(left.value, changed.value);
+  assert.deepEqual(left.coverage, ["name", "description", "inputSchema"]);
+});
+
+test("tool-surface hash distinguishes omitted inputSchema from explicit null", () => {
+  const omitted = hashToolSurface([{ name: "alpha", description: "A" }]);
+  const explicitNull = hashToolSurface([{ name: "alpha", description: "A", inputSchema: null }]);
+
+  assert.notEqual(omitted.value, explicitNull.value);
 });
 
 test("attestation metadata is declared, not verified", async () => {

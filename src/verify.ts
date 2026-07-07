@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { selectLaunchTarget } from "./config.js";
-import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, readAttestations, readCapabilityManifest } from "./capabilities.js";
+import { attestationBadge, deriveCapabilityManifest, hashToolDescriptions, hashToolManifests, hashToolSurface, readAttestations, readCapabilityManifest } from "./capabilities.js";
 import { hasOciDigestMarker, hasValidOciDigestPin, isValidSha256Hex } from "./integrity.js";
 import { verifyNpmPackageIntegrity } from "./packageIntegrity.js";
 import { safeFetch, safeFetchBuffer, safeFetchJson, isLoopbackHostname, type SafeFetchOptions } from "./safeFetch.js";
@@ -112,6 +112,14 @@ export async function verifyServer(server: NormalizedServer, options: Verificati
     }
   }
 
+  if (capabilityManifest.toolDescriptionHash && !capabilityManifest.toolSurfaceHash) {
+    evidence.push({
+      code: "tool_surface_hash",
+      status: "unavailable",
+      message: "Input schemas are not pinned; re-run live verification and update the lockfile to capture toolSurfaceHash.",
+    });
+  }
+
   const finalEvidence = dedupeTrustEvidence(evidence);
   if (options.requireVerified) {
     const classified = classifyTrust(scoreServer(server).score, issues, finalEvidence, { verifiedProvenance });
@@ -164,15 +172,22 @@ async function verifyLiveToolManifest(
   }
 
   const toolDescriptionHash = hashToolDescriptions(result.tools, generatedAt);
+  const toolSurfaceHash = hashToolSurface(result.tools, generatedAt);
   const toolManifestHash = hashToolManifests(result.tools, generatedAt);
   const toolDescriptionScan = scanToolDescriptions(result.tools, { generatedAt });
-  const capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolManifestHash, toolDescriptionScan });
+  const capabilityManifest = deriveCapabilityManifest(server, { generatedAt, toolDescriptionHash, toolSurfaceHash, toolManifestHash, toolDescriptionScan });
   badges.push("tool-description-pinned");
+  badges.push("tool-surface-pinned");
   badges.push("tool-manifest-pinned");
   evidence.push({
     code: "tool_description_hash",
     status: "passed",
     message: "Live tools/list descriptions were hashed into the capability manifest.",
+  });
+  evidence.push({
+    code: "tool_surface_hash",
+    status: "passed",
+    message: "Live tools/list names, descriptions, and input schemas were hashed into the capability manifest.",
   });
   if (toolDescriptionScan.findings.length) {
     badges.push("tool-description-scan-advisory");

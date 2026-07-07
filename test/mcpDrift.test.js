@@ -44,6 +44,7 @@ test("CLI detects remote MCP tool drift against live capability pins", async () 
       const lockfile = await readLockfile();
       const locked = lockfile.servers[`${SERVER_NAME}:claude`];
       assert.equal(locked.capabilityManifest.toolDescriptionHash.toolCount, 1);
+      assert.equal(locked.capabilityManifest.toolSurfaceHash.toolCount, 1);
       assert.equal(locked.capabilityManifest.toolManifestHash.toolCount, 1);
 
       tools = [
@@ -66,8 +67,7 @@ test("CLI detects remote MCP tool drift against live capability pins", async () 
         ], { env: isolatedHomeEnv(dir) }),
         (error) => {
           const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
-          assert.match(stderr, /tool-description hash changed/);
-          assert.match(stderr, /tool-manifest hash changed/);
+          assert.match(stderr, /tool input schemas changed/);
           return true;
         },
       );
@@ -109,6 +109,7 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
     assert.equal(installed.mcpServers[SERVER_NAME].command, "tpn-cargo-fixture");
     const locked = (await readLockfile()).servers[`${SERVER_NAME}:claude`];
     assert.equal(locked.capabilityManifest.toolDescriptionHash.toolCount, 1);
+    assert.equal(locked.capabilityManifest.toolSurfaceHash.toolCount, 1);
     assert.equal(locked.capabilityManifest.toolManifestHash.toolCount, 1);
 
     await writeToolState(fixture.toolsPath, [
@@ -132,8 +133,7 @@ test("CLI detects stdio package MCP tool drift against live capability pins", as
       ], { env }),
       (error) => {
         const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
-        assert.match(stderr, /tool-description hash changed/);
-        assert.match(stderr, /tool-manifest hash changed/);
+        assert.match(stderr, /tool input schemas changed/);
         return true;
       },
     );
@@ -203,7 +203,7 @@ test("scan --live does not execute a package target without --allow-execute", as
   });
 });
 
-test("CLI detects tool-manifest drift without description drift", async () => {
+test("CLI detects input-schema drift without description drift", async () => {
   await withTempCwd(async (dir) => {
     let tools = [tool("alpha", "Stable remote tool", { type: "object", properties: { before: { type: "string" } } })];
     const remote = await startRemoteMcpFixture(() => tools);
@@ -223,6 +223,9 @@ test("CLI detects tool-manifest drift without description drift", async () => {
         "--timeout",
         "5000",
       ], { env: isolatedHomeEnv(dir) });
+      const before = await readFile("mcp-lock.json", "utf8");
+      const locked = (await readLockfile()).servers[`${SERVER_NAME}:claude`];
+      assert.deepEqual(locked.capabilityManifest.toolSurfaceHash.coverage, ["name", "description", "inputSchema"]);
 
       tools = [tool("alpha", "Stable remote tool", { type: "object", properties: { after: { type: "number" } } })];
 
@@ -242,10 +245,11 @@ test("CLI detects tool-manifest drift without description drift", async () => {
         (error) => {
           const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
           assert.doesNotMatch(stderr, /tool-description hash changed/);
-          assert.match(stderr, /tool-manifest hash changed/);
+          assert.match(stderr, /tool input schemas changed/);
           return true;
         },
       );
+      assert.equal(await readFile("mcp-lock.json", "utf8"), before);
     } finally {
       await remote.close();
     }
@@ -311,8 +315,10 @@ test("verifyServer live-probes every supported stdio package launcher", async ()
 
         assert.equal(report.ok, true, `${registryType}: ${report.issues.map((issue) => issue.message).join("; ")}`);
         assert.equal(report.capabilityManifest.toolDescriptionHash.toolCount, 1, registryType);
+        assert.equal(report.capabilityManifest.toolSurfaceHash.toolCount, 1, registryType);
         assert.equal(report.capabilityManifest.toolManifestHash.toolCount, 1, registryType);
         assert.ok(report.badges.includes("tool-description-pinned"), registryType);
+        assert.ok(report.badges.includes("tool-surface-pinned"), registryType);
         assert.ok(report.badges.includes("tool-manifest-pinned"), registryType);
       }
 

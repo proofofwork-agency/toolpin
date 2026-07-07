@@ -66,6 +66,13 @@ server can be locked differently for different MCP clients.
           "toolCount": 12,
           "generatedAt": "2026-06-25T00:00:00.000Z"
         },
+        "toolSurfaceHash": {
+          "algorithm": "sha256",
+          "coverage": ["name", "description", "inputSchema"],
+          "value": "cd9012...",
+          "toolCount": 12,
+          "generatedAt": "2026-06-25T00:00:00.000Z"
+        },
         "toolManifestHash": {
           "algorithm": "sha256",
           "value": "ab7890...",
@@ -126,7 +133,7 @@ on read but `ci` will reject entries missing `integrity`.
 | `trust` | object | Metadata completeness score, optional tier/gating/evidence, badges, and review issues at lock time. |
 | `config` | any JSON value | Generated client config fragment. |
 | `notes` | string array | Human-readable install notes. |
-| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash`, `toolManifestHash`, and `toolDescriptionScan` appear only after a successful `--verify` live probe of the selected MCP launch target. |
+| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash`, `toolSurfaceHash`, `toolManifestHash`, and `toolDescriptionScan` appear only after a successful `--verify` live probe of the selected MCP launch target. |
 | `resolvedAt` | string | Time the entry was resolved. Included in per-entry integrity and whole-lock digest calculations. |
 | `lockedAt` | string *(optional)* | Time the entry was written. Included in per-entry integrity and whole-lock digest calculations. |
 | `resolved` | object *(synthesized)* | Registry source, name, and version resolved by ToolPin. |
@@ -199,6 +206,7 @@ sorted deterministically.
 | `secrets` | object array | Sorted declared secret inputs. Each entry is `{ name, source: "env" \| "header", required }`, covering package environment variables and remote headers marked `isSecret` or `isRequired`. |
 | `generatedAt` | string | ISO timestamp the manifest was generated. Required. |
 | `toolDescriptionHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted `name`/`description` pairs returned by the probe. |
+| `toolSurfaceHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", coverage: ["name", "description", "inputSchema"], value, toolCount, generatedAt }` over tools sorted by name, with each hash record omitting fields the server did not return. This is the preferred drift pin for tool names, descriptions, and input schemas. |
 | `toolManifestHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted tool `name`, `description`, and `inputSchema` values returned by the probe. |
 | `toolDescriptionScan` | object *(optional)* | Present only after a successful live `tools/list` probe. `{ version: 1, generatedAt, scannedDescriptions, findings }` of advisory review signals (see below). |
 

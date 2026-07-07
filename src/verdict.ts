@@ -107,6 +107,7 @@ function needsReviewReason(report: VerdictReport, issues: TrustIssue[], evidence
   if (weakPin) return `pin is weak: ${weakPin.message}`;
   const failedEvidence = evidence.find((entry) => entry.status === "failed");
   if (failedEvidence) return `evidence failed: ${failedEvidence.message}`;
+  if (evidence.some((entry) => entry.code === "tool_surface_hash" && entry.status === "unavailable")) return "input schemas not pinned";
   const artifactProblem = trustedArtifactEvidenceProblem(evidence);
   if (report.verifiedProvenance === true && artifactProblem) return artifactProblem;
   if (report.capReason === "automated evidence incomplete") return "artifact proof missing";

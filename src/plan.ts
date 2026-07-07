@@ -400,18 +400,21 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   if (isTrustTierDowngrade(trustTier(locked.trust), trustTier(current.trust))) messages.push(`trust tier decreased ${trustTier(locked.trust)} -> ${trustTier(current.trust)}`);
   if (stableJson(locked.config) !== stableJson(current.config)) messages.push("client config changed");
   if (stableJson(normalizeCapabilityManifestBase(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifestBase(current.capabilityManifest))) messages.push("capability manifest changed");
-  if (hasToolDescriptionHash(locked.capabilityManifest) && hasToolDescriptionHash(current.capabilityManifest)) {
+  const surfaceComparison = compareToolSurfaceHash(locked.capabilityManifest, current.capabilityManifest);
+  if (surfaceComparison) messages.push(surfaceComparison);
+  const useLegacySurfacePins = !hasToolSurfaceHash(locked.capabilityManifest);
+  if (useLegacySurfacePins && hasToolDescriptionHash(locked.capabilityManifest) && hasToolDescriptionHash(current.capabilityManifest)) {
     if (stableJson(normalizeToolDescriptionHash(locked.capabilityManifest.toolDescriptionHash)) !== stableJson(normalizeToolDescriptionHash(current.capabilityManifest.toolDescriptionHash))) {
       messages.push("tool-description hash changed");
     }
-  } else if (hasToolDescriptionHash(locked.capabilityManifest) && !hasToolDescriptionHash(current.capabilityManifest)) {
+  } else if (useLegacySurfacePins && hasToolDescriptionHash(locked.capabilityManifest) && !hasToolDescriptionHash(current.capabilityManifest)) {
     messages.push("tool-description hash pin could not be refreshed");
   }
-  if (hasToolManifestHash(locked.capabilityManifest) && hasToolManifestHash(current.capabilityManifest)) {
+  if (useLegacySurfacePins && hasToolManifestHash(locked.capabilityManifest) && hasToolManifestHash(current.capabilityManifest)) {
     if (stableJson(normalizeToolManifestHash(locked.capabilityManifest.toolManifestHash)) !== stableJson(normalizeToolManifestHash(current.capabilityManifest.toolManifestHash))) {
       messages.push("tool-manifest hash changed");
     }
-  } else if (hasToolManifestHash(locked.capabilityManifest) && !hasToolManifestHash(current.capabilityManifest)) {
+  } else if (useLegacySurfacePins && hasToolManifestHash(locked.capabilityManifest) && !hasToolManifestHash(current.capabilityManifest)) {
     messages.push("tool-manifest hash pin could not be refreshed");
   }
   return messages;
@@ -515,10 +518,11 @@ function lockfileDigestPayload(lockfile: Lockfile): unknown {
 
 function normalizeCapabilityManifest(manifest?: CapabilityManifest): unknown {
   const base = normalizeCapabilityManifestBase(manifest);
-  if (!base || (!manifest?.toolDescriptionHash && !manifest?.toolManifestHash)) return base;
+  if (!base || (!manifest?.toolDescriptionHash && !manifest?.toolSurfaceHash && !manifest?.toolManifestHash)) return base;
   const output = {
     ...base,
     ...(manifest.toolDescriptionHash ? { toolDescriptionHash: normalizeToolDescriptionHash(manifest.toolDescriptionHash) } : {}),
+    ...(manifest.toolSurfaceHash ? { toolSurfaceHash: normalizeToolSurfaceHash(manifest.toolSurfaceHash) } : {}),
     ...(manifest.toolManifestHash ? { toolManifestHash: normalizeToolManifestHash(manifest.toolManifestHash) } : {}),
   };
   return output;
@@ -546,9 +550,22 @@ function hasToolManifestHash(manifest?: CapabilityManifest): manifest is Capabil
   return Boolean(manifest?.toolManifestHash);
 }
 
+function hasToolSurfaceHash(manifest?: CapabilityManifest): manifest is CapabilityManifest & { toolSurfaceHash: NonNullable<CapabilityManifest["toolSurfaceHash"]> } {
+  return Boolean(manifest?.toolSurfaceHash);
+}
+
 function normalizeToolDescriptionHash(hash: NonNullable<CapabilityManifest["toolDescriptionHash"]>): unknown {
   return {
     algorithm: hash.algorithm,
+    value: hash.value,
+    toolCount: hash.toolCount,
+  };
+}
+
+function normalizeToolSurfaceHash(hash: NonNullable<CapabilityManifest["toolSurfaceHash"]>): unknown {
+  return {
+    algorithm: hash.algorithm,
+    coverage: hash.coverage,
     value: hash.value,
     toolCount: hash.toolCount,
   };
@@ -560,6 +577,30 @@ function normalizeToolManifestHash(hash: NonNullable<CapabilityManifest["toolMan
     value: hash.value,
     toolCount: hash.toolCount,
   };
+}
+
+function compareToolSurfaceHash(locked?: CapabilityManifest, current?: CapabilityManifest): string | undefined {
+  if (!hasToolSurfaceHash(locked)) return undefined;
+  if (!hasToolSurfaceHash(current)) return "tool surface hash pin could not be refreshed";
+  if (sameCoverage(locked.toolSurfaceHash.coverage, current.toolSurfaceHash.coverage)) {
+    return stableJson(normalizeToolSurfaceHash(locked.toolSurfaceHash)) === stableJson(normalizeToolSurfaceHash(current.toolSurfaceHash))
+      ? undefined
+      : "tool input schemas changed";
+  }
+  if (isCoverageDowngrade(locked.toolSurfaceHash.coverage, current.toolSurfaceHash.coverage)) {
+    return "tool surface coverage downgraded";
+  }
+  return undefined;
+}
+
+function sameCoverage(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((field, index) => field === right[index]);
+}
+
+function isCoverageDowngrade(locked: string[], current: string[]): boolean {
+  const lockedFields = new Set(locked);
+  const currentFields = new Set(current);
+  return current.every((field) => lockedFields.has(field)) && locked.some((field) => !currentFields.has(field));
 }
 
 function stableJson(value: unknown): string {
