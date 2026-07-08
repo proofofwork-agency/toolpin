@@ -28,8 +28,8 @@ posted, or PR'd anywhere until explicitly approved.
 ## Launch prereqs (human-gated)
 
 - **Version bump + tag + npm publish** — `release:check` is green through the
-  refuse-to-republish guard; bump (0.4.0 suggested: verdicts, init ci, strict,
-  toolSurfaceHash are additive features) and publish when ready.
+  refuse-to-republish guard; 0.4.0 selected (verdicts, init ci, strict,
+  toolSurfaceHash are additive features). Human approved on 2026-07-08.
 - **Curated registry seed (2–3 entries)** — requires honest human review
   (`reviewedBy`, riskNotes, testedClients) plus live evidence generation;
   machine-generated "reviewed" status would violate the project's own

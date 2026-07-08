@@ -67,9 +67,9 @@ or newer.
   a tool's parameters after you approved it fails your build — the
   post-approval drift that file-pinning package managers and name-based
   allowlists cannot see.
-- **One command to protected:** `toolpin init ci` writes a minimal, SHA-pinned
-  GitHub workflow plus a starter policy, and refuses to scaffold a repo that
-  has no lockfile yet.
+- **One command to protected:** `toolpin init ci` writes a minimal,
+  least-privilege GitHub workflow plus a starter policy, and refuses to
+  scaffold a repo that has no lockfile yet.
 - **Three-verdict output:** every server is `verified`, `needs-review`, or
   `blocked`, with the reason. `--explain` shows the full evidence when you
   want it.
@@ -254,7 +254,7 @@ for full flags.
 
 | Command | What it does |
 |---|---|
-| `toolpin init ci` | Scaffold the CI gate: SHA-pinned GitHub workflow + starter policy. Refuses without a lockfile; supports `--dry-run`. |
+| `toolpin init ci` | Scaffold the CI gate: least-privilege GitHub workflow + starter policy. Refuses without a lockfile; supports `--dry-run`. |
 | `toolpin ci` | The drift gate: re-resolve locked entries and fail on lock, registry, plan, policy, signature, digest, or verification drift. |
 | `toolpin doctor` | Compare client config files on disk against `mcp-lock.json` (read-only). |
 | `toolpin audit` | Audit everything installed across scopes/clients, with optional verification. |
@@ -391,8 +391,9 @@ Installed inventory (`I`):
 
 `:` opens a command palette — every palette action (`ingest`, `info`, `audit`,
 `plan`, `install`, `doctor`, `ci`, `lock`, `export-config`, ...) displays the
-exact CLI command it will run for the current selection, so the TUI doubles as
-a teacher for the scriptable CLI. `h` or `?` opens the built-in help; `q`
+exact CLI command for the current selection before anything happens (`ci`
+shows the command to run in your shell rather than running it inside the TUI),
+so the TUI doubles as a teacher for the scriptable CLI. `h` or `?` opens the built-in help; `q`
 quits. The TUI requires an interactive terminal and fails closed when stdin or
 stdout is piped.
 
@@ -438,11 +439,12 @@ toolpin init ci
 This writes `.github/workflows/toolpin.yml` and a starter
 `.toolpin/policy.json` (when absent), refuses to scaffold a repo that has no
 lockfile yet, is idempotent, and supports `--dry-run`. The generated workflow
-is minimal and SHA-pinned:
+is minimal and least-privilege (`contents: read`), with checkout pinned to a
+commit SHA and the Action pinned to this release's tag:
 
 ```yaml
 - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-- uses: proofofwork-agency/toolpin@v0.3.2
+- uses: proofofwork-agency/toolpin@v0.4.0
 ```
 
 ### GitHub Action inputs
@@ -480,7 +482,7 @@ variables, never interpolated into the script.
 Require fresh verified artifact evidence on every PR:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.3.2
+- uses: proofofwork-agency/toolpin@v0.4.0
   with:
     strict: "true"            # --verify --require-verified
     allow-execute: "true"     # only if package live pins must re-verify
@@ -499,7 +501,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - id: toolpin
-    uses: proofofwork-agency/toolpin@v0.3.2
+    uses: proofofwork-agency/toolpin@v0.4.0
     with:
       sarif: "true"
   - uses: github/codeql-action/upload-sarif@v3
@@ -511,7 +513,7 @@ steps:
 Pin the whole lock and verify its signature:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.3.2
+- uses: proofofwork-agency/toolpin@v0.4.0
   with:
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
     signature: mcp-lock.sig

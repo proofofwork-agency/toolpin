@@ -1,6 +1,6 @@
 {
   "name": "@proofofwork-agency/toolpin",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "A review gate and lockfile for MCP server installs: artifact integrity, tool-surface pinning, and a CI drift gate",
   "license": "Apache-2.0",
   "keywords": [

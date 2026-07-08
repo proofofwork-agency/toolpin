@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { installServerConfig } from "../dist/install.js";
 import { buildInstallPlan, readLockfile, writeLockfile } from "../dist/plan.js";
+import { TOOLPIN_VERSION } from "../dist/version.js";
 
 const execFileAsync = promisify(execFile);
 const CLI = path.resolve("dist", "cli.js");
@@ -306,7 +307,10 @@ test("CLI init ci writes GitHub workflow and recommended policy idempotently", a
     assert.match(initialized.stdout, /commit these files; CI now fails on MCP drift/);
     assert.match(workflow, /permissions:\n  contents: read/);
     assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
-    assert.match(workflow, /proofofwork-agency\/toolpin@v0\.3\.2/);
+    assert.ok(
+      workflow.includes(`proofofwork-agency/toolpin@v${TOOLPIN_VERSION}`),
+      `workflow pins the toolpin action at v${TOOLPIN_VERSION}`,
+    );
     assert.equal(policy.minTrustTier, "conditional");
 
     const second = await execFileAsync(process.execPath, [CLI, "init", "ci", "--github"]);

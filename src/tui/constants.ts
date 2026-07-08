@@ -19,7 +19,7 @@ export const TUI_COMMANDS: TuiCommand[] = [
   { id: "remove", label: "Remove server", description: "Delete selected server from active client config and lockfile.", requiresServer: true },
   { id: "doctor", label: "Check config drift", description: "Compare mcp-lock.json against active-scope client configs." },
   { id: "test", label: "Test server", description: "Connect and run MCP tools/list.", requiresServer: true },
-  { id: "ci", label: "Frozen lock check", description: "Re-resolve lockfile entries and reject metadata drift." },
+  { id: "ci", label: "Frozen lock check", description: "Show the shell command that re-resolves lockfile entries and rejects drift." },
   { id: "lock", label: "Write lockfile", description: "Write selected server to mcp-lock.json.", requiresServer: true },
   { id: "export-config", label: "Export config", description: "Save client config snippets under .toolpin/.", requiresServer: true },
   { id: "tui", label: "Open TUI", description: "Current interactive session." },

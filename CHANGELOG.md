@@ -1,7 +1,63 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
+- Tool-surface pinning (rug-pull defense): `capabilityManifest` gains an
+  additive `toolSurfaceHash` — sha256 over canonical
+  `{name, description?, inputSchema?}` records per tool — so live drift
+  detection now covers tool input schemas, not just names and descriptions.
+  When present, the surface hash owns live-surface drift (schema changes,
+  coverage downgrades, unrefreshable pins fail closed); legacy
+  `toolDescriptionHash`/`toolManifestHash` locks keep working with a non-fatal
+  CI advisory to re-lock. Legacy-only pins report `needs-review: input schemas
+  not pinned`. `lockfileVersion` stays 2.
+- Three-verdict trust output: public output collapses internal trust tiers to
+  `verified` / `needs-review` / `blocked`, each with a reason; `--explain`
+  restores tier/profile/evidence/capability detail. JSON output keeps every
+  existing field and adds `verdict`; the TUI legend matches. Fatal contexts
+  (`verify`/`install`/`ci`/`policy` failures) escalate weak-pin criticals to
+  `blocked` while passive browsing keeps them `needs-review`.
+- `toolpin init ci`: one command takes a repo from nothing to protected — it
+  writes a minimal least-privilege GitHub workflow (`contents: read`, checkout
+  pinned to a commit SHA) plus a starter policy when `mcp-lock.json` exists,
+  and prints fail-closed guidance when it doesn't. Idempotent; `--dry-run` writes nothing; refuses partial setup when a
+  conflicting workflow exists. `policy init --recommended` writes the starter
+  policy on its own (conditional minimum tier, OCI digest + MCPB sha256 pins
+  required, verified-evidence requirement off so fresh repos can lock first and
+  tighten later).
+- CI gate output: `toolpin ci` gains `--json` (`ok` / `checkedEntries` /
+  `failures[]` with remediation hints) and a per-protection checklist in human
+  output; a policy that silently applied no rules now reports `SKIPPED`.
+- GitHub Action hardening: `doctor` input is `auto|true|false` (protects
+  committed client config), new `strict` preset (`--verify
+  --require-verified`, never blanket-skips live verification), `sarif` input +
+  `sarif-path` output, Marketplace branding, tri-state
+  `verify`/`require-verified` with fail-closed conflict handling, `source`
+  defaulting to the lockfile-recorded source, and all inputs env-mediated.
+- MCP Install Lockfile specification v1.0 (draft): vendor-neutral lockfile spec
+  at `docs/spec/mcp-lockfile-v1.md` — RFC 8785 canonicalization with NFC
+  duplicate-key rejection, `(name, client, scope)` entry identity, typed
+  package/remote target union, tool-surface pins covering input schemas,
+  generic verification evidence, namespaced extensions, detached ed25519
+  signature envelope, conformance classes, versioning policy — plus
+  machine-readable JSON Schemas (`schemas/`), positive/negative fixtures with
+  byte-exact vectors, and conformance tests wired into `npm test`. The spec and
+  schemas ship in the npm tarball. ToolPin's v2 lockfile is documented as a
+  predecessor profile; no breaking shipped-format changes (the only lockfile
+  addition in this release is the optional `toolSurfaceHash` above).
+- Docs: README rewritten around the lockfile + CI drift gate positioning with a
+  complete command overview, TUI key/panel documentation, a CI Gate chapter
+  with the full Action input matrix, and a Lockfile Standard section; docs site
+  updated from description-only pin language to input-schema surface pinning;
+  CLI `--help`, npm description, and site taglines aligned.
+- Release hygiene: the repository's own GitHub workflows SHA-pin their actions,
+  Dependabot keeps npm and Actions dependencies updated weekly, and the release
+  gate now checks that the git tag matches `package.json`, that the changelog's
+  top versioned heading matches the package version, and that `SECURITY.md`
+  lists the current release line.
+- Internal: `src/cli.ts` split into focused command modules under
+  `src/commands/` (zero behavior change); `src/version.ts` is generated from
+  `package.json` at build time.
 - Security (probe env isolation): live `test`/`verify` probes now spawn MCP
   servers with a minimal environment allowlist plus the server's declared env
   vars, instead of the caller's full `process.env`. Probing an untrusted package
@@ -10,8 +66,9 @@
   allowlist; set `TOOLPIN_SPAWN_ENV_ALLOW=VAR1,VAR2` to explicitly pass extra
   variables (e.g. `HTTPS_PROXY`) through to spawned servers when needed.
 - Security (SSRF): registry ingestion now goes through the `safeFetch` firewall
-  and remote MCP probe transports go through the matching pinned fetch — both
-  HTTPS-only, both refusing redirects, both restricted to public addresses. This
+  and non-loopback remote MCP probe transports go through the matching pinned
+  fetch — both HTTPS-only, both refusing redirects, both restricted to public
+  addresses (loopback probe targets stay available for local development). This
   blocks cloud-metadata (`169.254.169.254`) and private-host access via
   registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`,
   including a public endpoint that tries to 3xx-redirect the probe to a private

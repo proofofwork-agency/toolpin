@@ -157,7 +157,7 @@ condition, remediation}`, and per-protection statuses for lock integrity,
 registry drift, policy, verification, signature, and digest. `scan`, `verify`,
 and `ci` support SARIF 2.1.0 output with `--sarif`.
 
-`toolpin init ci` scaffolds `.github/workflows/toolpin.yml` (SHA-pinned, using
+`toolpin init ci` scaffolds `.github/workflows/toolpin.yml` (least-privilege, checkout SHA-pinned, using
 the composite Action) and a starter `.toolpin/policy.json` when absent. It
 refuses to run when `mcp-lock.json` is missing — create a lock first — and is
 idempotent. `toolpin lock key-fingerprint` prints the SPKI fingerprint of a
