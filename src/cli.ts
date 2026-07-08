@@ -240,7 +240,7 @@ function commandHelp(command: string): void {
 
 function help(): void {
   console.log(`ToolPin ${TOOLPIN_VERSION}
-  Trusted install, lockfile, and governance for MCP servers.
+  A lockfile and CI drift gate for MCP servers.
 
 Quick start
   toolpin tui

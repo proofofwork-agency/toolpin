@@ -823,9 +823,9 @@ export function HelpView({ width, height }: { width: number; height: number }) {
           <HelpNote width={lineWidth} label="colors" text="Green is verified, yellow needs review, red means blocked." />
           <Spacer />
           <Text bold color={BLUE}>locking</Text>
-          <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, trust data, and integrity digest." />
+          <HelpNote width={lineWidth} label="lockfile" text="mcp-lock.json records the selected server, version, client, resolved launch target, tool-surface hash, trust data, and integrity digest." />
           <HelpNote width={lineWidth} label="install" text="Install writes client config and the matching lock entry after policy and drift checks pass." />
-          <HelpNote width={lineWidth} label="doctor/ci" text="Doctor and CI compare client config with mcp-lock.json so config drift, digest drift, and signature failures are visible." />
+          <HelpNote width={lineWidth} label="doctor/ci" text="Doctor compares client config on disk with mcp-lock.json; toolpin ci re-resolves locked entries and fails on lock, registry, plan, policy, signature, or verification drift." />
           <HelpNote width={lineWidth} label="adopt / update" text="Installed u resolves an existing config entry in the registry and locks it; U updates already locked entries." />
           <Spacer />
           <Text bold color={BLUE}>sources</Text>
