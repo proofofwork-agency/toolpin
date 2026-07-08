@@ -9,6 +9,19 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # Pin these to their current major: each is coupled to the Node 22 LTS
+      # runtime contract ("node": ">=22") and the platform's built-in undici.
+      # Node 22 ships undici 6.x internally; @types/node must track the runtime
+      # major; TypeScript majors are breaking. Bumping any of these is a
+      # deliberate upgrade lane (see issue #7), not a weekly auto-bump.
+      # Minor/patch updates — including security fixes — still flow through.
+      - dependency-name: "undici"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Keep pinned GitHub Actions SHAs current (Dependabot updates the pin + comment).
   - package-ecosystem: github-actions
