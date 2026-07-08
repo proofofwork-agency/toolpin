@@ -120,6 +120,9 @@ export interface RegistrySourceInfo {
   setupHint?: string;
   cacheEntries?: number;
   cachePageInfo?: RegistryFetchPageInfo;
+  /** Opt-in escape hatches for private/self-hosted registries (default: off). */
+  allowHttp?: boolean;
+  allowPrivateHosts?: boolean;
 }
 
 export interface RegistryFetchPageInfo {
@@ -234,6 +237,7 @@ export interface CapabilityManifest {
   secrets: CapabilitySecret[];
   generatedAt: string;
   toolDescriptionHash?: ToolDescriptionHash;
+  toolSurfaceHash?: ToolSurfaceHash;
   toolManifestHash?: ToolManifestHash;
   toolDescriptionScan?: ToolDescriptionScan;
 }
@@ -247,6 +251,14 @@ export interface ToolDescriptionHash {
 
 export interface ToolManifestHash {
   algorithm: "sha256";
+  value: string;
+  toolCount: number;
+  generatedAt: string;
+}
+
+export interface ToolSurfaceHash {
+  algorithm: "sha256";
+  coverage: Array<"name" | "description" | "inputSchema">;
   value: string;
   toolCount: number;
   generatedAt: string;

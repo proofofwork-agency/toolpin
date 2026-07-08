@@ -29,7 +29,4 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function truncate(value: string, maxLength: number): string {
-  if (maxLength <= 0) return "";
-  return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
-}
+export { truncate } from "../util.js";

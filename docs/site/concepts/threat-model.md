@@ -12,7 +12,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 | Asset | Why it matters |
 |---|---|
 | Agent credentials and environment | MCP servers run with the user's OS permissions and may receive API tokens or filesystem access. |
-| Agent tool surface | Tool names and descriptions influence model behavior. |
+| Agent tool surface | Tool names, descriptions, and input schemas influence model behavior. |
 | `mcp-lock.json` | The committed governance artifact for reviewed installs. |
 | `.toolpin/policy.json` | The local policy gate for install and CI decisions. |
 | CI exit codes | A failed `toolpin ci` should block unreviewed drift. |
@@ -27,6 +27,7 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 | Insecure remotes | Non-HTTPS or invalid remote URLs are critical trust issues. | Runtime behavior after install is outside ToolPin. |
 | Lockfile tampering | Per-entry integrity, whole-lock digest pins, and detached Ed25519 signatures can detect changes. | Signatures depend on out-of-band key management and branch protection. |
 | Install drift | `install` and `ci` compare resolved plans with the lockfile and fail on drift. | Trust-score increases are not treated as a failure. |
+| Tool-surface rug-pulls | `--verify` pins the live `tools/list` surface as `toolSurfaceHash` over tool names, descriptions, and input schemas; `install` and `ci` fail when it drifts, including when only a tool's input schema changes. | Legacy locks with only the description-only `toolDescriptionHash` still verify but raise a non-fatal advisory and a `needs-review` verdict (input schemas not pinned). |
 | Policy violations | Local JSON policy can reject sources, clients, servers, package types, transports, remote hosts, and missing pins. | `--no-policy` is an explicit bypass; the policy file is not signed by ToolPin. |
 | Plaintext secrets in config | `toolpin secrets audit` reports redacted advisory findings. | Advisory only; not a DLP engine. |
 
@@ -53,5 +54,9 @@ and CI enforcement for installs, but it is not a runtime gateway or sandbox.
 - Treat `--skip-live-verification` as a conscious downgrade: it skips live
   `tools/list` hashing and cannot be used for CI entries that already have live
   capability pins.
+- Treat `--allow-execute` as a conscious escalation: without it, verification
+  never executes package targets (no `npx`/`uvx`/`docker run`), so live
+  capability pins on package entries require passing it explicitly — in CI,
+  set the action input `allow-execute: "true"`.
 - Use runtime controls from clients, gateways, containers, and secret managers
   for defenses ToolPin does not provide.

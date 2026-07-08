@@ -5,7 +5,7 @@ title: Ecosystem Comparison
 # ToolPin vs. the MCP Ecosystem
 
 > Honest comparison of ToolPin against the registries, marketplaces, installers,
-> and runtime-governance vendors in the MCP ecosystem. Last reviewed: 2026-06-27.
+> and runtime-governance vendors in the MCP ecosystem. Last reviewed: 2026-07-08.
 > Counts, release dates, and product claims are point-in-time and fluctuate;
 > self-reported figures are marked **(self-reported)** where the vendor has not
 > been independently audited.
@@ -144,7 +144,10 @@ replacements.
   as a **runtime proxy** rather than a committed install-time CLI. MCP is where
   npm was before `package-lock.json` (2017) and where cargo was before
   `cargo-vet`. The lockfile is ToolPin's to define and win if it remains
-  documented, published, and adopted beyond this repository.
+  documented, published, and adopted beyond this repository. The format is now
+  published as a vendor-neutral spec with JSON Schemas and byte-exact test
+  vectors, so other tools can implement conformant readers and enforcers; broad
+  adoption beyond this repository is still the open question.
 - **No cross-client config normalizer as a *locking* product.** `mcpm` (~977★)
   writes config for ~15 clients but does not lock or verify; everything else is
   a toy/desktop app.
@@ -196,6 +199,14 @@ gates + lockfile/reproducibility + neutral multi-client policy**, delivered as a
 committed, repo-owned artifact and CI gate in an open-source CLI. Treat
 governance and policy as table-stakes where ToolPin must *integrate* with
 Docker/Glama/Pillar rather than out-build them.
+
+Tool-surface pinning is a second empty axis: ToolPin's `toolSurfaceHash` covers
+tool input schemas, not just names and descriptions, so it detects an approved
+server quietly changing a tool's input schema. File- and package-pinning tools
+and name-based allowlists verify the artifact bytes or the tool name but never
+the schema. The lockfile format is itself a published, vendor-neutral spec with
+JSON Schemas and test vectors, so this integrity model is one other tools can
+implement rather than a ToolPin-only output format.
 
 ## Differentiation that does not hold
 

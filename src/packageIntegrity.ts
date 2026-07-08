@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { safeFetchBuffer, safeFetchJson, type SafeFetchOptions } from "./safeFetch.js";
 import { TRUSTED_NPM_PACKUMENT_HOSTS, TRUSTED_NPM_TARBALL_HOSTS, trustedNpmPackumentHost, trustedNpmTarballHost } from "./verificationTrust.js";
+import { isFloatingVersion } from "./util.js";
 
 export interface NpmPackageTarget {
   identifier: string;
@@ -193,8 +194,4 @@ function sha512FromSri(integrity: string): string | undefined {
     if (match) return match[1];
   }
   return undefined;
-}
-
-function isFloatingVersion(version: string): boolean {
-  return ["latest", "*"].includes(version.trim().toLowerCase()) || /[~^x*]/i.test(version);
 }

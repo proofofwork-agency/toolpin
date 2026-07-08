@@ -18,9 +18,9 @@ export function riskTone(score: number): { label: string; band: TrustBand } {
 
 export function trustRiskTone(report: Pick<TrustReport, "score" | "issues" | "tier" | "evidence">): { label: string; band: TrustBand; tier: TrustTier } {
   const tier = trustTier(report);
-  if (tier === "verified") return { label: "EVIDENCE OK", band: "high", tier };
-  if (tier === "conditional") return { label: "REVIEW", band: "medium", tier };
-  if (tier === "unverified") return { label: "UNVERIFIED", band: "low", tier };
+  if (tier === "verified") return { label: "VERIFIED", band: "high", tier };
+  if (tier === "conditional") return { label: "NEEDS REVIEW", band: "medium", tier };
+  if (tier === "unverified") return { label: "NEEDS REVIEW", band: "low", tier };
   return { label: "BLOCKED", band: "low", tier };
 }
 

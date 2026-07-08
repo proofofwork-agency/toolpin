@@ -1,0 +1,83 @@
+{
+  "description": "Normative vectors for docs/spec/mcp-lockfile-v1.md. A conforming implementation reproduces every value byte-for-byte.",
+  "canonicalization": [
+    {
+      "input": {
+        "b": 1,
+        "a": [
+          true,
+          null,
+          "café"
+        ]
+      },
+      "canonical": "{\"a\":[true,null,\"café\"],\"b\":1}"
+    },
+    {
+      "input": {
+        "nested": {
+          "z": "",
+          "y": 0
+        }
+      },
+      "canonical": "{\"nested\":{\"y\":0,\"z\":\"\"}}"
+    }
+  ],
+  "surface": {
+    "tools": [
+      {
+        "name": "query",
+        "description": "Run a read-only SQL query.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sql"
+          ]
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "List tables in the connected database.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "coverage": [
+      "name",
+      "description",
+      "inputSchema"
+    ],
+    "note": "tools sorted by name (UTF-16 code units); records contain exactly the coverage fields",
+    "hash": "sha256-N7FpXYufkx6EkTV30ezEC5M4ITYGQErrU3F2PZDV5Is="
+  },
+  "entryIntegrity": {
+    "entryName": "io.github.example/postgres",
+    "canonicalPayload": "{\"client\":\"claude-code\",\"configDigest\":\"sha256-4rLmVYm0eXBg4dp2v9O4t2c1FQnb0m9uS0T5b8n7hVQ=\",\"lockedAt\":\"2026-07-07T12:00:00.000Z\",\"name\":\"io.github.example/postgres\",\"resolvedAt\":\"2026-07-07T11:59:58.120Z\",\"scope\":\"project\",\"source\":{\"id\":\"io.github.example/postgres\",\"registry\":\"https://registry.modelcontextprotocol.io\"},\"target\":{\"artifact\":{\"digest\":\"sha256-P1lpO2u6UWTeF0Y0Y8aTL6TX8O0Q9jc7W3m4G5h6I7k=\",\"method\":\"npm-sri\"},\"identifier\":\"@example/postgres-mcp\",\"registryType\":\"npm\",\"transport\":\"stdio\",\"type\":\"package\",\"version\":\"1.4.2\"},\"version\":\"1.4.2\"}",
+    "integrity": "sha256-yM6lkq6OZiQXr/xZMhix2S3Cb1C4A6f0AmvU15M7W8M="
+  },
+  "wholeLockDigest": {
+    "document": "positive/remote-with-surface.json",
+    "note": "digest over canonical {specVersion, entries, extensions}; top-level timestamps excluded",
+    "digest": "sha256-hDXbW/JOOwyIjQK3UzkNQw39rrvqQgwzuwEqxVO+atg="
+  },
+  "signature": {
+    "publicKeySpkiDerBase64": "MCowBQYDK2VwAyEAYKDeXBMUZgUMaTzVBvX7eYVZ+Qgelsc8pV5r2hDzuTE=",
+    "signingPayloadCanonical": "{\"algorithm\":\"ed25519\",\"lockfileDigest\":\"sha256-hDXbW/JOOwyIjQK3UzkNQw39rrvqQgwzuwEqxVO+atg=\",\"policyDigest\":\"sha256-+yE+TFdV1p+a0Xg9KRk+L+yVKO33UfKk3nPW39HqUDI=\",\"publicKeyFingerprint\":\"sha256-nR1xVXWS38aTJYIRol9+L91TyGO7JiYnaeD7toPLCNE=\",\"schema\":\"mcp-lock-signature\",\"signedAt\":\"2026-07-07T12:00:01.000Z\",\"version\":1}",
+    "envelope": {
+      "schema": "mcp-lock-signature",
+      "version": 1,
+      "algorithm": "ed25519",
+      "lockfileDigest": "sha256-hDXbW/JOOwyIjQK3UzkNQw39rrvqQgwzuwEqxVO+atg=",
+      "policyDigest": "sha256-+yE+TFdV1p+a0Xg9KRk+L+yVKO33UfKk3nPW39HqUDI=",
+      "publicKeyFingerprint": "sha256-nR1xVXWS38aTJYIRol9+L91TyGO7JiYnaeD7toPLCNE=",
+      "signedAt": "2026-07-07T12:00:01.000Z",
+      "signature": "ofrpbMls3H7hU4S0cH5rOEsruWXsJ6Wgv+PPKqTPy80+LSlydkHde5HYSjTw10LaT8/ixtb7P33WyOrKilbcDg=="
+    }
+  }
+}

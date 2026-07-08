@@ -273,8 +273,9 @@ function InteractiveApp(props: {
           {review ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color="cyan">{review.server.name}@{review.prefill.version}</Text>
-              <Text>trust {review.trustTier.toUpperCase()} / {review.profileScore}% profile / {review.evidenceLabel}</Text>
-              <Text>evidence {review.evidenceSummary}</Text>
+              <Text>verdict {review.verdict.toUpperCase()} - {review.verdictReason}</Text>
+              {props.initialOptions.explain ? <Text>trust {review.trustTier.toUpperCase()} / {review.profileScore}% profile / {review.evidenceLabel}</Text> : null}
+              {props.initialOptions.explain ? <Text>evidence {review.evidenceSummary}</Text> : null}
               <Text>target {review.targetLabel}</Text>
               <Text>secrets {review.secretsLabel}</Text>
               <Text>client {review.prefill.client}  scope {review.prefill.scope}  action {review.prefill.recommendation}</Text>
@@ -322,6 +323,9 @@ async function executeInteractiveAction(selection: InteractiveSelection): Promis
     verificationReport = await verifyServer(server, {
       liveRemoteProbe: true,
       livePackageProbe: true,
+      // The guided flow never executes a package implicitly; verification uses
+      // network artifact checks and remote probes only.
+      allowExecute: false,
       timeoutMs: options.timeoutMs,
       requireVerified: options.requireVerified,
     });
@@ -380,6 +384,7 @@ function colorNoInputGuidance(value: string, style: ReturnType<typeof terminalSt
   return value
     .replace("ToolPin interactive guidance", style.cyan("ToolPin interactive guidance"))
     .replace("Top result:", style.cyan("Top result:"))
+    .replace("Verdict:", style.warn("Verdict:"))
     .replace("Trust:", style.warn("Trust:"))
     .replace("Equivalent one-shot command:", style.cyan("Equivalent one-shot command:"))
     .replace("No files were written.", style.warn("No files were written."));
@@ -406,6 +411,7 @@ function parseInteractiveArgs(rest: string[]): ParsedInteractiveArgs {
     timeoutMs: numberFlag(rest, "--timeout", DEFAULT_INTERACTIVE_OPTIONS.timeoutMs),
     policyPath: stringFlag(rest, "--policy", DEFAULT_INTERACTIVE_OPTIONS.policyPath),
     enforcePolicy: !hasFlag(rest, "--no-policy"),
+    explain: hasFlag(rest, "--explain"),
     noInput: hasFlag(rest, "--no-input"),
     color,
   };

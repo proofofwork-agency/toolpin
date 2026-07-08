@@ -19,9 +19,9 @@ test("riskTone maps score ranges to labels and bands", () => {
 });
 
 test("trustRiskTone maps gated tiers to evidence labels", () => {
-  assert.deepEqual(trustRiskTone(report({ score: 90, tier: "verified" })), { label: "EVIDENCE OK", band: "high", tier: "verified" });
-  assert.deepEqual(trustRiskTone(report({ score: 55, tier: "conditional" })), { label: "REVIEW", band: "medium", tier: "conditional" });
-  assert.deepEqual(trustRiskTone(report({ score: 90, issues: [critical("mutable_oci_tag")] })), { label: "UNVERIFIED", band: "low", tier: "unverified" });
+  assert.deepEqual(trustRiskTone(report({ score: 90, tier: "verified" })), { label: "VERIFIED", band: "high", tier: "verified" });
+  assert.deepEqual(trustRiskTone(report({ score: 55, tier: "conditional" })), { label: "NEEDS REVIEW", band: "medium", tier: "conditional" });
+  assert.deepEqual(trustRiskTone(report({ score: 90, issues: [critical("mutable_oci_tag")] })), { label: "NEEDS REVIEW", band: "low", tier: "unverified" });
   assert.deepEqual(trustRiskTone(report({ score: 90, issues: [critical("insecure_remote")] })), { label: "BLOCKED", band: "low", tier: "blocked" });
 });
 
@@ -39,7 +39,7 @@ test("trustRiskTone gates critical issues regardless of metadata score", () => {
     issues: [{ severity: "critical", code: "mutable_oci_tag", message: "OCI image is mutable." }],
   };
 
-  assert.deepEqual(trustRiskTone(report), { label: "UNVERIFIED", band: "low", tier: "unverified" });
+  assert.deepEqual(trustRiskTone(report), { label: "NEEDS REVIEW", band: "low", tier: "unverified" });
 });
 
 test("trustBarCells returns a nine-cell rounded trust bar", () => {

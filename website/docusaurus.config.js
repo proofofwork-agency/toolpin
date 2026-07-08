@@ -1,6 +1,6 @@
 const config = {
   title: "ToolPin",
-  tagline: "Trusted install, lockfiles, and governance for MCP servers.",
+  tagline: "A lockfile and CI drift gate for MCP servers — pin the artifact, the tool surface, and the config.",
   url: "https://proofofwork-agency.github.io",
   baseUrl: "/toolpin/",
   onBrokenLinks: "throw",

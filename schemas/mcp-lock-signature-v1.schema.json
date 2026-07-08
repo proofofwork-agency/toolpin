@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofofwork-agency.github.io/toolpin/schemas/mcp-lock-signature-v1.schema.json",
+  "title": "MCP Lock Detached Signature Envelope v1",
+  "description": "Detached signature over an MCP Install Lockfile whole-lock digest (spec §8.4). The signing payload is the RFC 8785 canonical form of this envelope with the `signature` member removed.",
+  "type": "object",
+  "required": ["schema", "version", "algorithm", "lockfileDigest", "publicKeyFingerprint", "signedAt", "signature"],
+  "properties": {
+    "schema": { "const": "mcp-lock-signature" },
+    "version": { "const": 1 },
+    "algorithm": { "const": "ed25519" },
+    "lockfileDigest": { "$ref": "#/$defs/digest" },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "publicKeyFingerprint": { "$ref": "#/$defs/digest" },
+    "signedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9+/]+={0,2}$"
+    }
+  }
+}

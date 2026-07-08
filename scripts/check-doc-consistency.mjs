@@ -130,6 +130,20 @@ if (!readme.includes(actionVersion)) {
   fail(`README.md: expected GitHub Action example to use ${actionVersion}`);
 }
 
+const changelog = await readFile(new URL("CHANGELOG.md", root), "utf8");
+const firstVersionHeading = changelog.match(/^##\s+(\d+\.\d+\.\d+)\s*$/m);
+if (!firstVersionHeading) {
+  fail("CHANGELOG.md: no versioned entry (## x.y.z) found");
+} else if (firstVersionHeading[1] !== packageJson.version) {
+  fail(`CHANGELOG.md: top versioned entry ${firstVersionHeading[1]} does not match package.json version ${packageJson.version} (an "## Unreleased" section may precede it)`);
+}
+
+const security = await readFile(new URL("SECURITY.md", root), "utf8");
+const currentMinorLine = `\`${packageJson.version.split(".").slice(0, 2).join(".")}.x\``;
+if (!security.includes(currentMinorLine)) {
+  fail(`SECURITY.md: Supported Versions table does not list the current release line ${currentMinorLine}`);
+}
+
 if (failed) {
   process.exit(1);
 }

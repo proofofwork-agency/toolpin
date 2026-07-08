@@ -1,6 +1,9 @@
+import { shellQuote } from "../shellQuote.js";
 import type { NormalizedServer } from "../types.js";
 import { TUI_COMMANDS } from "./constants.js";
 import type { TuiCommandId, TuiCommandState } from "./types.js";
+
+export { shellQuote };
 
 export function commandRequiresServer(commandId: TuiCommandId): boolean {
   return TUI_COMMANDS.find((command) => command.id === commandId)?.requiresServer === true;
@@ -48,8 +51,4 @@ export function commandLineFor(commandId: TuiCommandId, state: TuiCommandState, 
     case "help":
       return "toolpin help";
   }
-}
-
-export function shellQuote(value: string): string {
-  return /^[a-zA-Z0-9_./:@-]+$/.test(value) ? value : JSON.stringify(value);
 }

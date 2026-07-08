@@ -1,11 +1,151 @@
 # Changelog
 
+## 0.4.0
+
+- Tool-surface pinning (rug-pull defense): `capabilityManifest` gains an
+  additive `toolSurfaceHash` — sha256 over canonical
+  `{name, description?, inputSchema?}` records per tool — so live drift
+  detection now covers tool input schemas, not just names and descriptions.
+  When present, the surface hash owns live-surface drift (schema changes,
+  coverage downgrades, unrefreshable pins fail closed); legacy
+  `toolDescriptionHash`/`toolManifestHash` locks keep working with a non-fatal
+  CI advisory to re-lock. Legacy-only pins report `needs-review: input schemas
+  not pinned`. `lockfileVersion` stays 2.
+- Three-verdict trust output: public output collapses internal trust tiers to
+  `verified` / `needs-review` / `blocked`, each with a reason; `--explain`
+  restores tier/profile/evidence/capability detail. JSON output keeps every
+  existing field and adds `verdict`; the TUI legend matches. Fatal contexts
+  (`verify`/`install`/`ci`/`policy` failures) escalate weak-pin criticals to
+  `blocked` while passive browsing keeps them `needs-review`.
+- `toolpin init ci`: one command takes a repo from nothing to protected — it
+  writes a minimal least-privilege GitHub workflow (`contents: read`, checkout
+  pinned to a commit SHA) plus a starter policy when `mcp-lock.json` exists,
+  and prints fail-closed guidance when it doesn't. Idempotent; `--dry-run` writes nothing; refuses partial setup when a
+  conflicting workflow exists. `policy init --recommended` writes the starter
+  policy on its own (conditional minimum tier, OCI digest + MCPB sha256 pins
+  required, verified-evidence requirement off so fresh repos can lock first and
+  tighten later).
+- CI gate output: `toolpin ci` gains `--json` (`ok` / `checkedEntries` /
+  `failures[]` with remediation hints) and a per-protection checklist in human
+  output; a policy that silently applied no rules now reports `SKIPPED`.
+- GitHub Action hardening: `doctor` input is `auto|true|false` (protects
+  committed client config), new `strict` preset (`--verify
+  --require-verified`, never blanket-skips live verification), `sarif` input +
+  `sarif-path` output, Marketplace branding, tri-state
+  `verify`/`require-verified` with fail-closed conflict handling, `source`
+  defaulting to the lockfile-recorded source, and all inputs env-mediated.
+- MCP Install Lockfile specification v1.0 (draft): vendor-neutral lockfile spec
+  at `docs/spec/mcp-lockfile-v1.md` — RFC 8785 canonicalization with NFC
+  duplicate-key rejection, `(name, client, scope)` entry identity, typed
+  package/remote target union, tool-surface pins covering input schemas,
+  generic verification evidence, namespaced extensions, detached ed25519
+  signature envelope, conformance classes, versioning policy — plus
+  machine-readable JSON Schemas (`schemas/`), positive/negative fixtures with
+  byte-exact vectors, and conformance tests wired into `npm test`. The spec and
+  schemas ship in the npm tarball. ToolPin's v2 lockfile is documented as a
+  predecessor profile; no breaking shipped-format changes (the only lockfile
+  addition in this release is the optional `toolSurfaceHash` above).
+- Docs: README rewritten around the lockfile + CI drift gate positioning with a
+  complete command overview, TUI key/panel documentation, a CI Gate chapter
+  with the full Action input matrix, and a Lockfile Standard section; docs site
+  updated from description-only pin language to input-schema surface pinning;
+  CLI `--help`, npm description, and site taglines aligned.
+- Release hygiene: the repository's own GitHub workflows SHA-pin their actions,
+  Dependabot keeps npm and Actions dependencies updated weekly, and the release
+  gate now checks that the git tag matches `package.json`, that the changelog's
+  top versioned heading matches the package version, and that `SECURITY.md`
+  lists the current release line.
+- Internal: `src/cli.ts` split into focused command modules under
+  `src/commands/` (zero behavior change); `src/version.ts` is generated from
+  `package.json` at build time.
+- Security (probe env isolation): live `test`/`verify` probes now spawn MCP
+  servers with a minimal environment allowlist plus the server's declared env
+  vars, instead of the caller's full `process.env`. Probing an untrusted package
+  can no longer read `GITHUB_TOKEN`, npm, or cloud credentials. Non-secret
+  infrastructure vars (Docker daemon config, CA cert paths) stay in the
+  allowlist; set `TOOLPIN_SPAWN_ENV_ALLOW=VAR1,VAR2` to explicitly pass extra
+  variables (e.g. `HTTPS_PROXY`) through to spawned servers when needed.
+- Security (SSRF): registry ingestion now goes through the `safeFetch` firewall
+  and non-loopback remote MCP probe transports go through the matching pinned
+  fetch — both HTTPS-only, both refusing redirects, both restricted to public
+  addresses (loopback probe targets stay available for local development). This
+  blocks cloud-metadata (`169.254.169.254`) and private-host access via
+  registry-declared remote URLs or a repo-supplied `.toolpin/registries.json`,
+  including a public endpoint that tries to 3xx-redirect the probe to a private
+  IP literal. Self-hosted registries can opt back in with `allowHttp` /
+  `allowPrivateHosts`.
+- Security (execution opt-in): verification never executes package targets
+  implicitly anymore. `verify`, `lock --verify`, `install --verify`,
+  `ci --verify`, `audit --verify`, and the guided interactive flow run network
+  artifact checks and remote probes only; spawning the package for live
+  `tools/list` hashing (`npx`, `uvx`, `docker run`, ...) now requires the
+  explicit `--allow-execute` flag (action input `allow-execute: "true"`).
+  Without it, reports carry a `package_execution_skipped` warning and the live
+  capability pin is `unavailable`; `ci` refuses up front to re-verify live
+  capability pins on package entries. `toolpin scan --live` is gated the same
+  way: a live scan of a package target needs `--allow-execute`, otherwise the
+  live tool-description scan is skipped and only the metadata scan runs.
+  `toolpin test` remains an explicit execution command and now prints the exact
+  command and env var names before launching.
+- Security (shell preview): the TUI/interactive command previews single-quote
+  untrusted server names and query text so a copied command cannot trigger
+  `$(...)`, backtick, or `$VAR` expansion.
+- Security (trust model): evidence carried in registry metadata is now read as
+  a claim, never proof. A curated-registry `_meta` entry declaring
+  `passed`/`verifiedByToolPin` artifact evidence is downgraded to `declared`
+  with `verifiedByToolPin: false` on ingestion, so the `verified` tier,
+  `requireToolPinVerifiedEvidence`, and fresh-artifact gates are only satisfied
+  by this installation's own recompute (`toolpin verify`, `--verify` flows).
+  Behavior note: curated entries now show `conditional`/`REVIEW` until locally
+  re-verified — matching the documented meaning of `REVIEW` — and a lockfile
+  entry locked at tier `verified` needs `toolpin ci --verify` (which recomputes
+  artifact proof) to avoid a tier-downgrade drift finding in CI. Compatibility:
+  existing lockfiles are not rewritten in place, so evidence already recorded as
+  ToolPin-verified in `mcp-lock.json` stays honored until it goes stale or you
+  re-verify/re-lock — the change hardens fresh ingestion, it does not
+  retroactively invalidate committed lock evidence.
+- Fix (data loss): `install`/`remove` refuse to overwrite an existing client
+  config that is not valid JSON, instead of silently replacing it with only the
+  new entry.
+- Fix (lockfile stability): a default `install` no longer rewrites a matching
+  `mcp-lock.json` entry, so signed / `--expect-digest` lockfiles stay valid.
+- Fix (OCI verify): live OCI probes pass declared env vars via `-e`, matching the
+  installed launcher.
+- Fix (CLI parsing): value flags reject a missing or flag-like value and numeric
+  flags reject non-integers rather than silently falling back.
+- Security (DNS rebinding): ToolPin-initiated HTTP(S) connections now pin the
+  vetted DNS answer into the socket. `safeFetch` routes through an `undici`
+  dispatcher whose connect-time lookup re-validates every resolved address, and
+  remote MCP probe transports (SSE / streamable HTTP) use the same pinned fetch
+  for non-loopback targets. A hostname whose DNS answer flips from a public to
+  a private/metadata address between the preflight check and the connection is
+  refused when the socket is built, closing the rebinding TOCTOU in the
+  private-address firewall. (Servers spawned for live probes still perform
+  their own networking; that surface is governed by the probe env isolation
+  above, not by this firewall.)
+
 ## 0.3.2
 
 - TUI trust labels: clarify that `REVIEW` means missing, stale, unavailable, or only-declared ToolPin-verified npm, OCI, or MCPB artifact proof.
 - TUI overview: label the upper metadata block as a registry summary and separate it from verification gates.
 - Docs: surface `toolpin interactive` / `tpn i` in the Docusaurus introduction and document the TUI evidence/status meanings explicitly.
 - Release hygiene: version bump 0.3.1 -> 0.3.2 for the public-launch clarity pass.
+
+## 0.3.1
+
+- Packaging: normalize the npm `bin` paths for the `toolpin` and `tpn`
+  executables so global installs link both commands correctly.
+- Release hygiene: version bump 0.3.0 -> 0.3.1.
+
+## 0.3.0
+
+- Interactive CLI: add the guided `toolpin interactive` / `tpn i` flow
+  (`src/interactive.tsx`, `src/interactive/workflow.ts`) for search →
+  recommendation → install/lock in one screen.
+- Terminal styling: add a shared ANSI color layer (`src/terminalStyle.ts`,
+  `--color auto|always|never`) used across CLI output.
+- Docs/tests: document the interactive command and cover the interactive
+  workflow and terminal styling with tests.
 
 ## 0.2.5
 

@@ -11,15 +11,31 @@ inputs:
     required: false
     default: mcp-lock.json
   source:
-    description: Registry source passed to --source.
+    description: Optional registry source passed to --source. Leave empty to use each lockfile entry's recorded source, falling back to all for older locks.
     required: false
-    default: all
+    default: ""
   live:
     description: Fetch live registry data instead of relying on local cache.
     required: false
     default: "true"
   verify:
     description: Run verification before comparing locked plans.
+    required: false
+    default: ""
+  require-verified:
+    description: Require fresh ToolPin-verified artifact evidence when verification runs.
+    required: false
+    default: ""
+  strict:
+    description: Preset for verify + require-verified. Explicit conflicting inputs fail closed.
+    required: false
+    default: "false"
+  doctor:
+    description: Run toolpin doctor before ci. auto runs when known project MCP client config files exist.
+    required: false
+    default: auto
+  sarif:
+    description: Write toolpin ci SARIF output to toolpin-ci.sarif and expose sarif-path.
     required: false
     default: "false"
   expect-digest:
@@ -54,12 +70,25 @@ inputs:
     description: Pass --skip-live-verification when verify is enabled.
     required: false
     default: "false"
+  allow-execute:
+    description: Pass --allow-execute so live verification may execute package targets (required to re-verify live capability pins on package entries).
+    required: false
+    default: "false"
+
+outputs:
+  sarif-path:
+    description: Path to SARIF output when sarif is true.
+    value: ${{ steps.toolpin-ci.outputs.sarif-path }}
+
+branding:
+  icon: lock
+  color: blue
 
 runs:
   using: composite
   steps:
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
       with:
         node-version: 22
 
@@ -79,23 +108,110 @@ runs:
         TOOLPIN_VERSION: ${{ inputs.toolpin-version }}
 
     - name: Run toolpin ci
+      id: toolpin-ci
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
         set -euo pipefail
 
-        cmd=(toolpin ci --file "$TOOLPIN_FILE" --source "$TOOLPIN_SOURCE")
+        bool_input() {
+          local name="$1"
+          local value="$2"
+          if [[ -n "$value" && "$value" != "true" && "$value" != "false" ]]; then
+            echo "ToolPin CI input '$name' must be true or false." >&2
+            exit 2
+          fi
+        }
+
+        bool_required_input() {
+          local name="$1"
+          local value="$2"
+          if [[ "$value" != "true" && "$value" != "false" ]]; then
+            echo "ToolPin CI input '$name' must be true or false." >&2
+            exit 2
+          fi
+        }
+
+        bool_input verify "$TOOLPIN_VERIFY"
+        bool_input require-verified "$TOOLPIN_REQUIRE_VERIFIED"
+        bool_required_input strict "$TOOLPIN_STRICT"
+        bool_required_input live "$TOOLPIN_LIVE"
+        bool_required_input no-policy "$TOOLPIN_NO_POLICY"
+        bool_required_input skip-live-verification "$TOOLPIN_SKIP_LIVE_VERIFICATION"
+        bool_required_input allow-execute "$TOOLPIN_ALLOW_EXECUTE"
+        bool_required_input sarif "$TOOLPIN_SARIF"
+
+        if [[ "$TOOLPIN_DOCTOR" != "auto" && "$TOOLPIN_DOCTOR" != "true" && "$TOOLPIN_DOCTOR" != "false" ]]; then
+          echo "ToolPin CI input 'doctor' must be auto, true, or false." >&2
+          exit 2
+        fi
+
+        effective_verify="${TOOLPIN_VERIFY:-false}"
+        effective_require_verified="${TOOLPIN_REQUIRE_VERIFIED:-false}"
+        if [[ "$TOOLPIN_STRICT" == "true" ]]; then
+          if [[ "$TOOLPIN_VERIFY" == "false" ]]; then
+            echo "ToolPin CI input conflict: strict:true requires verify:true; remove verify:false or disable strict." >&2
+            exit 2
+          fi
+          if [[ "$TOOLPIN_REQUIRE_VERIFIED" == "false" ]]; then
+            echo "ToolPin CI input conflict: strict:true requires require-verified:true; remove require-verified:false or disable strict." >&2
+            exit 2
+          fi
+          effective_verify="true"
+          effective_require_verified="true"
+        fi
+
+        if [[ "$effective_require_verified" == "true" && "$effective_verify" != "true" ]]; then
+          echo "ToolPin CI input conflict: require-verified:true requires verify:true." >&2
+          exit 2
+        fi
+
+        should_doctor="false"
+        if [[ "$TOOLPIN_DOCTOR" == "true" ]]; then
+          should_doctor="true"
+        elif [[ "$TOOLPIN_DOCTOR" == "auto" ]]; then
+          for project_config in .mcp.json .cursor/mcp.json .vscode/mcp.json .codex/config.toml opencode.json .gemini/settings.json .roo/mcp.json; do
+            if [[ -e "$project_config" ]]; then
+              should_doctor="true"
+              break
+            fi
+          done
+        fi
+
+        if [[ "$should_doctor" == "true" ]]; then
+          doctor_cmd=(toolpin doctor --file "$TOOLPIN_FILE" --scope project)
+          printf 'Running:'
+          printf ' %q' "${doctor_cmd[@]}"
+          printf '\n'
+          "${doctor_cmd[@]}"
+        else
+          echo "ToolPin doctor: SKIPPED"
+        fi
+
+        cmd=(toolpin ci --file "$TOOLPIN_FILE")
+
+        if [[ -n "$TOOLPIN_SOURCE" ]]; then
+          cmd+=(--source "$TOOLPIN_SOURCE")
+        fi
 
         if [[ "$TOOLPIN_LIVE" == "true" ]]; then
           cmd+=(--live)
         fi
 
-        if [[ "$TOOLPIN_VERIFY" == "true" ]]; then
+        if [[ "$effective_verify" == "true" ]]; then
           cmd+=(--verify --timeout "$TOOLPIN_TIMEOUT")
+        fi
+
+        if [[ "$effective_require_verified" == "true" ]]; then
+          cmd+=(--require-verified)
         fi
 
         if [[ "$TOOLPIN_SKIP_LIVE_VERIFICATION" == "true" ]]; then
           cmd+=(--skip-live-verification)
+        fi
+
+        if [[ "$TOOLPIN_ALLOW_EXECUTE" == "true" ]]; then
+          cmd+=(--allow-execute)
         fi
 
         if [[ -n "$TOOLPIN_EXPECT_DIGEST" ]]; then
@@ -116,15 +232,34 @@ runs:
           cmd+=(--policy "$TOOLPIN_POLICY")
         fi
 
+        if [[ "$TOOLPIN_SARIF" == "true" ]]; then
+          cmd+=(--sarif)
+        fi
+
         printf 'Running:'
         printf ' %q' "${cmd[@]}"
         printf '\n'
+
+        if [[ "$TOOLPIN_SARIF" == "true" ]]; then
+          sarif_path="toolpin-ci.sarif"
+          set +e
+          "${cmd[@]}" > "$sarif_path"
+          status=$?
+          set -e
+          echo "sarif-path=$sarif_path" >> "$GITHUB_OUTPUT"
+          exit "$status"
+        fi
+
         "${cmd[@]}"
       env:
         TOOLPIN_FILE: ${{ inputs.file }}
         TOOLPIN_SOURCE: ${{ inputs.source }}
         TOOLPIN_LIVE: ${{ inputs.live }}
         TOOLPIN_VERIFY: ${{ inputs.verify }}
+        TOOLPIN_REQUIRE_VERIFIED: ${{ inputs.require-verified }}
+        TOOLPIN_STRICT: ${{ inputs.strict }}
+        TOOLPIN_DOCTOR: ${{ inputs.doctor }}
+        TOOLPIN_SARIF: ${{ inputs.sarif }}
         TOOLPIN_EXPECT_DIGEST: ${{ inputs.expect-digest }}
         TOOLPIN_SIGNATURE: ${{ inputs.signature }}
         TOOLPIN_PUBLIC_KEY: ${{ inputs.public-key }}
@@ -132,3 +267,4 @@ runs:
         TOOLPIN_NO_POLICY: ${{ inputs.no-policy }}
         TOOLPIN_TIMEOUT: ${{ inputs.timeout }}
         TOOLPIN_SKIP_LIVE_VERIFICATION: ${{ inputs.skip-live-verification }}
+        TOOLPIN_ALLOW_EXECUTE: ${{ inputs.allow-execute }}

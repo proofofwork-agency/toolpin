@@ -1,0 +1,33 @@
+{
+  "specVersion": 1,
+  "generatedAt": "2026-07-07T12:00:00.000Z",
+  "updatedAt": "2026-07-07T12:00:00.000Z",
+  "entries": [
+    {
+      "name": "io.github.example/postgres",
+      "version": "1.4.2",
+      "client": "claude-code",
+      "scope": "project",
+      "source": {
+        "registry": "https://registry.modelcontextprotocol.io",
+        "id": "io.github.example/postgres"
+      },
+      "target": {
+        "type": "package",
+        "registryType": "npm",
+        "identifier": "@example/postgres-mcp",
+        "version": "1.4.2",
+        "transport": "stdio",
+        "artifact": {
+          "digest": "sha256-P1lpO2u6UWTeF0Y0Y8aTL6TX8O0Q9jc7W3m4G5h6I7k=",
+          "method": "npm-sri"
+        }
+      },
+      "configDigest": "sha256-4rLmVYm0eXBg4dp2v9O4t2c1FQnb0m9uS0T5b8n7hVQ=",
+      "resolvedAt": "2026-07-07T11:59:58.120Z",
+      "lockedAt": "2026-07-07T12:00:00.000Z",
+      "integrity": "sha256-dnJDq0qFL22Ftov6edEstiRKFNExTmClBN5AlmjfVC8=",
+      "futureOptionalField": "tolerated-and-hashed"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalJson } from "./canonicalJson.js";
-import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan, ToolManifestHash } from "./types.js";
+import type { Attestation, CapabilityManifest, CapabilitySecret, NormalizedServer, ToolDescriptionHash, ToolDescriptionScan, ToolManifestHash, ToolSurfaceHash } from "./types.js";
+import { isRecord } from "./util.js";
 
 export interface ToolDescriptionInput {
   name: string;
@@ -13,7 +14,7 @@ const TOOLPIN_ATTESTATIONS_META = "dev.toolpin/attestations";
 
 export function deriveCapabilityManifest(
   server: NormalizedServer,
-  options: { toolDescriptionHash?: ToolDescriptionHash; toolManifestHash?: ToolManifestHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
+  options: { toolDescriptionHash?: ToolDescriptionHash; toolSurfaceHash?: ToolSurfaceHash; toolManifestHash?: ToolManifestHash; toolDescriptionScan?: ToolDescriptionScan; generatedAt?: string } = {},
 ): CapabilityManifest {
   return {
     version: 1,
@@ -26,6 +27,7 @@ export function deriveCapabilityManifest(
     secrets: capabilitySecrets(server).sort((left, right) => `${left.source}:${left.name}`.localeCompare(`${right.source}:${right.name}`)),
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     toolDescriptionHash: options.toolDescriptionHash,
+    toolSurfaceHash: options.toolSurfaceHash,
     toolManifestHash: options.toolManifestHash,
     toolDescriptionScan: options.toolDescriptionScan,
   };
@@ -58,6 +60,26 @@ export function hashToolManifests(tools: ToolDescriptionInput[], generatedAt = n
   const value = createHash("sha256").update(canonicalJson(normalized)).digest("hex");
   return {
     algorithm: "sha256",
+    value,
+    toolCount: normalized.length,
+    generatedAt,
+  };
+}
+
+export function hashToolSurface(tools: ToolDescriptionInput[], generatedAt = new Date().toISOString()): ToolSurfaceHash {
+  const coverage: ToolSurfaceHash["coverage"] = ["name", "description", "inputSchema"];
+  const normalized = tools
+    .map((tool) => {
+      const record: { name: string; description?: string; inputSchema?: unknown } = { name: tool.name };
+      if (Object.hasOwn(tool, "description")) record.description = tool.description;
+      if (Object.hasOwn(tool, "inputSchema")) record.inputSchema = tool.inputSchema;
+      return record;
+    })
+    .sort((left, right) => compareUtf16(left.name, right.name));
+  const value = createHash("sha256").update(canonicalJson(normalized)).digest("hex");
+  return {
+    algorithm: "sha256",
+    coverage,
     value,
     toolCount: normalized.length,
     generatedAt,
@@ -130,6 +152,7 @@ export function isCapabilityManifest(value: unknown): value is CapabilityManifes
     Array.isArray(value.secrets) &&
     typeof value.generatedAt === "string" &&
     (value.toolDescriptionHash === undefined || isToolDescriptionHash(value.toolDescriptionHash)) &&
+    (value.toolSurfaceHash === undefined || isToolSurfaceHash(value.toolSurfaceHash)) &&
     (value.toolManifestHash === undefined || isToolManifestHash(value.toolManifestHash)) &&
     (value.toolDescriptionScan === undefined || isToolDescriptionScan(value.toolDescriptionScan))
   );
@@ -149,6 +172,18 @@ function isToolManifestHash(value: unknown): value is ToolManifestHash {
   );
 }
 
+function isToolSurfaceHash(value: unknown): value is ToolSurfaceHash {
+  return (
+    isRecord(value) &&
+    value.algorithm === "sha256" &&
+    typeof value.value === "string" &&
+    typeof value.toolCount === "number" &&
+    typeof value.generatedAt === "string" &&
+    Array.isArray(value.coverage) &&
+    value.coverage.every((field): field is ToolSurfaceHash["coverage"][number] => field === "name" || field === "description" || field === "inputSchema")
+  );
+}
+
 function isToolDescriptionScan(value: unknown): value is ToolDescriptionScan {
   return (
     isRecord(value) &&
@@ -163,6 +198,8 @@ function isAttestation(value: unknown): value is Attestation {
   return isRecord(value) && typeof value.type === "string";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function compareUtf16(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

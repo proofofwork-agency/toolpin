@@ -2,9 +2,9 @@
 
 > What ToolPin defends against, what it deliberately does not, and where each
 > defense begins and ends. Audience: security reviewers, enterprise
-> evaluators, and contributors. Status: scoped to v0.2.5 — future capabilities
+> evaluators, and contributors. Status: scoped to v0.4.0 — future capabilities
 > (sigstore, Cedar, runtime brokering) are noted as roadmap, not claims.
-> Last reviewed: 2026-06-27.
+> Last reviewed: 2026-07-08.
 
 This document consolidates the security scope statements scattered across the
 README (Highlights, Usage, Safety Model, What Exists Now, and Roadmap) and the
@@ -18,7 +18,7 @@ honest about gaps.
 | Asset | Why it matters |
 |---|---|
 | **Agent credentials & environment** | MCP servers run with the user's OS permissions and frequently with their API tokens, OAuth sessions, and filesystem access. A malicious server is arbitrary code execution in the user's context. |
-| **The agent's tool surface** | Tool descriptions and names are read by the LLM and influence its behavior. Tampering with them is a prompt-injection vector. |
+| **The agent's tool surface** | Tool names, descriptions, and input schemas are read by the LLM and influence its behavior. Tampering with any of them is a prompt-injection vector. |
 | **`mcp-lock.json`** | The committed governance artifact. If it can be silently mutated, every guarantee below is void. |
 | **`.toolpin/policy.json`** | The local enforcement gate. If it can be weakened via PR, the gate is decorative. |
 | **CI exit codes** | If `toolpin ci` can be made to pass on a mutated lockfile, supply-chain assurance is lost. |
@@ -28,7 +28,7 @@ honest about gaps.
 | Adversary | Capability | Likelihood |
 |---|---|---|
 | **Malicious publisher** | Publishes a server to the official registry / Docker catalog with crafted metadata, a tool-poisoning description, or a mutable OCI tag they later swap. | High — registration is open and metadata is self-declared. |
-| **Compromised publisher** | A previously-trusted publisher rug-pulls their server (mutates tool descriptions after clients approved them) or has their registry namespace hijacked. | Medium. |
+| **Compromised publisher** | A previously-trusted publisher rug-pulls their server (mutates tool descriptions or input schemas after clients approved them) or has their registry namespace hijacked. | Medium. |
 | **Insider with commit access** | Submits a PR that lowers `minTrustScore`, deletes deny rules, rotates `public.pem` + `mcp-lock.sig` together, or edits `mcp-lock.json` directly. | Medium — depends on branch protection. |
 | **Network attacker** | MITM on registry fetch, or DNS rebinding on a remote MCP server. | Low for HTTPS-only; the official registry and Docker raw.githubusercontent are HTTPS. |
 | **Confused deputy (the agent itself)** | Tricked by a poisoned tool description into exfiltrating secrets or invoking tools it shouldn't. | High in the general case — see §4. |
@@ -40,9 +40,9 @@ honest about gaps.
 | **Mutable OCI tags (rug-pull by tag swap)** | `verify.ts` and `policy.requireDigestPinnedOci` reject OCI identifiers without a valid `@sha256:<64 hex>` digest as `critical: mutable_oci_tag`; `verify` best-effort resolves the registry manifest digest when reachable. | ToolPin does not fetch and recompute OCI image bytes. Unreachable registries produce explicit `unavailable` evidence, not a verified result. |
 | **MCPB bundles without integrity** | `verify.ts` and `policy.requireMcpbSha256` reject MCPB packages missing a valid 64-character hex `fileSha256`; `verify` recomputes SHA-256 only when bytes are available from a code-allowlisted HTTPS artifact host. | Local paths, `file://`, HTTP, untrusted hosts, and unavailable bytes produce explicit `unavailable` evidence, not a verified result. |
 | **Incomplete automated evidence** | Trust tiers and cap reasons show when metadata is strong but artifact proof is missing. Trusted-source conditional entries are capped at 69% until ToolPin verifies artifact proof such as npm integrity, OCI digest, or MCPB hash evidence. | A cap is a review signal, not runtime containment. It does not prove a server is safe or unsafe. |
-| **Insecure remotes** | `trust.ts:149-178` scores non-HTTPS or unparseable remote URLs as `critical: insecure_remote` / `invalid_remote_url`. | None — fail-closed. |
-| **Missing install targets** | `trust.ts:33-40` scores servers with no packages and no remotes `critical: no_install_target`. | None. |
-| **Tool-description rug-pulls (after verified install)** | When installed with `--verify`, the live `tools/list` descriptions are hashed (`capabilities.ts:31-45`) and the hash is compared on reinstall. The normalized `toolDescriptionHash` is included in per-entry integrity and the signed whole-lock digest when present. | Only enforced when **both** locked and current manifests carry a hash. A non-`--verify` reinstall can still skip live `tools/list` comparison. The hash covers `{name, description}`, not input schemas. |
+| **Insecure remotes** | `trust.ts:419-423` scores non-HTTPS or unparseable remote URLs as `critical: insecure_remote` / `invalid_remote_url`. | None — fail-closed. |
+| **Missing install targets** | `trust.ts:44-46` scores servers with no packages and no remotes `critical: no_install_target`. | None. |
+| **Tool-surface rug-pulls (after verified install)** | When installed with `--verify`, the live `tools/list` tool records are hashed (`capabilities.ts:69-87`) and the hash is compared on reinstall. The `toolSurfaceHash` covers tool names, descriptions, and input schemas (coverage `["name", "description", "inputSchema"]`) and is included in per-entry integrity and the signed whole-lock digest when present. | Only enforced when **both** locked and current manifests carry a surface hash. A non-`--verify` reinstall can still skip live `tools/list` comparison. Legacy locks carrying only the description-only `toolDescriptionHash` still verify, but raise a non-fatal advisory and verdict `needs-review` (reason `input schemas not pinned`) until the surface pin is re-captured. |
 | **Lockfile tampering** | Per-entry `integrity = sha256-…` over reviewed entry contents, including entry timestamps; `diffInstallPlans` rejects integrity mismatch. Whole-lock digest via `toolpin lock digest` excludes only top-level file timestamps; detached Ed25519 signature via `toolpin lock sign`. | The signature is only as strong as the out-of-band key management. If `public.pem` is committed, an attacker with commit access can rotate both `public.pem` and `mcp-lock.sig` together. |
 | **Install drift across team/CI** | `install` refuses when version, target, trust-score decrease, config, or capability manifest differ from the locked entry. `toolpin ci` re-resolves every entry and rejects drift without mutating the lock. | Trust-score *increases* are not flagged. Trust *object* changes (e.g. a newly added badge) fire a generic "lock integrity changed" message. |
 | **Plaintext secrets in committed client config** | `toolpin secrets audit` is read-only, redacts all values to `[REDACTED]`, flags declared-secret fields containing non-placeholder values and string values matching known token prefixes (`ghp_`, `sk-`, `AKIA…`, `xox…`, `AIza…`, `BEGIN … PRIVATE KEY`). `.gitignore` also excludes common local secret/key filenames. | Advisory only — no install/CI gate consumes it. `.gitignore` is not a security boundary and does not protect already-tracked files. Secret-pattern coverage is intentionally incomplete and should not be treated as DLP. |
@@ -124,9 +124,10 @@ Three boundaries matter:
   digest in CI secrets (not in the repo) → `toolpin ci --expect-digest …`.
 - **Sign and verify**: generate an Ed25519 keypair outside the repo; commit
   only `public.pem`; run `toolpin ci --signature mcp-lock.sig --public-key public.pem`.
-- **Install with `--verify`** to capture tool-description hashes; understand
-  that `--skip-live-verification` is a downgrade and CI rejects it for entries
-  that already have live capability pins.
+- **Install with `--verify`** to capture the live tool-surface hash (tool names,
+  descriptions, and input schemas); understand that `--skip-live-verification`
+  is a downgrade and CI rejects it for entries that already have live capability
+  pins.
 - **Treat `.toolpin/policy.json` as code**: require PR review, branch
   protection, and ideally bind it into the signature payload.
 - **Use `--live` in CI when you need registry drift detection**; without it,
@@ -145,11 +146,12 @@ Mapped to standards (see `docs/research/` for full citations):
 | Bill of materials | none | CycloneDX (ECMA-424) / SPDX (ISO 5962) SBOM emission per locked server |
 | MCPB/OCI/npm content | valid pin checks plus best-effort OCI registry digest resolution, trusted-host MCPB byte hashing, and npm SRI verification | broader artifact integrity + cosign signature on OCI via Referrers API |
 | Policy | local JSON gate | Cedar (preferred for provability) or OPA/Rego |
-| Tool descriptions | hash of `{name, description}` | ETDI-style enveloped/signed tool descriptions including input schemas |
+| Tool surface | sha256 over `{name, description, inputSchema}` (`toolSurfaceHash`) | ETDI-style enveloped/signed tool descriptions and schemas |
 
-Lockfile signatures now cover normalized tool-description hashes when those
-hashes are present. The next step is broadening the hashed tool payload beyond
-descriptions so schema-level tool drift is covered too.
+Lockfile signatures now cover the normalized `toolSurfaceHash` — tool names,
+descriptions, and input schemas — when it is present, so schema-level tool drift
+is covered. Legacy locks that carry only the description-only hash still verify
+as a fallback but raise a non-fatal advisory that input schemas are not pinned.
 
 Industry references that justify and shape this roadmap:
 MCP spec ("tool descriptions… untrusted, unless obtained from a trusted

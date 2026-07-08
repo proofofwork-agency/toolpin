@@ -1,9 +1,11 @@
 import { clientsForScope, PROJECT_CLIENTS, type ClientName } from "../config.js";
 import { installableClientsForServer } from "../clientSupport.js";
-import { DEFAULT_POLICY_PATH } from "../constants.js";
+import { DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS } from "../constants.js";
+import { shellQuote } from "../shellQuote.js";
 import { buildInstallPlan, type Lockfile } from "../plan.js";
 import { searchServers } from "../search.js";
 import { evidenceStatus, evidenceSummary, scoreServer, trustProfileScore, trustTier } from "../trust.js";
+import { publicVerdict, verdictLine, type PublicVerdict, type PublicVerdictResult } from "../verdict.js";
 import type { InstallScope } from "../install.js";
 import type { NormalizedServer, RegistrySourceId, SearchResult } from "../types.js";
 
@@ -24,6 +26,7 @@ export interface InteractiveOptions {
   timeoutMs: number;
   policyPath: string;
   enforcePolicy: boolean;
+  explain: boolean;
 }
 
 export interface InteractivePrefill {
@@ -38,6 +41,8 @@ export interface InteractivePrefill {
 
 export interface InteractiveReview {
   server: NormalizedServer;
+  verdict: PublicVerdict;
+  verdictReason: string;
   trustTier: string;
   profileScore: number;
   evidenceLabel: string;
@@ -80,9 +85,10 @@ export const DEFAULT_INTERACTIVE_OPTIONS: Omit<InteractiveOptions, "query"> = {
   limit: 10,
   verify: false,
   requireVerified: false,
-  timeoutMs: 15000,
+  timeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
   policyPath: DEFAULT_POLICY_PATH,
   enforcePolicy: true,
+  explain: false,
 };
 
 export function interactiveSearch(servers: NormalizedServer[], query: string, limit: number): SearchResult[] {
@@ -158,9 +164,12 @@ export function buildPrefill(server: NormalizedServer, options: InteractiveOptio
 
 export function buildReview(server: NormalizedServer, options: InteractiveOptions, lockfile?: Lockfile, action: InteractiveAction = "install-lock"): InteractiveReview {
   const trust = scoreServer(server);
+  const verdict = publicVerdict(trust);
   const prefill = buildPrefill(server, options, lockfile);
   return {
     server,
+    verdict: verdict.verdict,
+    verdictReason: verdict.reason,
     trustTier: trustTier(trust),
     profileScore: trustProfileScore(trust),
     evidenceLabel: evidenceStatus(trust),
@@ -207,7 +216,7 @@ export function buildCommandPreview(options: CommandPreviewOptions): string {
   if (options.verify && action !== "export-config") {
     args.push("--verify");
     if (options.requireVerified) args.push("--require-verified");
-    if (options.timeoutMs && options.timeoutMs !== 15000) args.push("--timeout", String(options.timeoutMs));
+    if (options.timeoutMs && options.timeoutMs !== DEFAULT_PROBE_TIMEOUT_MS) args.push("--timeout", String(options.timeoutMs));
   }
   if (action === "install-lock") {
     if (options.enforcePolicy === false) args.push("--no-policy");
@@ -231,7 +240,10 @@ export function noInputGuidance(options: InteractiveOptions, results: SearchResu
   const result = results[selectInitialResult(results, options.query)];
   const review = buildReview(result.server, options);
   lines.push(`Top result: ${result.server.name}@${result.server.version}`);
-  lines.push(`Trust: ${review.trustTier.toUpperCase()} ${review.profileScore}% profile; ${review.evidenceLabel}`);
+  lines.push(`Verdict: ${formatNoInputVerdict({ verdict: review.verdict, reason: review.verdictReason, detailTier: trustTier(scoreServer(result.server)) })}`);
+  if (options.explain) {
+    lines.push(`Trust: ${review.trustTier.toUpperCase()} ${review.profileScore}% profile; ${review.evidenceLabel}`);
+  }
   lines.push(`Secrets: ${review.secretsLabel}`);
   lines.push("");
   lines.push("Equivalent one-shot command:");
@@ -278,9 +290,8 @@ function clientSupportLabel(server: NormalizedServer, client: InteractiveClient,
   }
 }
 
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_./:@=-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", "'\\''")}'`;
+function formatNoInputVerdict(result: PublicVerdictResult): string {
+  return verdictLine(result).toUpperCase();
 }
 
 function escapeRegExp(value: string): string {

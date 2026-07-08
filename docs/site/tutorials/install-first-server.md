@@ -58,19 +58,28 @@ toolpin install io.github.github/github-mcp-server \
 
 This writes project-scope client config and updates `mcp-lock.json`.
 
-`--verify` runs metadata checks plus a live MCP `tools/list` probe of the
-selected package or remote launch target (skip it with
-`--skip-live-verification`). When that probe succeeds, ToolPin stores normalized
-tool-description and tool-manifest hashes in the lockfile. Package targets also
-get registry pin checks where supported: OCI digest resolution and MCPB byte
-hashing are best-effort when the registry or trusted HTTPS bundle bytes are
-reachable. npm targets are checked against `registry.npmjs.org`
-`dist.integrity`; PyPI, NuGet, and Cargo targets are checked for exact declared
-versions and drift, not artifact integrity.
+`--verify` runs metadata checks plus, where allowed, a live MCP `tools/list`
+probe of the selected package or remote launch target (skip it with
+`--skip-live-verification`). When that probe succeeds, ToolPin pins the live
+tool surface — tool names, descriptions, and input schemas — as
+`toolSurfaceHash` in the lockfile.
+
+Capturing that live pin for a **package** target has to start the server, so it
+executes the package and requires explicit `--allow-execute`. Without
+`--allow-execute`, artifact checks still run, live package execution is skipped
+with a `package_execution_skipped` warning, and the live pin stays unavailable.
+Remote targets are probed over an SSRF-guarded transport without executing
+anything.
+
+Package targets also get registry pin checks where supported: OCI digest
+resolution and MCPB byte hashing are best-effort when the registry or trusted
+HTTPS bundle bytes are reachable. npm targets are checked against
+`registry.npmjs.org` `dist.integrity`; PyPI, NuGet, and Cargo targets are
+checked for exact declared versions and drift, not artifact integrity.
 
 Because `mcp-lock.json` now pins this server/client, a later `toolpin install`
 without `--update-lock` refuses if the version, selected target, generated client
-config, capability manifest, tool-description hash, or trust score (on decrease)
+config, capability manifest, pinned tool surface, or trust score (on decrease)
 has changed. Review the drift, then update the lock with
 `toolpin lock io.github.github/github-mcp-server --client claude` or repeat the
 install with `--update-lock`.
@@ -85,3 +94,16 @@ toolpin ci --live
 Commit `mcp-lock.json` so teammates and CI can reject drift. Use `--client all`
 only after reviewing the generated configs for every supported project-scope
 client.
+
+## Protect the repo in CI
+
+With `mcp-lock.json` committed, make drift fail pull requests. Scaffold the
+workflow with one command:
+
+```bash
+toolpin init ci
+```
+
+This writes a hardened GitHub Actions workflow that runs `toolpin ci` in strict
+mode with `doctor` and SARIF upload, so a pull request fails when the committed
+lockfile no longer matches the reviewed install plan.

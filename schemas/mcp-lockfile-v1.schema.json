@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofofwork-agency.github.io/toolpin/schemas/mcp-lockfile-v1.schema.json",
+  "title": "MCP Install Lockfile v1",
+  "description": "Vendor-neutral lockfile for MCP server installs (mcp-lock/1). Unknown members are permitted per spec §10 and remain covered by integrity hashing; this schema validates structure and formats, while entry-identity uniqueness and NFC duplicate-key rejection are enforced by conformance runners.",
+  "type": "object",
+  "required": ["specVersion", "entries"],
+  "properties": {
+    "specVersion": { "const": 1 },
+    "generatedAt": { "$ref": "#/$defs/timestamp" },
+    "updatedAt": { "$ref": "#/$defs/timestamp" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "extensions": { "$ref": "#/$defs/extensions" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256-[A-Za-z0-9+/]+={0,2}$"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$" },
+      "additionalProperties": { "type": "object" }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["name", "version", "client", "source", "target", "configDigest", "resolvedAt", "lockedAt", "integrity"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "client": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "scope": { "enum": ["project", "user"] },
+        "source": {
+          "type": "object",
+          "required": ["registry"],
+          "properties": {
+            "registry": { "type": "string", "minLength": 1 },
+            "id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "target": { "$ref": "#/$defs/target" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "configDigest": { "$ref": "#/$defs/digest" },
+        "verification": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "resolvedAt": { "$ref": "#/$defs/timestamp" },
+        "lockedAt": { "$ref": "#/$defs/timestamp" },
+        "extensions": { "$ref": "#/$defs/extensions" },
+        "integrity": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "target": {
+      "oneOf": [
+        { "$ref": "#/$defs/packageTarget" },
+        { "$ref": "#/$defs/remoteTarget" }
+      ]
+    },
+    "packageTarget": {
+      "type": "object",
+      "required": ["type", "registryType", "identifier"],
+      "properties": {
+        "type": { "const": "package" },
+        "registryType": {
+          "type": "string",
+          "pattern": "^(npm|oci|mcpb|pypi|nuget|[a-z0-9-]+(\\.[a-z0-9-]+)+)$"
+        },
+        "identifier": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "transport": { "type": "string" },
+        "artifact": {
+          "type": "object",
+          "required": ["digest", "method"],
+          "properties": {
+            "digest": { "$ref": "#/$defs/digest" },
+            "method": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "remoteTarget": {
+      "type": "object",
+      "required": ["type", "transport", "url"],
+      "properties": {
+        "type": { "const": "remote" },
+        "transport": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "pattern": "^https://" },
+        "headerSecretNames": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" }
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "required": ["hash", "coverage", "toolCount"],
+      "properties": {
+        "hash": { "$ref": "#/$defs/digest" },
+        "coverage": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "enum": ["name", "description", "inputSchema"] },
+          "allOf": [
+            { "contains": { "const": "name" } },
+            { "contains": { "const": "description" } }
+          ]
+        },
+        "toolCount": { "type": "integer", "minimum": 0 },
+        "capturedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["code", "status"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "declared", "unavailable"] },
+        "verifier": { "type": "string" },
+        "method": { "type": "string" },
+        "anchor": { "type": "string" },
+        "verifiedAt": { "$ref": "#/$defs/timestamp" },
+        "required": { "type": "boolean" }
+      }
+    }
+  }
+}

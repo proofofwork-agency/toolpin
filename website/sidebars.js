@@ -22,6 +22,7 @@ const sidebars = {
         "reference/cli",
         "reference/client-matrix",
         "reference/lockfile-schema",
+        "reference/lockfile-spec",
         "reference/policy-schema",
       ],
     },

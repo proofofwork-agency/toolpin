@@ -66,6 +66,13 @@ server can be locked differently for different MCP clients.
           "toolCount": 12,
           "generatedAt": "2026-06-25T00:00:00.000Z"
         },
+        "toolSurfaceHash": {
+          "algorithm": "sha256",
+          "coverage": ["name", "description", "inputSchema"],
+          "value": "cd9012...",
+          "toolCount": 12,
+          "generatedAt": "2026-06-25T00:00:00.000Z"
+        },
         "toolManifestHash": {
           "algorithm": "sha256",
           "value": "ab7890...",
@@ -126,7 +133,7 @@ on read but `ci` will reject entries missing `integrity`.
 | `trust` | object | Metadata completeness score, optional tier/gating/evidence, badges, and review issues at lock time. |
 | `config` | any JSON value | Generated client config fragment. |
 | `notes` | string array | Human-readable install notes. |
-| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash`, `toolManifestHash`, and `toolDescriptionScan` appear only after a successful `--verify` live probe of the selected MCP launch target. |
+| `capabilityManifest` | object *(optional)* | Derived capability manifest. See [Capability manifest](#capability-manifest). `toolDescriptionHash`, `toolSurfaceHash`, `toolManifestHash`, and `toolDescriptionScan` appear only after a successful `--verify` live probe of the selected MCP launch target. |
 | `resolvedAt` | string | Time the entry was resolved. Included in per-entry integrity and whole-lock digest calculations. |
 | `lockedAt` | string *(optional)* | Time the entry was written. Included in per-entry integrity and whole-lock digest calculations. |
 | `resolved` | object *(synthesized)* | Registry source, name, and version resolved by ToolPin. |
@@ -161,9 +168,16 @@ required? }`, where `status` is `passed`, `declared`, `failed`, or
 `unavailable`. Current codes include
 `package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
 `lock_signature`, `oci_digest_verified`, `mcpb_sha256_verified`,
-`npm_integrity_verified`, and `attestation_declared`. Declared pins, hashes, and
-attestations are not treated as ToolPin-verified unless a future verifier records
-`verifiedByToolPin: true` on a passed evidence entry.
+`npm_integrity_verified`, `tool_surface_hash`, and `attestation_declared`.
+Declared pins, hashes, and attestations are not treated as ToolPin-verified
+unless a future verifier records
+`verifiedByToolPin: true` on a passed evidence entry. Evidence carried in
+registry metadata (including the ToolPin curated registry's `_meta` evidence)
+is read as a claim: a registry-supplied `passed` entry is downgraded to
+`declared` with `verifiedByToolPin: false` on ingestion. Only this
+installation's own verification (`toolpin verify`, `--verify` flows) records
+`passed` + `verifiedByToolPin: true`, so the `verified` tier and
+`requireToolPinVerifiedEvidence` always reflect a local recompute.
 
 `automated evidence incomplete` means the entry has not satisfied all evidence
 required for `verified`. In practice this usually means an exact package pin
@@ -193,6 +207,7 @@ sorted deterministically.
 | `secrets` | object array | Sorted declared secret inputs. Each entry is `{ name, source: "env" \| "header", required }`, covering package environment variables and remote headers marked `isSecret` or `isRequired`. |
 | `generatedAt` | string | ISO timestamp the manifest was generated. Required. |
 | `toolDescriptionHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted `name`/`description` pairs returned by the probe. |
+| `toolSurfaceHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", coverage: ["name", "description", "inputSchema"], value, toolCount, generatedAt }` over tools sorted by name, with each hash record omitting fields the server did not return. This is the preferred drift pin for tool names, descriptions, and input schemas. |
 | `toolManifestHash` | object *(optional)* | Present only after a successful live `tools/list` probe of the selected launch target. `{ algorithm: "sha256", value, toolCount, generatedAt }` over the sorted tool `name`, `description`, and `inputSchema` values returned by the probe. |
 | `toolDescriptionScan` | object *(optional)* | Present only after a successful live `tools/list` probe. `{ version: 1, generatedAt, scannedDescriptions, findings }` of advisory review signals (see below). |
 
@@ -219,6 +234,30 @@ earns `tool-description-pinned` and `tool-manifest-pinned`.
 Attestation metadata read from `_meta` (`dev.toolpin/attestations`) is surfaced
 in the report and each entry emits a `<type>-declared` badge; a manifest already
 pinned in `_meta` (`dev.toolpin/capabilities`) earns `capability-pinned`.
+
+### Tool surface hash and drift
+
+`toolSurfaceHash` is the preferred capability-manifest pin for a changed tool
+surface, surfaced in evidence as the `tool_surface_hash` kind. Its `value` is a
+sha256 over the live `tools/list` records projected onto the `coverage` fields —
+`["name", "description", "inputSchema"]` — with tools sorted by name and each
+record omitting any covered field the server did not return. An omitted field is
+not the same as a field the server returned as `null`: the projection preserves
+that distinction, so adding, removing, or nulling an input schema changes the
+hash. Because `coverage` is part of the hashed record, a locked hash and a fresh
+probe are only comparable at the same coverage.
+
+`install` and `ci` recompute the surface hash from a fresh probe and fail on
+drift, reporting `tool input schemas changed` when the schema projection differs
+at equal coverage. When the new probe returns a narrower coverage than the lock,
+CI reports `tool surface coverage downgraded` rather than accepting the weaker
+pin as a match.
+
+Legacy locks written before surface pinning carry only the description-only
+`toolDescriptionHash`. They still verify as a fallback, but ToolPin records a
+non-fatal `tool_surface_hash` advisory and a `needs-review` verdict with reason
+`input schemas not pinned`, prompting a re-capture of the live surface to upgrade
+the pin.
 
 ### Advisory tool-description scan
 

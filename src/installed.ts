@@ -1,4 +1,5 @@
 import { doctorLockfile, readInstalledServerConfig, type DoctorIssue } from "./doctor.js";
+import { DEFAULT_LOCKFILE_PATH, DEFAULT_POLICY_PATH, DEFAULT_PROBE_TIMEOUT_MS } from "./constants.js";
 import { installServerConfig, removeServerConfig, resolveConfigTarget, type InstallResult, type InstallScope, type RemoveResult } from "./install.js";
 import { listInstalledServers, type InventoryScope } from "./inventory.js";
 import { buildInstallPlan, lockKey, readLockfile, removeLockfileEntry, writeLockfile, type InstallPlan, type Lockfile } from "./plan.js";
@@ -92,7 +93,7 @@ export async function loadInstalledServerStates(options: {
   const scope = options.scope ?? "all";
   const [inventory, doctor] = await Promise.all([
     listInstalledServers({ scope, client: options.client }),
-    doctorLockfile("mcp-lock.json", scope).catch(() => undefined),
+    doctorLockfile(DEFAULT_LOCKFILE_PATH, scope).catch(() => undefined),
   ]);
   const issues = doctor?.issues ?? [];
   const rows: InstalledServerState[] = inventory.entries.map((entry) => {
@@ -204,7 +205,7 @@ export async function testInstalledServer(options: {
   timeoutMs?: number;
 }): Promise<ServerTestResult> {
   const target = await getInstalledConfig(options.serverName, options.client, options.scope);
-  return testInstalledClientConfig(options.serverName, target.config, options.timeoutMs ?? 15000);
+  return testInstalledClientConfig(options.serverName, target.config, options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
 }
 
 export async function adoptInstalledServer(options: InstalledLifecycleOptions & {
@@ -213,7 +214,7 @@ export async function adoptInstalledServer(options: InstalledLifecycleOptions & 
   scope: InstallScope;
   servers: NormalizedServer[];
 }): Promise<InstalledMutationResult> {
-  const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
+  const lockfilePath = options.lockfilePath ?? DEFAULT_LOCKFILE_PATH;
   const row = await getInstalledLifecycleRow(options.installedName, options.client, options.scope, options.servers, lockfilePath);
   if (row.locked) throw new Error(`${row.serverName} is already locked for ${row.client}; use \`toolpin update ${row.serverName} --client ${row.client} --scope ${row.scope}\`.`);
   if (row.registryCandidates?.length) {
@@ -232,7 +233,7 @@ export async function updateInstalledServer(options: InstalledLifecycleOptions &
   scope: InstallScope;
   servers: NormalizedServer[];
 }): Promise<InstalledMutationResult> {
-  const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
+  const lockfilePath = options.lockfilePath ?? DEFAULT_LOCKFILE_PATH;
   const row = await getInstalledLifecycleRow(options.serverName, options.client, options.scope, options.servers, lockfilePath);
   if (!row.locked) throw new Error(`${row.serverName} is not locked for ${row.client}; use \`toolpin adopt ${row.serverName} --client ${row.client} --scope ${row.scope}\` if you want to lock a registry match.`);
   if (row.registryCandidates?.length) {
@@ -253,7 +254,7 @@ export async function updateAllInstalledServers(options: InstalledLifecycleOptio
   client: ClientName | "all";
   servers: NormalizedServer[];
 }): Promise<InstalledUpdateAllResult> {
-  const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
+  const lockfilePath = options.lockfilePath ?? DEFAULT_LOCKFILE_PATH;
   const lockfile = await readLockfile(lockfilePath).catch(() => undefined);
   const rows = await loadInstalledServerStates({
     servers: options.servers,
@@ -332,7 +333,7 @@ async function mutateInstalledRow(
   action: "update" | "adopt",
   options: InstalledLifecycleOptions,
 ): Promise<InstalledMutationResult> {
-  const lockfilePath = options.lockfilePath ?? "mcp-lock.json";
+  const lockfilePath = options.lockfilePath ?? DEFAULT_LOCKFILE_PATH;
   const planned = mutationPlan(row, server, action, lockfilePath);
   const dryRun = options.dryRun === true;
   const { plan, verification } = await buildCheckedPlan(server, row.client, row.scope, options);
@@ -392,7 +393,7 @@ async function buildCheckedPlan(
     verification = await verifyServer(server, {
       liveRemoteProbe: true,
       livePackageProbe: true,
-      timeoutMs: options.timeoutMs ?? 15000,
+      timeoutMs: options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS,
       requireVerified: options.requireVerified === true,
     });
     if (!verification.ok) {
@@ -406,10 +407,10 @@ async function buildCheckedPlan(
 
   const plan = buildInstallPlan(server, client, { capabilityManifest, verificationReport: verification, scope });
   if (options.enforcePolicy !== false) {
-    const report = await enforcePolicy(plan, options.policyPath ?? ".toolpin/policy.json");
+    const report = await enforcePolicy(plan, options.policyPath ?? DEFAULT_POLICY_PATH);
     if (!report.ok) {
       throw new Error([
-        `Lifecycle action refused by policy ${options.policyPath ?? ".toolpin/policy.json"}.`,
+        `Lifecycle action refused by policy ${options.policyPath ?? DEFAULT_POLICY_PATH}.`,
         ...report.issues.map((issue) => `- ${issue.code}: ${issue.message}`),
       ].join("\n"));
     }

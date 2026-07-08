@@ -1,11 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { canonicalJson } from "./canonicalJson.js";
+import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { readCodexServerConfig } from "./codexToml.js";
 import { clientConfigRootKey } from "./config.js";
 import { readContinueServerConfig } from "./continueYaml.js";
 import { resolveConfigTarget, type InstallScope } from "./install.js";
 import { readLockfile, type InstallPlan } from "./plan.js";
 import type { ClientName } from "./config.js";
+import { isRecord } from "./util.js";
 
 export type DoctorIssueKind = "missing" | "drift" | "unreadable" | "invalid";
 
@@ -27,7 +29,7 @@ export interface DoctorReport {
 
 export type DoctorScope = InstallScope | "all";
 
-export async function doctorLockfile(lockfilePath = "mcp-lock.json", scope: DoctorScope = "all"): Promise<DoctorReport> {
+export async function doctorLockfile(lockfilePath = DEFAULT_LOCKFILE_PATH, scope: DoctorScope = "all"): Promise<DoctorReport> {
   const lockfile = await readLockfile(lockfilePath);
   const issues: DoctorIssue[] = [];
   const entries = Object.entries(lockfile.servers);
@@ -190,13 +192,12 @@ function serverConfigFromWrapped(config: unknown, serverName: string, client: Cl
 }
 
 function stableJson(value: unknown): string {
+  // Unlike plan.ts digest hashing, config comparison must prune empty objects:
+  // Codex TOML omits empty env tables on write, so `{env: {}}` and no-env must
+  // compare equal or every Codex install would report false drift.
   return canonicalJson(value, { pruneEmptyObjects: true });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

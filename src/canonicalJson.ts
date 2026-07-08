@@ -1,3 +1,5 @@
+import { isRecord } from "./util.js";
+
 export interface CanonicalJsonOptions {
   pruneEmptyObjects?: boolean;
 }
@@ -39,8 +41,4 @@ function ensureUniqueKeys(keys: string[]): void {
     }
     seen.add(key);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

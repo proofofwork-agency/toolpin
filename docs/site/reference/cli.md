@@ -25,23 +25,23 @@ toolpin registry enable <source-id>
 toolpin registry disable <source-id>
 toolpin sources [--json]
 toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit 10] [--live] [--json]
-toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--color auto|always|never]
+toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--explain] [--color auto|always|never]
 toolpin i [query] [same options]
-toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live]
-toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
-toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
-toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000]
+toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live] [--explain]
+toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
+toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
+toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
 ```
 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify]
+toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute] [--require-verified] [--explain]
 toolpin test <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
 toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
-toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--explain]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
@@ -49,10 +49,20 @@ toolpin export-config <server-name> --client <client|all> [--version <server-ver
 ```
 
 `scan` runs advisory description checks against registry metadata and, with
-`--live`, the returned `tools/list` descriptions when the probe succeeds.
+`--live`, the returned `tools/list` descriptions when the probe succeeds. A live
+scan of a package target executes the package, so — like verification — it needs
+`--allow-execute`; without it the live tool-description scan is skipped and only
+the metadata scan runs. Remote targets are probed over the SSRF-guarded
+transport and never execute anything.
 Findings do not make `scan` fail. `verify` checks registry metadata and, unless
 skipped, live MCP tool metadata for the selected package or remote launch
-target. For packages, OCI verification requires a valid digest
+target. For package targets, capturing live tool metadata means executing the
+package (`npx`, `uvx`, `docker run`, ...); ToolPin never does that implicitly.
+Without `--allow-execute`, verification runs the network artifact checks,
+records a `package_execution_skipped` warning, and leaves the live capability
+pin unavailable. Remote targets are probed over HTTPS without executing
+anything, and `toolpin test` remains an explicit execution command that prints
+the exact command and env var names before launching. For packages, OCI verification requires a valid digest
 pin and best-effort resolves the registry manifest digest when reachable; MCPB
 verification requires a valid `fileSha256` and best-effort recomputes bytes when
 the bundle is available from a code-allowlisted HTTPS artifact host. npm package
@@ -61,16 +71,28 @@ trusted npm tarball bytes. PyPI, NuGet, and Cargo targets are checked for
 declared exact versions and drift only; ToolPin does not verify their artifact
 bytes in this release.
 
-Human-readable `search`, `info`, and `install` output separates trust tier from
-metadata/profile completeness. If the evidence-gated `overallScore` is capped,
-the output includes a `cap` line explaining why, for example that automated
-evidence is incomplete because artifact proof is missing. Human-facing numeric
-ranking uses the profile score inside the evidence tier, so conditional entries
-do not all collapse to a visible 69%. A 69% cap means the entry has trusted
-provenance and usable metadata, but ToolPin has not yet verified artifact proof:
-npm tarball SRI from `registry.npmjs.org`, OCI registry digest resolution, or
-MCPB byte hashing from a code-allowlisted HTTPS artifact host. Declared pins or
-attestations alone do not count as ToolPin-verified proof.
+Human-readable `info`, `audit server`, `verify`, `install`, and interactive
+`--no-input` output leads with one public verdict: `verified`, `needs-review`,
+or `blocked`. Use `--explain` to show the internal trust tier, metadata/profile
+score, evidence phrase, gates, badges, and cap detail. JSON output keeps the
+existing fields and adds a `verdict` object. Human-facing numeric ranking still
+uses the profile score internally, so conditional entries do not all collapse to
+a visible 69%. A 69% cap means the entry has trusted provenance and usable
+metadata, but ToolPin has not yet verified artifact proof: npm tarball SRI from
+`registry.npmjs.org`, OCI registry digest resolution, or MCPB byte hashing from
+a code-allowlisted HTTPS artifact host. Declared pins or attestations alone do
+not count as ToolPin-verified proof.
+
+Lockfile v2 entries carry a `toolSurfaceHash`: a sha256 over the live
+`tools/list` surface covering tool names, descriptions, and input schemas
+(coverage array `["name","description","inputSchema"]`). Legacy locks that pin
+only the old tool-description hash are an advisory-only fallback — a non-fatal
+CI advisory — and map to verdict `needs-review` with reason `input schemas not
+pinned`. Drift failures read `tool input schemas changed`, `tool surface
+coverage downgraded`, or `tool surface hash pin could not be refreshed`.
+Capturing a live surface pin for a package target executes the package, so it
+requires explicit `--allow-execute`; remote targets are probed over the
+SSRF-guarded transport without executing anything.
 
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
@@ -84,7 +106,8 @@ adoptable rows, and reports them separately.
 
 Commands that list `--json` or `--sarif` keep the structured payload on stdout
 so it can be piped into tools such as `jq` or code-scanning uploaders. Progress,
-notes, and errors are written to stderr.
+notes, and errors are written to stderr. `toolpin plan` always emits a JSON plan
+on stdout and has no `--json` flag.
 
 `toolpin interactive` and `toolpin i` provide a scrollback-friendly guided
 search/review/install flow separate from the full-screen TUI. It shows the
@@ -113,24 +136,39 @@ must match `mcp-lock.json`.
 ## Lock and CI
 
 ```text
-toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
+toolpin lock <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--file mcp-lock.json] [--live] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]]
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+toolpin lock key-fingerprint --public-key public.pem [--json]
+toolpin init ci [--github] [--dry-run]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
 selected policy unless `--no-policy` is used, and exits non-zero on lockfile,
-registry, generated-plan, signature, or verification drift. It does not read
-local client config files and does not update `mcp-lock.json`. `scan`, `verify`,
+registry, generated-plan, signature, or verification drift. `--require-verified`
+(under `--verify`) additionally fails entries that lack fresh ToolPin-verified
+artifact proof. It does not read local client config files and does not update
+`mcp-lock.json`. Human output ends with a per-protection checklist. `--json`
+emits `ok`, `checkedEntries`, a `failures` array of `{entryName, client,
+condition, remediation}`, and per-protection statuses for lock integrity,
+registry drift, policy, verification, signature, and digest. `scan`, `verify`,
 and `ci` support SARIF 2.1.0 output with `--sarif`.
+
+`toolpin init ci` scaffolds `.github/workflows/toolpin.yml` (least-privilege, checkout SHA-pinned, using
+the composite Action) and a starter `.toolpin/policy.json` when absent. It
+refuses to run when `mcp-lock.json` is missing — create a lock first — and is
+idempotent. `toolpin lock key-fingerprint` prints the SPKI fingerprint of a
+public key.
 
 ## Secret hygiene and TUI
 
 ```text
 toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
+toolpin policy init --recommended [--policy .toolpin/policy.json] [--force] [--dry-run]
+toolpin policy digest [--policy .toolpin/policy.json] [--json]
 toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source toolpin|official|docker|all|custom-id] [--live]
 toolpin tui
 ```
@@ -138,13 +176,19 @@ toolpin tui
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
 
-The TUI Browse list shows evidence labels next to the meter:
+`toolpin policy init --recommended` writes a real starter policy: `{version: 1,
+minTrustTier: "conditional", requireToolPinVerifiedEvidence: false,
+requireDigestPinnedOci: true, requireMcpbSha256: true}`, with no source
+restrictions by default. In public-verdict language, `minTrustTier:
+"conditional"` means needs-review-or-better. `toolpin policy digest` prints the
+policy digest recorded into lock entries.
+
+The TUI Browse list shows the same public verdict labels next to the meter:
 
 | Label | Meaning |
 |---|---|
-| `EVIDENCE` | A pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, MCPB byte hash, or future verified attestation. |
-| `REVIEW` | Metadata may be useful, but required artifact proof is missing, stale, unavailable, or only declared. Check the `evidence`, `cap`, and `gated by` rows. |
-| `UNVERIFIED` | Required pins or evidence are weak or failed, such as a mutable OCI tag, missing MCPB `fileSha256`, or failed optional evidence. |
+| `VERIFIED` | A pinned target plus fresh ToolPin-verified artifact proof passed: npm SRI, OCI registry digest, MCPB byte hash, or future verified attestation. |
+| `NEEDS REVIEW` | Metadata may be useful, but required artifact proof is missing, stale, unavailable, declared only, weak, or failed. Check the `evidence`, `cap`, and `gated by` rows. |
 | `BLOCKED` | A critical issue makes the entry unsafe or uninstallable, such as no install target, insecure/invalid remote URL, or failed required evidence. |
 
 The Overview panel's top block is a registry metadata summary, not a verification
