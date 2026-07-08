@@ -86,6 +86,7 @@ signal there.
 | `npm_integrity_verified` | `passed` / `failed` / `unavailable` | ToolPin fetched the npm packument from `registry.npmjs.org`, required exact version `dist.integrity`, fetched a trusted npm tarball, and compared SHA-512 SRI. |
 | `lock_integrity` | `passed` | New lock entries include an integrity digest over the reviewed install plan, including entry timestamps. |
 | `tool_description_hash` | `passed` / `failed` / `unavailable` | Live package or remote `tools/list` descriptions were hashed, failed, or were skipped. |
+| `tool_surface_hash` | `passed` / `failed` / `unavailable` | Live `tools/list` surface hash covering tool names, descriptions, and input schemas, stored as `toolSurfaceHash`. Supersedes the description-only `tool_description_hash`. |
 | `attestation_declared` | `declared` | Attestation metadata exists, but ToolPin has not cryptographically verified it. |
 
 Tiering is conservative. By default the human output collapses these details
@@ -158,8 +159,14 @@ pin can remain `needs-review` in passive discovery output.
 ## Verification boundaries
 
 ToolPin checks registry metadata, declared integrity pins, and lockfile drift.
-When `--verify` can reach a live server, it can hash normalized tool names and
-descriptions from `tools/list` and store that hash in the lockfile.
+When `--verify` can reach a live server, it can hash the normalized tool surface
+— tool names, descriptions, and input schemas — from `tools/list` and store that
+`toolSurfaceHash` in the lockfile.
+
+A lockfile that carries only a legacy description-only pin
+(`tool_description_hash` without `toolSurfaceHash`) is reported as `needs-review`
+with the reason `input schemas not pinned`. Re-run `--verify` (or `toolpin
+lock`) to capture the full tool surface, including input schemas.
 
 ToolPin does not:
 

@@ -58,5 +58,25 @@ declared in the install plan / capability manifest. Use
 ToolPin verifier, such as `verify` recomputing MCPB SHA-256 or resolving an OCI
 manifest digest, or npm SRI verification.
 
+## Starter policy
+
+`toolpin policy init --recommended` writes a starter `.toolpin/policy.json`:
+
+```json
+{
+  "version": 1,
+  "minTrustTier": "conditional",
+  "requireToolPinVerifiedEvidence": false,
+  "requireDigestPinnedOci": true,
+  "requireMcpbSha256": true
+}
+```
+
+It refuses to overwrite an existing policy file unless you pass `--force`, and
+`--dry-run` prints the policy it would write without touching disk.
+
+In public-verdict terms, `minTrustTier: "conditional"` means
+needs-review-or-better and `minTrustTier: "verified"` means verified-only.
+
 The policy file is a local JSON gate, not the future Cedar/OPA enterprise policy
 engine. `--no-policy` is an explicit local bypass.

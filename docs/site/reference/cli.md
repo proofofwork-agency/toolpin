@@ -28,7 +28,7 @@ toolpin search <query> [--source toolpin|official|docker|all|custom-id] [--limit
 toolpin interactive [query] [--source id|all] [--live] [--limit 10] [--client <client|all>] [--scope project|global] [--version <server-version>] [--verify] [--require-verified] [--timeout 15000] [--policy .toolpin/policy.json] [--no-policy] [--no-input] [--explain] [--color auto|always|never]
 toolpin i [query] [same options]
 toolpin info <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--json] [--live] [--explain]
-toolpin audit [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
+toolpin audit [--file mcp-lock.json] [--scope all|project|global] [--client all] [--policy .toolpin/policy.json] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json]
 toolpin audit server <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
 toolpin scan <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--allow-execute] [--json] [--sarif] [--timeout 15000]
 toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] [--live] [--limit 10] [--json]
@@ -37,11 +37,11 @@ toolpin versions <server-name> [--source toolpin|official|docker|all|custom-id] 
 ## Review and install
 
 ```text
-toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute] [--explain]
+toolpin verify <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--sarif] [--timeout 15000] [--skip-live-verification | --skip-live-verify] [--allow-execute] [--require-verified] [--explain]
 toolpin test <server-name> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--timeout 15000] [--json]
 toolpin test-installed <server-name> --client <client> --scope project|global [--timeout 15000] [--json]
-toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
-toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--explain]
+toolpin plan <server-name> --client <client|all> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live]
+toolpin install <server-name> --client <client|all> [--version <server-version>] [--scope project|global] [--source toolpin|official|docker|all|custom-id] [--live] [--update-lock] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--policy .toolpin/policy.json] [--no-policy] [--explain]
 toolpin adopt <installed-name> --client <client> --scope project|global [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update <server-name> --client <client> --scope project|global [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--verify] [--policy .toolpin/policy.json] [--no-policy] [--dry-run] [--json]
 toolpin update --all [--scope all|project|global] [--client <client|all>] [--source toolpin|official|docker|all|custom-id] [--live] [--file mcp-lock.json] [--dry-run] [--json]
@@ -83,6 +83,17 @@ metadata, but ToolPin has not yet verified artifact proof: npm tarball SRI from
 a code-allowlisted HTTPS artifact host. Declared pins or attestations alone do
 not count as ToolPin-verified proof.
 
+Lockfile v2 entries carry a `toolSurfaceHash`: a sha256 over the live
+`tools/list` surface covering tool names, descriptions, and input schemas
+(coverage array `["name","description","inputSchema"]`). Legacy locks that pin
+only the old tool-description hash are an advisory-only fallback — a non-fatal
+CI advisory — and map to verdict `needs-review` with reason `input schemas not
+pinned`. Drift failures read `tool input schemas changed`, `tool surface
+coverage downgraded`, or `tool surface hash pin could not be refreshed`.
+Capturing a live surface pin for a package target executes the package, so it
+requires explicit `--allow-execute`; remote targets are probed over the
+SSRF-guarded transport without executing anything.
+
 Use `toolpin versions <server-name>` to list known registry/cache versions. Any
 server command that accepts `--version <server-version>` targets that exact known
 version instead of the latest one, matching the TUI install version picker.
@@ -95,7 +106,8 @@ adoptable rows, and reports them separately.
 
 Commands that list `--json` or `--sarif` keep the structured payload on stdout
 so it can be piped into tools such as `jq` or code-scanning uploaders. Progress,
-notes, and errors are written to stderr.
+notes, and errors are written to stderr. `toolpin plan` always emits a JSON plan
+on stdout and has no `--json` flag.
 
 `toolpin interactive` and `toolpin i` provide a scrollback-friendly guided
 search/review/install flow separate from the full-screen TUI. It shows the
@@ -128,26 +140,48 @@ toolpin lock <server-name> --client <client|all> [--version <server-version>] [-
 toolpin lock digest [--file mcp-lock.json] [--json]
 toolpin lock sign --policy .toolpin/policy.json --key private.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
 toolpin lock verify-signature --policy .toolpin/policy.json --public-key public.pem [--file mcp-lock.json] [--signature mcp-lock.sig] [--json]
-toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--sarif]
+toolpin lock key-fingerprint --public-key public.pem [--json]
+toolpin init ci [--github] [--dry-run]
+toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|custom-id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]
 toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
 ```
 
 `toolpin ci` re-resolves locked entries, checks lock integrity, enforces the
 selected policy unless `--no-policy` is used, and exits non-zero on lockfile,
-registry, generated-plan, signature, or verification drift. It does not read
-local client config files and does not update `mcp-lock.json`. `scan`, `verify`,
+registry, generated-plan, signature, or verification drift. `--require-verified`
+(under `--verify`) additionally fails entries that lack fresh ToolPin-verified
+artifact proof. It does not read local client config files and does not update
+`mcp-lock.json`. Human output ends with a per-protection checklist. `--json`
+emits `ok`, `checkedEntries`, a `failures` array of `{entryName, client,
+condition, remediation}`, and per-protection statuses for lock integrity,
+registry drift, policy, verification, signature, and digest. `scan`, `verify`,
 and `ci` support SARIF 2.1.0 output with `--sarif`.
+
+`toolpin init ci` scaffolds `.github/workflows/toolpin.yml` (SHA-pinned, using
+the composite Action) and a starter `.toolpin/policy.json` when absent. It
+refuses to run when `mcp-lock.json` is missing — create a lock first — and is
+idempotent. `toolpin lock key-fingerprint` prints the SPKI fingerprint of a
+public key.
 
 ## Secret hygiene and TUI
 
 ```text
 toolpin secrets audit [--file mcp-lock.json] [--scope all|project|global] [--json]
+toolpin policy init --recommended [--policy .toolpin/policy.json] [--force] [--dry-run]
+toolpin policy digest [--policy .toolpin/policy.json] [--json]
 toolpin policy check <server-name> --client <client|all> [--scope project|global] [--policy .toolpin/policy.json] [--json] [--source toolpin|official|docker|all|custom-id] [--live]
 toolpin tui
 ```
 
 `secrets audit` is read-only and redacts findings. It is an advisory check, not
 a DLP engine.
+
+`toolpin policy init --recommended` writes a real starter policy: `{version: 1,
+minTrustTier: "conditional", requireToolPinVerifiedEvidence: false,
+requireDigestPinnedOci: true, requireMcpbSha256: true}`, with no source
+restrictions by default. In public-verdict language, `minTrustTier:
+"conditional"` means needs-review-or-better. `toolpin policy digest` prints the
+policy digest recorded into lock entries.
 
 The TUI Browse list shows the same public verdict labels next to the meter:
 

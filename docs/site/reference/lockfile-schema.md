@@ -168,8 +168,9 @@ required? }`, where `status` is `passed`, `declared`, `failed`, or
 `unavailable`. Current codes include
 `package_pin`, `digest_present`, `file_hash_present`, `lock_integrity`,
 `lock_signature`, `oci_digest_verified`, `mcpb_sha256_verified`,
-`npm_integrity_verified`, and `attestation_declared`. Declared pins, hashes, and
-attestations are not treated as ToolPin-verified unless a future verifier records
+`npm_integrity_verified`, `tool_surface_hash`, and `attestation_declared`.
+Declared pins, hashes, and attestations are not treated as ToolPin-verified
+unless a future verifier records
 `verifiedByToolPin: true` on a passed evidence entry. Evidence carried in
 registry metadata (including the ToolPin curated registry's `_meta` evidence)
 is read as a claim: a registry-supplied `passed` entry is downgraded to
@@ -233,6 +234,30 @@ earns `tool-description-pinned` and `tool-manifest-pinned`.
 Attestation metadata read from `_meta` (`dev.toolpin/attestations`) is surfaced
 in the report and each entry emits a `<type>-declared` badge; a manifest already
 pinned in `_meta` (`dev.toolpin/capabilities`) earns `capability-pinned`.
+
+### Tool surface hash and drift
+
+`toolSurfaceHash` is the preferred capability-manifest pin for a changed tool
+surface, surfaced in evidence as the `tool_surface_hash` kind. Its `value` is a
+sha256 over the live `tools/list` records projected onto the `coverage` fields —
+`["name", "description", "inputSchema"]` — with tools sorted by name and each
+record omitting any covered field the server did not return. An omitted field is
+not the same as a field the server returned as `null`: the projection preserves
+that distinction, so adding, removing, or nulling an input schema changes the
+hash. Because `coverage` is part of the hashed record, a locked hash and a fresh
+probe are only comparable at the same coverage.
+
+`install` and `ci` recompute the surface hash from a fresh probe and fail on
+drift, reporting `tool input schemas changed` when the schema projection differs
+at equal coverage. When the new probe returns a narrower coverage than the lock,
+CI reports `tool surface coverage downgraded` rather than accepting the weaker
+pin as a match.
+
+Legacy locks written before surface pinning carry only the description-only
+`toolDescriptionHash`. They still verify as a fallback, but ToolPin records a
+non-fatal `tool_surface_hash` advisory and a `needs-review` verdict with reason
+`input schemas not pinned`, prompting a re-capture of the live surface to upgrade
+the pin.
 
 ### Advisory tool-description scan
 

@@ -73,6 +73,41 @@ The action has a `doctor` input:
 Use `doctor: "false"` only when project client config files are intentionally
 not committed.
 
+## Action reference
+
+Every input maps to a `--flag` on `toolpin ci` (or `toolpin doctor`). Inputs
+reach the script as environment variables and are never shell-interpolated.
+
+| Input | Default | Purpose |
+|---|---|---|
+| `working-directory` | `.` | Directory that contains the lockfile. |
+| `file` | `mcp-lock.json` | Lockfile path, relative to `working-directory`. |
+| `source` | (empty) | `--source` registry. Empty uses each entry's recorded source; older locks fall back to all. |
+| `live` | `"true"` | Fetch live registry data instead of local cache. |
+| `verify` | (empty) | Tri-state. Run verification before comparing locked plans. |
+| `require-verified` | (empty) | Tri-state. Require fresh ToolPin-verified evidence; requires `verify`. |
+| `strict` | `"false"` | Preset for `verify` + `require-verified`. Conflicting explicit inputs fail closed with exit 2. |
+| `doctor` | `auto` | `auto`, `true`, or `false`. Run doctor before ci. |
+| `sarif` | `"false"` | Write `toolpin-ci.sarif` and expose the `sarif-path` output. |
+| `expect-digest` | (empty) | Expected whole-lock digest from a trusted out-of-band source. |
+| `signature` | (empty) | Detached signature path. Must be set with `public-key`. |
+| `public-key` | (empty) | Public key path. Must be set with `signature`. |
+| `toolpin-version` | (empty) | Install this published npm version instead of building the action source. |
+| `policy` | `.toolpin/policy.json` | Policy file path. |
+| `no-policy` | `"false"` | Pass `--no-policy` and skip policy enforcement. |
+| `timeout` | `"15000"` | Live verification timeout in milliseconds. |
+| `skip-live-verification` | `"false"` | Pass `--skip-live-verification` when verify is enabled. |
+| `allow-execute` | `"false"` | Let live verification execute package targets. |
+
+| Output | Value |
+|---|---|
+| `sarif-path` | Path to `toolpin-ci.sarif`, set only when `sarif: "true"`. |
+
+Boolean inputs are validated; malformed values exit 2. `strict`, `live`,
+`no-policy`, `skip-live-verification`, `allow-execute`, and `sarif` must be
+`true` or `false`; `verify` and `require-verified` also accept empty. `doctor`
+must be `auto`, `true`, or `false`.
+
 ## Strict mode
 
 Use strict mode when CI should require fresh ToolPin-verified artifact proof:
@@ -206,8 +241,11 @@ steps:
   - run: toolpin ci --file mcp-lock.json --live
 ```
 
-`toolpin ci --json` emits a machine-readable result with `ok`,
-`checkedEntries`, protection statuses, and per-entry remediation commands.
+`toolpin ci --json` emits a machine-readable result: `ok`, `checkedEntries`,
+and a `failures` array of `{ entryName, client, condition, remediation }`,
+plus a per-protection status for lock integrity, registry drift, policy,
+verification, signature, and digest. Human output ends with the same
+per-protection checklist.
 `toolpin ci --sarif` emits SARIF 2.1.0 JSON to stdout and still exits non-zero
 on drift.
 
@@ -221,6 +259,10 @@ CI exits non-zero when:
 - Per-entry lock integrity is missing or invalid.
 - A locked server/client no longer resolves to the reviewed install plan
   (version, target, trust, generated config, or capability manifest drifted).
+- The live `tools/list` surface hash (`toolSurfaceHash`, covering tool names,
+  descriptions, and input schemas) no longer matches the pin, its coverage was
+  downgraded ("tool surface coverage downgraded"), or a locked surface pin
+  could not be refreshed.
 - The whole-lock digest (`expect-digest`) does not match.
 - Detached signature verification fails, or `signature` and `public-key` are
   not supplied as a pair.
@@ -229,6 +271,12 @@ CI exits non-zero when:
   findings.
 - Live package-pin reverification would execute a package and
   `allow-execute: "true"` was not set.
+
+Legacy description-only pins do not fail. ToolPin prints a non-fatal advisory
+recommending a re-lock with `--update-lock` to capture input schemas.
+Re-verifying a live pin executes the package for package targets (hence
+`allow-execute: "true"`) and re-probes remote targets over an SSRF-guarded
+transport.
 
 Use `toolpin install --update-lock` or `toolpin lock <server> --client <client>`
 only after reviewing the drift locally. CI should not update the lockfile.
