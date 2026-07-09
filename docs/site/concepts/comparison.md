@@ -10,6 +10,35 @@ title: Ecosystem Comparison
 > self-reported figures are marked **(self-reported)** where the vendor has not
 > been independently audited.
 
+---
+
+## Quick Marketing Summary (for issues, PRs, and one-pagers)
+
+**ToolPin is the "package-lock.json + CI drift gate" for MCP servers.**
+
+It is the only widely available open-source tool that gives you all of the following in one repo-owned workflow:
+
+- **Committed `mcp-lock.json`** (vendor-neutral spec with schemas + test vectors)
+- **Install-time review** of artifact + live tool surface (including input schemas)
+- **Neutral multi-client config** generation (Claude, Cursor, VS Code, Codex, etc.)
+- **CI enforcement** (fails the build on artifact drift, schema changes, or config drift)
+- **Lightweight** (Apache-2.0, Node + small deps, works in GitHub Actions without changing your runtime)
+
+**Where others win**:
+- Discovery / polish → Official Registry, Smithery, Glama
+- Runtime sandbox + policy → Docker, Stacklok ToolHive, Glama Gateway, mcptrust (proxy)
+- Pure config writing → mcpm
+
+**ToolPin's unique cell** in the matrix: **install-time + committed lockfile + cross-client + CI**, delivered as a simple CLI + Action.
+
+Use the full table below for deeper comparisons. A shorter marketing version is available at `docs/MARKETING-COMPARISON.md`.
+
+---
+
+## The one-table view
+
+Legend: ✅ native · (✅) partial/indirect · ❌ absent · — N/A.
+
 ToolPin is **the trust, install, lockfile, and governance layer over the
 official MCP Registry** — not a competing catalog. The distinction matters:
 every other tool here either *is* a catalog/marketplace, *is* a

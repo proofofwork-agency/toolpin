@@ -444,7 +444,7 @@ commit SHA and the Action pinned to this release's tag:
 
 ```yaml
 - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-- uses: proofofwork-agency/toolpin@v0.5.0
+- uses: proofofwork-agency/toolpin@v0.5.1
 ```
 
 ToolPin itself requires Node.js 24 or newer. The GitHub Action sets up its own
@@ -488,7 +488,7 @@ variables, never interpolated into the script.
 Require fresh verified artifact evidence on every PR:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.0
+- uses: proofofwork-agency/toolpin@v0.5.1
   with:
     strict: "true"            # --verify --require-verified
     allow-execute: "true"     # only if package live pins must re-verify
@@ -507,7 +507,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - id: toolpin
-    uses: proofofwork-agency/toolpin@v0.5.0
+    uses: proofofwork-agency/toolpin@v0.5.1
     with:
       sarif: "true"
   - uses: github/codeql-action/upload-sarif@v3
@@ -519,7 +519,7 @@ steps:
 Pin the whole lock and verify its signature:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.0
+- uses: proofofwork-agency/toolpin@v0.5.1
   with:
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
     signature: mcp-lock.sig
@@ -690,6 +690,8 @@ ToolPin is distributed under the Apache License 2.0. See [LICENSE](LICENSE).
 - [Client config matrix](https://github.com/proofofwork-agency/toolpin/blob/main/docs/client-configs.md)
 - [Catch drift in CI](docs/how-to/catch-drift-in-ci.md)
 - [ToolPin vs. the MCP ecosystem](https://proofofwork-agency.github.io/toolpin/docs/concepts/comparison)
+- [Marketing comparison one-pager](docs/MARKETING-COMPARISON.md) (for issues and outreach)
+- Adoption tooling: `npm run discover:candidates`, [PROMOTION-PLAN.md](PROMOTION-PLAN.md), and launch kit in `docs/launch/` (opt-in, human-gated)
 - [Security policy](SECURITY.md)
 - [Disclaimer](https://github.com/proofofwork-agency/toolpin/blob/main/DISCLAIMER.md)
 
