@@ -690,8 +690,6 @@ ToolPin is distributed under the Apache License 2.0. See [LICENSE](LICENSE).
 - [Client config matrix](https://github.com/proofofwork-agency/toolpin/blob/main/docs/client-configs.md)
 - [Catch drift in CI](docs/how-to/catch-drift-in-ci.md)
 - [ToolPin vs. the MCP ecosystem](https://proofofwork-agency.github.io/toolpin/docs/concepts/comparison)
-- [Marketing comparison one-pager](docs/MARKETING-COMPARISON.md) (for issues and outreach)
-- Adoption tooling: `npm run discover:candidates`, [PROMOTION-PLAN.md](PROMOTION-PLAN.md), and launch kit in `docs/launch/` (opt-in, human-gated)
 - [Security policy](SECURITY.md)
 - [Disclaimer](https://github.com/proofofwork-agency/toolpin/blob/main/DISCLAIMER.md)
 

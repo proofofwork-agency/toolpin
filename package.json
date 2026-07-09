@@ -60,8 +60,7 @@
     "start": "node dist/cli.js",
     "dev": "npm run build && node dist/cli.js",
     "tui": "npm run build && node dist/cli.js tui",
-    "smoke": "npm run build && node dist/cli.js search github --limit 3 --live",
-    "discover:candidates": "node scripts/discover-mcp-repos.mjs"
+    "smoke": "npm run build && node dist/cli.js search github --limit 3 --live"
   },
   "engines": {
     "node": ">=24"

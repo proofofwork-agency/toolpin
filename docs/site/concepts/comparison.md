@@ -31,7 +31,7 @@ It is the only widely available open-source tool that gives you all of the follo
 
 **ToolPin's unique cell** in the matrix: **install-time + committed lockfile + cross-client + CI**, delivered as a simple CLI + Action.
 
-Use the full table below for deeper comparisons. A shorter marketing version is available at `docs/MARKETING-COMPARISON.md`.
+Use the full table below for deeper comparisons.
 
 ---
 

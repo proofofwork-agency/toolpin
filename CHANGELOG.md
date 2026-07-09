@@ -2,10 +2,7 @@
 
 ## 0.5.1
 
-- Promotion and adoption tooling: added `PROMOTION-PLAN.md`, `scripts/discover-mcp-repos.mjs` (with `npm run discover:candidates`), outreach templates, and prepared artifacts under `docs/launch/prepared/`.
-- New marketing one-pager `docs/MARKETING-COMPARISON.md` and expanded comparison section in the docs site for easier sharing when promoting to adopters and awesome lists.
-- Execution of discovery against high-visibility MCP repos (awesome lists, official servers, design partner candidates) with live data.
-- All launch materials remain opt-in and human-gated per project policy. No automated third-party PRs.
+- Internal launch preparation work (promotion strategy, candidate discovery, and outreach templates) executed locally. These materials are not published in the public repository.
 - Full release gate verified (355 tests, self:doctor, self:ci, docs:check, docusaurus build, registry, audit clean).
 
 ## 0.5.0
