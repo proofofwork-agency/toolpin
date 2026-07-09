@@ -1,54 +1,51 @@
-node_modules/
-dist/
-website/.docusaurus/
-website/build/
-.toolpin/
+
+!.codex/config.toml
+!.env.example
+# Internal promotion / launch strategy materials (keep out of public repo)
+# Internal promotion/outreach materials (private)
+# Local environment and package-manager secrets.
+# OS/editor noise.
+# Private signing material. Commit public keys, lockfiles, and signatures only
+# after review; never commit private keys.
+*.key
+*.p12
+*.p8
+*.pem
+*.pfx
+*.secret
+*.token
+.DS_Store
 .claude/
+.codex/*
 .contextrelay/
 .engram/
-.watcher/
-.codex/*
-!.codex/config.toml
+.env
+.env.*
+.npmrc
+.toolpin/
 .vscode/
-TPN-UI/
-opencode-main/
-CLAUDE.md
+.watcher/
 AGENTS.md
+CLAUDE.md
+PROMOTION-PLAN.md
+TPN-UI/
+dist/
+docs/MARKETING-COMPARISON.md
 docs/SAAS_ROADMAP.md
 docs/comparison.md
 docs/docusaurus-design.md
-docs/strategy-and-moat.md
+docs/launch/
 docs/research/mcp-sentiment.md
-website/CLAUDE-DESIGN-BRIEF.md
-
-
-# Local environment and package-manager secrets.
-.env
-.env.*
-!.env.example
-.npmrc
-*.token
-*.secret
-secrets.*
-
-# Private signing material. Commit public keys, lockfiles, and signatures only
-# after review; never commit private keys.
-*.pem
-*.key
-*.p8
-*.p12
-*.pfx
-id_rsa
+docs/strategy-and-moat.md
 id_dsa
 id_ecdsa
 id_ed25519
+id_rsa
+node_modules/
+opencode-main/
 private*
-
-# OS/editor noise.
-.DS_Store
-
-# Internal promotion / launch strategy materials (keep out of public repo)
-PROMOTION-PLAN.md
-docs/launch/
-docs/MARKETING-COMPARISON.md
 scripts/discover-mcp-repos.mjs
+secrets.*
+website/.docusaurus/
+website/CLAUDE-DESIGN-BRIEF.md
+website/build/
