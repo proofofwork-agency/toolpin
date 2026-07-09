@@ -8,7 +8,8 @@ triaged.
 
 | Version | Supported |
 |---|---|
-| `0.4.x` | Yes (current) |
+| `0.5.x` | Yes (current) |
+| `0.4.x` | Limited |
 | `0.3.x` | Limited |
 | `< 0.3.0` | No |
 

@@ -173,8 +173,14 @@ function signingPayload(input: {
 }
 
 function keyFingerprint(key: KeyObject): string {
-  const der = key.export({ type: "spki", format: "der" });
+  const der = exportPublicSpkiDer(key);
   return `sha256-${createHash("sha256").update(der).digest("base64")}`;
+}
+
+function exportPublicSpkiDer(key: KeyObject): Buffer {
+  const publicKey = key.type === "public" ? key : createPublicKey(key);
+  const der = publicKey.export({ type: "spki", format: "der" });
+  return Buffer.from(der);
 }
 
 export async function readPublicKeyFingerprint(publicKeyPath: string): Promise<string> {

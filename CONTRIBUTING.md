@@ -29,7 +29,7 @@ Use your real name and the primary email address used in your Git commits.
 
 Requirements:
 
-- Node.js 22 or newer.
+- Node.js 24 or newer.
 - npm 10.9.2 or compatible npm 10.
 
 ```bash

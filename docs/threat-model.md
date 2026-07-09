@@ -2,7 +2,7 @@
 
 > What ToolPin defends against, what it deliberately does not, and where each
 > defense begins and ends. Audience: security reviewers, enterprise
-> evaluators, and contributors. Status: scoped to v0.4.0 — future capabilities
+> evaluators, and contributors. Status: scoped to v0.5.0 — future capabilities
 > (sigstore, Cedar, runtime brokering) are noted as roadmap, not claims.
 > Last reviewed: 2026-07-08.
 

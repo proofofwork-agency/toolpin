@@ -3,6 +3,7 @@ import { isIP, type LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
 
 type Lookup = (hostname: string, options: { all: true; verbatim: true }) => Promise<Array<{ address: string }>>;
+type UndiciFetchInit = NonNullable<Parameters<typeof undiciFetch>[1]>;
 
 export interface SafeFetchOptions extends RequestInit {
   timeoutMs?: number;
@@ -68,6 +69,11 @@ function pinnedDispatcher(allowPrivateHosts: boolean, lookupImpl: Lookup): Agent
   return agent;
 }
 
+function pinnedUndiciFetch(input: string | URL, init: RequestInit, dispatcher: Agent): Promise<Response> {
+  const undiciInit = { ...init, dispatcher } as UndiciFetchInit;
+  return undiciFetch(input, undiciInit) as unknown as Promise<Response>;
+}
+
 export async function safeFetch(input: string | URL, options: SafeFetchOptions = {}): Promise<Response> {
   const url = new URL(input);
   await assertSafeUrl(url, {
@@ -93,7 +99,7 @@ export async function safeFetch(input: string | URL, options: SafeFetchOptions =
   };
   // An injected fetch is a test seam and cannot carry an undici dispatcher.
   if (fetchImpl) return fetchImpl(url, init);
-  return undiciFetch(url, { ...init, dispatcher: pinnedDispatcher(allowPrivateHosts, lookupImpl) });
+  return pinnedUndiciFetch(url, init, pinnedDispatcher(allowPrivateHosts, lookupImpl));
 }
 
 // Internal seam used only by tests to reach a local fixture; production callers
@@ -121,7 +127,7 @@ export async function pinnedFetch(input: string | URL, init?: RequestInit, inter
   const lookupImpl = internal.lookup ?? lookup;
   const allowPrivateHosts = internal.allowPrivateHosts ?? false;
   await assertSafeUrl(url, { allowHttp: internal.allowHttp, allowPrivateHosts, lookup: lookupImpl });
-  return undiciFetch(url, { ...(init ?? {}), redirect: "error", dispatcher: pinnedDispatcher(allowPrivateHosts, lookupImpl) });
+  return pinnedUndiciFetch(url, { ...(init ?? {}), redirect: "error" }, pinnedDispatcher(allowPrivateHosts, lookupImpl));
 }
 
 export async function safeFetchBuffer(input: string | URL, options: SafeFetchOptions = {}): Promise<Buffer> {

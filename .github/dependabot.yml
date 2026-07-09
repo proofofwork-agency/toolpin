@@ -10,18 +10,16 @@ updates:
       dev-dependencies:
         dependency-type: development
     ignore:
-      # Pin these to their current major: each is coupled to the Node 22 LTS
-      # runtime contract ("node": ">=22") and the platform's built-in undici.
-      # Node 22 ships undici 6.x internally; @types/node must track the runtime
-      # major; TypeScript majors are breaking. Bumping any of these is a
-      # deliberate upgrade lane (see issue #7), not a weekly auto-bump.
-      # Minor/patch updates — including security fixes — still flow through.
+      # Adopted runtime lane: ToolPin itself targets Node 24 LTS, undici 7,
+      # @types/node 24, and TypeScript 6. Keep minor/patch updates flowing on
+      # those lanes, but defer future incompatible majors to an explicit
+      # runtime-upgrade issue instead of weekly automation.
       - dependency-name: "undici"
-        update-types: ["version-update:semver-major"]
+        versions: [">=8"]
       - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
+        versions: [">=25"]
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
+        versions: [">=7"]
 
   # Keep pinned GitHub Actions SHAs current (Dependabot updates the pin + comment).
   - package-ecosystem: github-actions

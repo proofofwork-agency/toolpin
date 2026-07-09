@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0
+
+- Breaking runtime baseline: ToolPin now requires Node.js 24 or newer. The
+  GitHub Action sets up Node 24 for itself, so repositories whose app/test jobs
+  still run on Node 18, 20, or 22 can keep those jobs unchanged and run ToolPin
+  in a separate CI job or final CI step.
+- Runtime dependency lane adopted for issue #7: `undici` moves to 7.28.0,
+  `@types/node` to 24.13.3, and TypeScript to 6.0.3. CI, release workflow, and
+  composite Action runtime setup now use Node 24.
+- `safeFetch` keeps the DNS-pinned undici dispatcher behavior while narrowing
+  the Node ambient `fetch` / direct undici type mismatch at a single adapter
+  boundary. The injected `fetch?: typeof fetch` test seam is unchanged.
+- Detached lock-signature key fingerprints now explicitly normalize to public
+  SPKI DER bytes before hashing, satisfying the stricter TypeScript 6 / Node 24
+  crypto types without changing signature semantics.
+- Dependabot policy now tracks the adopted lanes: minor and patch updates keep
+  flowing for undici 7, Node 24 types, and TypeScript 6, while future
+  incompatible majors (`undici >=8`, `@types/node >=25`, TypeScript >=7) stay
+  deferred to an explicit runtime-upgrade lane.
+- Launch docs now include an evidence-backed, opt-in-only adoption candidate
+  list. ToolPin must not be auto-added to third-party repositories without org
+  ownership or explicit maintainer approval.
+
 ## 0.4.0
 
 - Tool-surface pinning (rug-pull defense): `capabilityManifest` gains an

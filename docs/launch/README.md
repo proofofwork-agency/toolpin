@@ -28,8 +28,9 @@ posted, or PR'd anywhere until explicitly approved.
 ## Launch prereqs (human-gated)
 
 - **Version bump + tag + npm publish** — `release:check` is green through the
-  refuse-to-republish guard; 0.4.0 selected (verdicts, init ci, strict,
-  toolSurfaceHash are additive features). Human approved on 2026-07-08.
+  refuse-to-republish guard. 0.4.0 shipped the transformation release
+  (verdicts, init ci, strict, toolSurfaceHash); 0.5.0 is the Node 24 runtime
+  lane for issue #7. Human approved the 0.5.0 release on 2026-07-09.
 - **Curated registry seed (2–3 entries)** — requires honest human review
   (`reviewedBy`, riskNotes, testedClients) plus live evidence generation;
   machine-generated "reviewed" status would violate the project's own
@@ -45,3 +46,5 @@ posted, or PR'd anywhere until explicitly approved.
 - `awesome-list-prs.md` — target lists + entry lines.
 - `marketplace-listing.md` — GitHub Marketplace copy.
 - `design-partners.md` — shortlist criteria + outreach template.
+- `adoption-candidates.md` — evidence-backed candidate list and opt-in
+  adoption rules.

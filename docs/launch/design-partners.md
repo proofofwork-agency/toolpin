@@ -8,6 +8,11 @@
 - At least 2 maintainers (a solo hobby repo won't exercise the review-gate
   workflow).
 
+Seed candidates to verify before outreach: `Automattic/wp-calypso`,
+`Khan/wonder-blocks`, `Doist/todoist-mcp`, and
+`confluentinc/mcp-confluent`. The evidence table lives in
+`adoption-candidates.md`.
+
 ## What we ask of them
 
 1. Run `toolpin init ci` (or add the 5-line Action) on one repo.
@@ -37,3 +42,8 @@
   `path:.cursor/mcp.json` filtered to repos with recent CI activity.
 - MCP community Discord/forum threads complaining about config drift or
   server trust (the mcp-sentiment research doc has the pain-point threads).
+
+Do not open an adoption PR unless the repo is organization-owned or a
+maintainer explicitly asks for one. For repos that have MCP config but no
+`mcp-lock.json`, ask maintainers to run the lock/adopt flow locally instead of
+synthesizing a lockfile from the outside.

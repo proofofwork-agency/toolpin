@@ -6,8 +6,13 @@
 ## Targets (verify category placement at PR time)
 
 1. `punkpeye/awesome-mcp-servers` — utilities/tooling section.
-2. Any active `awesome-mcp-security` list — supply-chain/tooling section.
-3. `modelcontextprotocol` community resources page, if contributions open.
+2. `Puliczek/awesome-mcp-security` — supply-chain/tooling section.
+3. `appcypher/awesome-mcp-servers` — utilities/tooling section.
+4. `wong2/awesome-mcp-servers` — utilities/tooling section.
+5. `modelcontextprotocol` community resources page, if contributions open.
+
+Open these only after release/tag and explicit human launch approval. Use the
+contribution format for each repository; do not batch or automate PRs.
 
 ## Entry line (tooling lists)
 

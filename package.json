@@ -1,6 +1,6 @@
 {
   "name": "@proofofwork-agency/toolpin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A review gate and lockfile for MCP server installs: artifact integrity, tool-surface pinning, and a CI drift gate",
   "license": "Apache-2.0",
   "keywords": [
@@ -63,20 +63,20 @@
     "smoke": "npm run build && node dist/cli.js search github --limit 3 --live"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "devDependencies": {
     "@docusaurus/core": "^3.10.1",
     "@docusaurus/preset-classic": "^3.10.1",
-    "@types/node": "^22.10.7",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
-    "typescript": "^5.7.3"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^7.1.0",
     "react": "^19.2.7",
-    "undici": "^6.27.0",
+    "undici": "^7.28.0",
     "yaml": "^2.9.0"
   }
 }

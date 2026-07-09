@@ -28,7 +28,7 @@ on every connection. ToolPin CI enforces a committed `mcp-lock.json`:
 Setup:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.4.0
+- uses: proofofwork-agency/toolpin@v0.5.0
   with:
     strict: "true"
 ```

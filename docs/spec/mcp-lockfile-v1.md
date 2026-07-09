@@ -190,7 +190,7 @@ Evidence records *who verified what, how* — without baking any vendor into the
 format:
 
 ```json
-{ "code": "artifact-integrity", "status": "passed", "verifier": "toolpin/0.4.0",
+{ "code": "artifact-integrity", "status": "passed", "verifier": "toolpin/0.5.0",
   "method": "npm-sri", "anchor": "registry.npmjs.org", "verifiedAt": "…", "required": true }
 ```
 
