@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: proofofwork-agency/toolpin@v0.5.1
+      - uses: proofofwork-agency/toolpin@v0.5.2
 ```
 
 By default the action runs `toolpin ci --file mcp-lock.json --live` and lets the
@@ -118,7 +118,7 @@ must be `auto`, `true`, or `false`.
 Use strict mode when CI should require fresh ToolPin-verified artifact proof:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     strict: "true"
 ```
@@ -134,7 +134,7 @@ re-probed over the guarded network transport. Package live pins require
 execution to re-verify; CI fails with an actionable error unless you opt in:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     strict: "true"
     allow-execute: "true"
@@ -158,7 +158,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - id: toolpin
-    uses: proofofwork-agency/toolpin@v0.5.1
+    uses: proofofwork-agency/toolpin@v0.5.2
     with:
       sarif: "true"
   - uses: github/codeql-action/upload-sarif@v3
@@ -181,7 +181,7 @@ toolpin lock digest --file mcp-lock.json
 Store the digest as a CI variable or secret, then run:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
 ```
@@ -199,7 +199,7 @@ toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem --f
 Then in CI:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     signature: mcp-lock.sig
     public-key: public.pem
@@ -218,7 +218,7 @@ so fresh repos can adopt locking before requiring verified proof.
 To enforce a non-default policy path:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     policy: security/toolpin-policy.json
 ```
@@ -226,7 +226,7 @@ To enforce a non-default policy path:
 To skip policy enforcement explicitly:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.1
+- uses: proofofwork-agency/toolpin@v0.5.2
   with:
     no-policy: "true"
 ```

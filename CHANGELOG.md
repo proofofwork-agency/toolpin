@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2
+
+- Fixed `.gitignore` rule ordering: a cleanup in 0.5.1 alphabetically sorted the file,
+  which moved the `!.env.example` and `!.codex/config.toml` negations ahead of the
+  `.env.*` and `.codex/*` rules they carve out. Gitignore is last-match-wins, so both
+  negations were silently disabled. Restored section ordering with negations after
+  their globs; the effective ignore set is otherwise unchanged.
+- Republished so the npm package README no longer references internal launch materials
+  (`PROMOTION-PLAN.md`, `docs/launch/`, `docs/MARKETING-COMPARISON.md`) or the removed
+  `discover:candidates` script. The immutable 0.5.1 tarball README predated their removal
+  from the repository.
+- Action examples across README and docs now pin `proofofwork-agency/toolpin@v0.5.2`.
+
 ## 0.5.1
 
 - Internal launch preparation work (promotion strategy, candidate discovery, and outreach templates) executed locally. These materials are not published in the public repository.
