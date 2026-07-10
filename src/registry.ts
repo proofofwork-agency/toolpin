@@ -1001,10 +1001,17 @@ export async function readCacheMetadata(cachePath = DEFAULT_CACHE_PATH, options:
   if (stale) {
     const message = `Registry cache ${cachePath} is stale; generatedAt=${cache.generatedAt}, ttlMs=${ttlMs}.`;
     if (options.ci && !options.allowStaleCache) throw new CacheSchemaError(message);
-    if (!options.quiet) process.stderr.write(`Warning: ${message}\n`);
+    // The cache is read several times in one command run; repeating the same
+    // staleness warning adds noise without information.
+    if (!options.quiet && !warnedStaleCaches.has(message)) {
+      warnedStaleCaches.add(message);
+      process.stderr.write(`Warning: ${message}\n`);
+    }
   }
   return reconcileBundledToolPinCache(cache);
 }
+
+const warnedStaleCaches = new Set<string>();
 
 export class CacheSchemaError extends Error {
   constructor(message: string) {
