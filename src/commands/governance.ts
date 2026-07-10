@@ -393,6 +393,7 @@ export async function ci(rest: string[]): Promise<void> {
   const publicKeyPath = stringFlag(rest, "--public-key", "");
   const verifyBeforeUse = hasFlag(rest, "--verify");
   const requireVerified = hasFlag(rest, "--require-verified");
+  const strictTier = hasFlag(rest, "--strict-tier");
   const policyPath = stringFlag(rest, "--policy", DEFAULT_POLICY_PATH);
   const enforcePolicies = !hasFlag(rest, "--no-policy");
   const sarif = hasFlag(rest, "--sarif");
@@ -502,7 +503,7 @@ export async function ci(rest: string[]): Promise<void> {
       policyStatus = "ok";
     }
     return plan;
-  });
+  }, { verifyCapable: verifyBeforeUse, strictTier });
   if (verifyBeforeUse && verificationStatus === "pending") verificationStatus = report.ok ? "ok" : "failed";
   if (enforcePolicies && policyConfig && policyStatus === "pending") policyStatus = report.ok ? "ok" : "failed";
 
@@ -681,7 +682,7 @@ export async function doctor(rest: string[]): Promise<void> {
 }
 
 export function ciHelp(): void {
-  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]");
+  console.log("Usage: toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--strict-tier] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]");
 }
 
 export function initHelp(): void {

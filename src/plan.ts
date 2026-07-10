@@ -5,7 +5,7 @@ import { canonicalJson } from "./canonicalJson.js";
 import { DEFAULT_LOCKFILE_PATH } from "./constants.js";
 import { exportClientConfig, isClientName, selectLaunchTarget, type ClientName } from "./config.js";
 import type { InstallScope } from "./install.js";
-import { regateTrustReport, scoreServer, trustTier } from "./trust.js";
+import { regateTrustReport, scoreServer, trustTier, TRUSTED_ARTIFACT_EVIDENCE_CODES } from "./trust.js";
 import type { VerificationReport } from "./verify.js";
 import type { CapabilityManifest, NormalizedServer, TrustEvidence, TrustIssue, TrustReport, TrustTier } from "./types.js";
 import { dedupeTrustEvidence, isRecord } from "./util.js";
@@ -199,7 +199,17 @@ export function computeLockfileDigest(lockfile: Lockfile): string {
   return `sha256-${createHash("sha256").update(stableJson(lockfileDigestPayload(lockfile))).digest("base64")}`;
 }
 
-export async function verifyAgainstLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH): Promise<LockVerification> {
+export interface LockDiffOptions {
+  // The current plan came from a run that could locally re-verify artifacts
+  // (--verify). Only such a run can re-earn a locally verified tier, so only
+  // its tier downgrades are reportable when the locked claims are unchanged.
+  verifyCapable?: boolean;
+  // Refuse claim-backed tier acceptance (--strict-tier): a downgraded tier is
+  // reported even when every locked artifact claim is unchanged.
+  strictTier?: boolean;
+}
+
+export async function verifyAgainstLockfile(plan: InstallPlan, path = DEFAULT_LOCKFILE_PATH, options: LockDiffOptions = {}): Promise<LockVerification> {
   const lockfile = await readExistingLockfile(path);
   const key = lockKey(plan.name, plan.client);
   const locked = lockfile.servers[key] ?? lockfile.servers[plan.name];
@@ -207,7 +217,7 @@ export async function verifyAgainstLockfile(plan: InstallPlan, path = DEFAULT_LO
     return { ok: true, key, messages: [] };
   }
 
-  const messages = diffInstallPlans(locked, plan);
+  const messages = diffInstallPlans(locked, plan, options);
   return { ok: messages.length === 0, key, messages, locked };
 }
 
@@ -389,7 +399,7 @@ function parseTrustEvidence(value: unknown, key: string, index: number): TrustEv
   };
 }
 
-function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
+function diffInstallPlans(locked: InstallPlan, current: InstallPlan, options: LockDiffOptions = {}): string[] {
   const messages: string[] = [];
   if (!locked.integrity) messages.push("lock integrity is missing");
   if (locked.integrity && computePlanIntegrity(locked) !== locked.integrity) messages.push("locked entry integrity does not match its contents");
@@ -397,7 +407,26 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
   if ((locked.scope ?? "project") !== (current.scope ?? "project")) messages.push(`scope changed ${locked.scope ?? "project"} -> ${current.scope ?? "project"}`);
   if (stableJson(locked.selectedTarget) !== stableJson(current.selectedTarget)) messages.push("selected install target changed");
   if (locked.trust.score > current.trust.score) messages.push(`trust score decreased ${locked.trust.score} -> ${current.trust.score}`);
-  if (isTrustTierDowngrade(trustTier(locked.trust), trustTier(current.trust))) messages.push(`trust tier decreased ${trustTier(locked.trust)} -> ${trustTier(current.trust)}`);
+  const lockedTier = trustTier(locked.trust);
+  const currentTier = trustTier(current.trust);
+  if (isTrustTierDowngrade(lockedTier, currentTier)) {
+    // A run without --verify recomputes registry evidence as claims
+    // (verifiedByToolPin=false), so it can never re-derive a locally earned
+    // "verified" tier. Its downgrade only means drift when the locked artifact
+    // claims themselves changed; an unchanged-claims downgrade means "not
+    // re-checked this run", which --strict-tier escalates and --verify
+    // resolves by re-earning the tier.
+    const claims = compareTrustedArtifactClaims(locked, current);
+    if (claims === "changed") {
+      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (artifact integrity claims changed)`);
+    } else if (claims === "unavailable") {
+      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (locked entry has no artifact integrity claims to compare)`);
+    } else if (options.verifyCapable) {
+      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier}`);
+    } else if (options.strictTier) {
+      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (strict-tier: an unverified run cannot re-earn the locked tier; run toolpin ci --verify)`);
+    }
+  }
   if (stableJson(locked.config) !== stableJson(current.config)) messages.push("client config changed");
   if (stableJson(normalizeCapabilityManifestBase(locked.capabilityManifest)) !== stableJson(normalizeCapabilityManifestBase(current.capabilityManifest))) messages.push("capability manifest changed");
   const surfaceComparison = compareToolSurfaceHash(locked.capabilityManifest, current.capabilityManifest);
@@ -418,6 +447,27 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan): string[] {
     messages.push("tool-manifest hash pin could not be refreshed");
   }
   return messages;
+}
+
+// Locked trusted-artifact evidence (npm SRI, OCI digest, MCPB hash) is
+// compared by claim value: every claim recorded at lock time must still be
+// declared for the same evidence code by the current resolution.
+function compareTrustedArtifactClaims(locked: InstallPlan, current: InstallPlan): "intact" | "changed" | "unavailable" {
+  const lockedClaims = trustedArtifactClaims(locked);
+  if (!lockedClaims.length) return "unavailable";
+  const currentClaims = new Map<string, Set<string>>();
+  for (const entry of trustedArtifactClaims(current)) {
+    const claims = currentClaims.get(entry.code) ?? new Set<string>();
+    claims.add(entry.claim);
+    currentClaims.set(entry.code, claims);
+  }
+  return lockedClaims.every((entry) => currentClaims.get(entry.code)?.has(entry.claim)) ? "intact" : "changed";
+}
+
+function trustedArtifactClaims(plan: InstallPlan): Array<{ code: string; claim: string }> {
+  return (plan.trust.evidence ?? [])
+    .filter((entry) => TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code) && entry.status !== "failed" && typeof entry.claim === "string")
+    .map((entry) => ({ code: entry.code, claim: entry.claim as string }));
 }
 
 function isTrustTierDowngrade(locked: TrustTier, current: TrustTier): boolean {

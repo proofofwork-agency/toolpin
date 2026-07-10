@@ -52,6 +52,7 @@ export const KNOWN_FLAGS = new Set([
   "--sarif",
   "--skip-live-verification",
   "--skip-live-verify",
+  "--strict-tier",
   "--update-lock",
   "--verify",
   "-v",

@@ -285,7 +285,7 @@ Lock and governance
   toolpin init ci [--github] [--dry-run]
   toolpin audit [--file mcp-lock.json] [--scope|-s all|project|global] [--client|-c <client|all>] [--verify] [--allow-execute] [--require-verified] [--json]
   toolpin audit server <server> [--version <server-version>] [--source toolpin|official|docker|all|custom-id] [--live] [--json] [--explain]
-  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]
+  toolpin ci [--file mcp-lock.json] [--expect-digest sha256-...] [--signature mcp-lock.sig --public-key public.pem] [--policy .toolpin/policy.json] [--no-policy] [--source toolpin|official|docker|all|id] [--live] [--strict-tier] [--verify [--require-verified] [--allow-execute] [--skip-live-verification | --skip-live-verify] [--timeout 15000]] [--json] [--sarif]
   toolpin outdated [--file mcp-lock.json] [--source toolpin|official|docker|all|custom-id] [--live] [--json]
   toolpin doctor [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]
   toolpin secrets audit [--file mcp-lock.json] [--scope|-s all|project|global] [--global|-g] [--json]

@@ -472,6 +472,83 @@ test("verifyFrozenInstall reports every resolver failure", async () => {
   });
 });
 
+const LOCKED_ARTIFACT_CLAIM = "sha512-lockedartifactclaim==";
+
+test("verifyAgainstLockfile accepts an unverified run when locked artifact claims are unchanged", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(server, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+    assert.equal(verification.ok, true);
+    assert.deepEqual(verification.messages, []);
+  });
+});
+
+test("verifyAgainstLockfile reports a tier downgrade when artifact claims changed", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeVerifiedLock(curatedServer(LOCKED_ARTIFACT_CLAIM), lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const drifted = curatedServer("sha512-differentartifactclaim==");
+    const verification = await verifyAgainstLockfile(buildInstallPlan(drifted, "claude"), lockfilePath);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("trust tier decreased") && message.includes("artifact integrity claims changed")));
+  });
+});
+
+test("verifyAgainstLockfile --strict-tier refuses claim-backed tier acceptance", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(server, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath, { strictTier: true });
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("strict-tier") && message.includes("--verify")));
+  });
+});
+
+test("verifyAgainstLockfile reports a tier downgrade from a verify-capable run", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(server, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath, { verifyCapable: true });
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("trust tier decreased verified -> conditional")));
+  });
+});
+
+test("verifyAgainstLockfile fails closed when a verified lock has no artifact claims", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer();
+    await writeVerifiedLock(server, lockfilePath, undefined);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("no artifact integrity claims")));
+  });
+});
+
+test("verifyFrozenInstall threads strict-tier through to the lock diff", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(server, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const lenient = await verifyFrozenInstall(lockfilePath, async () => buildInstallPlan(server, "claude"));
+    assert.equal(lenient.ok, true);
+
+    const strict = await verifyFrozenInstall(lockfilePath, async () => buildInstallPlan(server, "claude"), { strictTier: true });
+    assert.equal(strict.ok, false);
+    assert.ok(strict.issues.some((issue) => issue.messages.some((message) => message.includes("strict-tier"))));
+  });
+});
+
 async function withTempDir(fn) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "toolpin-lockfile-"));
   try {
@@ -531,6 +608,56 @@ function surfaceHash(value, coverage = ["name", "description", "inputSchema"]) {
     toolCount: 1,
     generatedAt: "2026-01-01T00:00:00.000Z",
   };
+}
+
+function curatedServer(claim) {
+  const server = packageServer();
+  const raw = { ...server.raw };
+  if (claim) {
+    raw._meta = {
+      "dev.toolpin/evidence": [
+        {
+          code: "npm_integrity_verified",
+          status: "passed",
+          message: "npm tarball integrity matched registry dist.integrity.",
+          source: "npm-tarball",
+          claim,
+          verificationMethod: "npm-packument-sri",
+          trustedAnchor: true,
+          trustAnchor: "registry.npmjs.org",
+          verifiedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+  }
+  return { ...server, registrySource: "toolpin", raw };
+}
+
+async function writeVerifiedLock(server, lockfilePath, claim) {
+  await writeLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+  const lockfile = JSON.parse(await readFile(lockfilePath, "utf8"));
+  const entry = lockfile.servers["io.github/example:claude"];
+  entry.trust.tier = "verified";
+  entry.trust.verifiedProvenance = true;
+  if (claim) {
+    entry.trust.evidence = [
+      ...entry.trust.evidence,
+      {
+        code: "npm_integrity_verified",
+        status: "passed",
+        message: "npm tarball integrity locally verified.",
+        source: "npm-tarball",
+        claim,
+        verificationMethod: "npm-packument-sri",
+        verifiedByToolPin: true,
+        trustedAnchor: true,
+        trustAnchor: "registry.npmjs.org",
+        verifiedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+  }
+  entry.integrity = computePlanIntegrity(entry);
+  await writeFile(lockfilePath, JSON.stringify(lockfile, null, 2));
 }
 
 function packageServer(overrides = {}) {

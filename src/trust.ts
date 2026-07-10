@@ -9,7 +9,7 @@ const STRONG_PACKAGE_TYPES = new Set(["oci", "mcpb"]);
 const SUPPORTED_PACKAGE_TYPES = new Set(["npm", "pypi", "nuget", "cargo", "oci", "mcpb"]);
 const BLOCKED_TRUST_CODES = new Set(["no_install_target", "insecure_remote", "invalid_remote_url"]);
 const UNVERIFIED_TRUST_CODES = new Set(["mutable_oci_tag", "missing_mcpb_hash"]);
-const TRUSTED_ARTIFACT_EVIDENCE_CODES = new Set(["oci_digest_verified", "mcpb_sha256_verified", "npm_integrity_verified"]);
+export const TRUSTED_ARTIFACT_EVIDENCE_CODES = new Set(["oci_digest_verified", "mcpb_sha256_verified", "npm_integrity_verified"]);
 const VERIFIED_EVIDENCE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const TOOLPIN_EVIDENCE_META = "dev.toolpin/evidence";
 

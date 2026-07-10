@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.3
+
+- Fixed: `toolpin ci` without `--verify` permanently failed any lock entry
+  recorded at the `verified` tier ("trust tier decreased verified ->
+  conditional"). Since registry-declared evidence became a claim rather than
+  proof (0.4.0), an unverified run can never re-earn `verified`; the
+  frozen-lock comparison now accepts the recorded tier when every locked
+  artifact integrity claim (npm SRI, OCI digest, MCPB hash) is still declared
+  unchanged, and still fails when claims change or disappear, or when a
+  `--verify` run genuinely demotes the tier. This also fixes the default
+  GitHub Action invocation (`toolpin ci --live`) for verified-tier locks.
+- Added `toolpin ci --strict-tier` to refuse claim-backed tier acceptance:
+  verified-tier entries then fail unless the run re-earns them with
+  `--verify`. The lenient-on-unchanged-claims behavior stays the default.
+- Tier drift messages now say why: artifact claims changed, no claims to
+  compare, or the run could not re-verify (with the flag to fix it).
+
 ## 0.5.2
 
 - Fixed `.gitignore` rule ordering: a cleanup in 0.5.1 alphabetically sorted the file,

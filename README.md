@@ -444,7 +444,7 @@ commit SHA and the Action pinned to this release's tag:
 
 ```yaml
 - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-- uses: proofofwork-agency/toolpin@v0.5.2
+- uses: proofofwork-agency/toolpin@v0.5.3
 ```
 
 ToolPin itself requires Node.js 24 or newer. The GitHub Action sets up its own
@@ -488,7 +488,7 @@ variables, never interpolated into the script.
 Require fresh verified artifact evidence on every PR:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.2
+- uses: proofofwork-agency/toolpin@v0.5.3
   with:
     strict: "true"            # --verify --require-verified
     allow-execute: "true"     # only if package live pins must re-verify
@@ -507,7 +507,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - id: toolpin
-    uses: proofofwork-agency/toolpin@v0.5.2
+    uses: proofofwork-agency/toolpin@v0.5.3
     with:
       sarif: "true"
   - uses: github/codeql-action/upload-sarif@v3
@@ -519,7 +519,7 @@ steps:
 Pin the whole lock and verify its signature:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.2
+- uses: proofofwork-agency/toolpin@v0.5.3
   with:
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
     signature: mcp-lock.sig

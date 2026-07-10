@@ -1,4 +1,4 @@
-import { readLockfile, verifyAgainstLockfile, type InstallPlan } from "./plan.js";
+import { readLockfile, verifyAgainstLockfile, type InstallPlan, type LockDiffOptions } from "./plan.js";
 
 export interface FrozenInstallIssue {
   key: string;
@@ -14,6 +14,7 @@ export interface FrozenInstallReport {
 export async function verifyFrozenInstall(
   lockfilePath: string,
   resolveCurrentPlan: (locked: InstallPlan, key: string) => Promise<InstallPlan>,
+  options: LockDiffOptions = {},
 ): Promise<FrozenInstallReport> {
   const lockfile = await readLockfile(lockfilePath);
   const entries = Object.entries(lockfile.servers);
@@ -22,7 +23,7 @@ export async function verifyFrozenInstall(
   for (const [key, locked] of entries) {
     try {
       const current = await resolveCurrentPlan(locked, key);
-      const verification = await verifyAgainstLockfile(current, lockfilePath);
+      const verification = await verifyAgainstLockfile(current, lockfilePath, options);
       if (!verification.ok) {
         issues.push({ key, messages: verification.messages });
       }
