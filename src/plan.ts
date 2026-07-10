@@ -420,7 +420,7 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan, options: Lo
     if (claims === "changed") {
       messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (artifact integrity claims changed)`);
     } else if (claims === "unavailable") {
-      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (locked entry has no artifact integrity claims to compare)`);
+      messages.push(`trust tier decreased ${lockedTier} -> ${currentTier} (locked entry has no locally verified artifact claims to compare)`);
     } else if (options.verifyCapable) {
       messages.push(`trust tier decreased ${lockedTier} -> ${currentTier}`);
     } else if (options.strictTier) {
@@ -450,24 +450,41 @@ function diffInstallPlans(locked: InstallPlan, current: InstallPlan, options: Lo
 }
 
 // Locked trusted-artifact evidence (npm SRI, OCI digest, MCPB hash) is
-// compared by claim value: every claim recorded at lock time must still be
-// declared for the same evidence code by the current resolution.
+// compared by claim value. The locked side only counts claims the lock
+// actually earned with local verification (passed + verifiedByToolPin +
+// trustedAnchor) — those are the basis of a verified tier. The current side
+// counts what the resolution declares (declared or passed); for every locked
+// code the current resolution declares at all, its claim set must equal the
+// locked set exactly, so a registry declaring extra claims for the same code
+// (old + new) reads as changed, not intact. Codes the current resolution
+// does not declare are unobservable without --verify and do not fail the
+// default mode; --strict-tier refuses this acceptance entirely.
 function compareTrustedArtifactClaims(locked: InstallPlan, current: InstallPlan): "intact" | "changed" | "unavailable" {
-  const lockedClaims = trustedArtifactClaims(locked);
-  if (!lockedClaims.length) return "unavailable";
-  const currentClaims = new Map<string, Set<string>>();
-  for (const entry of trustedArtifactClaims(current)) {
-    const claims = currentClaims.get(entry.code) ?? new Set<string>();
-    claims.add(entry.claim);
-    currentClaims.set(entry.code, claims);
+  const lockedClaims = artifactClaimsByCode(locked, (entry) => entry.status === "passed" && entry.verifiedByToolPin === true && entry.trustedAnchor === true);
+  if (!lockedClaims.size) return "unavailable";
+  const currentClaims = artifactClaimsByCode(current, (entry) => entry.status === "passed" || entry.status === "declared");
+  for (const [code, claims] of lockedClaims) {
+    const declared = currentClaims.get(code);
+    if (!declared) continue;
+    if (declared.size !== claims.size) return "changed";
+    for (const claim of claims) {
+      if (!declared.has(claim)) return "changed";
+    }
   }
-  return lockedClaims.every((entry) => currentClaims.get(entry.code)?.has(entry.claim)) ? "intact" : "changed";
+  return "intact";
 }
 
-function trustedArtifactClaims(plan: InstallPlan): Array<{ code: string; claim: string }> {
-  return (plan.trust.evidence ?? [])
-    .filter((entry) => TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code) && entry.status !== "failed" && typeof entry.claim === "string")
-    .map((entry) => ({ code: entry.code, claim: entry.claim as string }));
+function artifactClaimsByCode(plan: InstallPlan, accept: (entry: TrustEvidence) => boolean): Map<string, Set<string>> {
+  const byCode = new Map<string, Set<string>>();
+  for (const entry of plan.trust.evidence ?? []) {
+    if (!TRUSTED_ARTIFACT_EVIDENCE_CODES.has(entry.code)) continue;
+    if (typeof entry.claim !== "string") continue;
+    if (!accept(entry)) continue;
+    const claims = byCode.get(entry.code) ?? new Set<string>();
+    claims.add(entry.claim);
+    byCode.set(entry.code, claims);
+  }
+  return byCode;
 }
 
 function isTrustTierDowngrade(locked: TrustTier, current: TrustTier): boolean {

@@ -530,7 +530,61 @@ test("verifyAgainstLockfile fails closed when a verified lock has no artifact cl
 
     const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
     assert.equal(verification.ok, false);
-    assert.ok(verification.messages.some((message) => message.includes("no artifact integrity claims")));
+    assert.ok(verification.messages.some((message) => message.includes("no locally verified artifact claims")));
+  });
+});
+
+test("verifyAgainstLockfile rejects a registry declaring old and new claims for the same code", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    await writeVerifiedLock(curatedServer(LOCKED_ARTIFACT_CLAIM), lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const doubleDeclared = curatedServer(LOCKED_ARTIFACT_CLAIM, "sha512-extranewclaim==");
+    const verification = await verifyAgainstLockfile(buildInstallPlan(doubleDeclared, "claude"), lockfilePath);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("artifact integrity claims changed")));
+  });
+});
+
+test("verifyAgainstLockfile treats a resolution with no declared claims as unobservable by default", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const declaring = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(declaring, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const silent = curatedServer();
+    const lenient = await verifyAgainstLockfile(buildInstallPlan(silent, "claude"), lockfilePath);
+    assert.equal(lenient.ok, true);
+
+    const strict = await verifyAgainstLockfile(buildInstallPlan(silent, "claude"), lockfilePath, { strictTier: true });
+    assert.equal(strict.ok, false);
+  });
+});
+
+test("verifyAgainstLockfile only anchors on locally verified locked claims", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    // Lock whose only artifact claim is registry-declared (verifiedByToolPin
+    // false): the verified tier has no locally verified basis to compare.
+    await writeVerifiedLock(server, lockfilePath, undefined);
+
+    const verification = await verifyAgainstLockfile(buildInstallPlan(server, "claude"), lockfilePath);
+    assert.equal(verification.ok, false);
+    assert.ok(verification.messages.some((message) => message.includes("no locally verified artifact claims")));
+  });
+});
+
+test("trust score is verification-independent for identical resolutions", async () => {
+  await withTempDir(async (tempDir) => {
+    const lockfilePath = path.join(tempDir, "mcp-lock.json");
+    const server = curatedServer(LOCKED_ARTIFACT_CLAIM);
+    await writeVerifiedLock(server, lockfilePath, LOCKED_ARTIFACT_CLAIM);
+
+    const lockfile = await readLockfile(lockfilePath);
+    const locked = lockfile.servers["io.github/example:claude"];
+    const current = buildInstallPlan(server, "claude");
+    assert.equal(locked.trust.score, current.trust.score);
   });
 });
 
@@ -610,24 +664,23 @@ function surfaceHash(value, coverage = ["name", "description", "inputSchema"]) {
   };
 }
 
-function curatedServer(claim) {
+function curatedServer(...claims) {
   const server = packageServer();
   const raw = { ...server.raw };
-  if (claim) {
+  const declared = claims.filter(Boolean);
+  if (declared.length) {
     raw._meta = {
-      "dev.toolpin/evidence": [
-        {
-          code: "npm_integrity_verified",
-          status: "passed",
-          message: "npm tarball integrity matched registry dist.integrity.",
-          source: "npm-tarball",
-          claim,
-          verificationMethod: "npm-packument-sri",
-          trustedAnchor: true,
-          trustAnchor: "registry.npmjs.org",
-          verifiedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ],
+      "dev.toolpin/evidence": declared.map((claim, index) => ({
+        code: "npm_integrity_verified",
+        status: "passed",
+        message: `npm tarball integrity matched registry dist.integrity (${index}).`,
+        source: "npm-tarball",
+        claim,
+        verificationMethod: "npm-packument-sri",
+        trustedAnchor: true,
+        trustAnchor: "registry.npmjs.org",
+        verifiedAt: "2026-01-01T00:00:00.000Z",
+      })),
     };
   }
   return { ...server, registrySource: "toolpin", raw };

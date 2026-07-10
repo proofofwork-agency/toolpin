@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: proofofwork-agency/toolpin@v0.5.3
+      - uses: proofofwork-agency/toolpin@v0.5.4
 ```
 
 By default the action runs `toolpin ci --file mcp-lock.json --live` and lets the
@@ -118,9 +118,14 @@ must be `auto`, `true`, or `false`.
 A `toolpin ci` run without `--verify` recomputes registry evidence as claims
 (`verifiedByToolPin: false`), so it can never re-earn a lock entry's locally
 verified tier by itself. The gate therefore accepts a recorded `verified` tier
-as long as every locked artifact integrity claim (npm SRI, OCI digest, MCPB
-hash) is still declared unchanged by the registry — and fails when a claim
-changes or disappears, or when a `--verify` run genuinely demotes the tier.
+when the artifact integrity claims the lock earned with local verification
+(npm SRI, OCI digest, MCPB hash) are still declared unchanged: for every
+locked evidence code the current resolution declares, the claim sets must
+match exactly, so a changed claim — or a registry declaring extra claims for
+the same code — fails the gate. Claims the current resolution does not declare
+at all are unobservable without `--verify`; the default mode accepts the
+recorded tier in that case, and a `--verify` run that genuinely demotes the
+tier always fails.
 
 Two ways to demand more than unchanged claims:
 
@@ -135,7 +140,7 @@ toolpin ci --strict-tier   # refuse claim-backed acceptance; verified-tier entri
 Use strict mode when CI should require fresh ToolPin-verified artifact proof:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     strict: "true"
 ```
@@ -151,7 +156,7 @@ re-probed over the guarded network transport. Package live pins require
 execution to re-verify; CI fails with an actionable error unless you opt in:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     strict: "true"
     allow-execute: "true"
@@ -175,7 +180,7 @@ permissions:
 steps:
   - uses: actions/checkout@v4
   - id: toolpin
-    uses: proofofwork-agency/toolpin@v0.5.3
+    uses: proofofwork-agency/toolpin@v0.5.4
     with:
       sarif: "true"
   - uses: github/codeql-action/upload-sarif@v3
@@ -198,7 +203,7 @@ toolpin lock digest --file mcp-lock.json
 Store the digest as a CI variable or secret, then run:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     expect-digest: ${{ vars.TOOLPIN_LOCK_DIGEST }}
 ```
@@ -216,7 +221,7 @@ toolpin lock verify-signature --policy .toolpin/policy.json --key public.pem --f
 Then in CI:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     signature: mcp-lock.sig
     public-key: public.pem
@@ -235,7 +240,7 @@ so fresh repos can adopt locking before requiring verified proof.
 To enforce a non-default policy path:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     policy: security/toolpin-policy.json
 ```
@@ -243,7 +248,7 @@ To enforce a non-default policy path:
 To skip policy enforcement explicitly:
 
 ```yaml
-- uses: proofofwork-agency/toolpin@v0.5.3
+- uses: proofofwork-agency/toolpin@v0.5.4
   with:
     no-policy: "true"
 ```

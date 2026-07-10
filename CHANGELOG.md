@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.4
+
+- Hardened the claim-backed tier acceptance introduced in 0.5.3 after
+  adversarial review:
+  - The locked side now only anchors on claims the lock actually earned with
+    local verification (`passed` + `verifiedByToolPin` + `trustedAnchor`);
+    registry-declared or unavailable locked evidence no longer qualifies.
+  - Claim comparison is exact set equality per evidence code: a registry
+    declaring extra claims for the same code (old and new SRI side by side)
+    now reads as changed instead of intact.
+  - Evidence codes the current resolution does not declare at all are treated
+    as unobservable (accepted by default, refused under `--strict-tier`)
+    instead of silently matching.
+- Trust-evidence dedupe now includes the claim in its identity key, so
+  entries that differ only in their integrity claim are no longer collapsed.
+- The stale registry-cache warning prints once per run instead of once per
+  cache read.
+
 ## 0.5.3
 
 - Fixed: `toolpin ci` without `--verify` permanently failed any lock entry

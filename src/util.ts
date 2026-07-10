@@ -13,13 +13,16 @@ export function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 3))}...` : value;
 }
 
-// Collapse trust-evidence entries that are identical in code+status+message,
-// keeping the first occurrence. Shared by trust scoring, verification, and
-// install-plan assembly so they cannot drift apart.
+// Collapse trust-evidence entries that are identical in
+// code+status+message+claim, keeping the first occurrence. Shared by trust
+// scoring, verification, and install-plan assembly so they cannot drift
+// apart. The claim participates in the key: entries that differ only in
+// their integrity claim are distinct evidence, and lock diffing compares
+// claim sets.
 export function dedupeTrustEvidence(evidence: TrustEvidence[]): TrustEvidence[] {
   const byKey = new Map<string, TrustEvidence>();
   for (const entry of evidence) {
-    const key = `${entry.code}:${entry.status}:${entry.message}`;
+    const key = `${entry.code}:${entry.status}:${entry.message}:${entry.claim ?? ""}`;
     if (!byKey.has(key)) byKey.set(key, entry);
   }
   return [...byKey.values()];
