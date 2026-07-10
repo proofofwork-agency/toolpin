@@ -1,7 +1,7 @@
 {
   "lockfileVersion": 2,
   "generatedAt": "2026-06-25T16:12:09.391Z",
-  "updatedAt": "2026-06-29T09:23:44.497Z",
+  "updatedAt": "2026-07-10T07:46:40.183Z",
   "servers": {
     "@proofofwork-agency/contextrelay:codex": {
       "name": "@proofofwork-agency/contextrelay",
@@ -20,16 +20,16 @@
         "overallScore": 100,
         "metadataCompleteness": 74,
         "tier": "verified",
-        "verifiedProvenance": true,
-        "gates": [],
         "vetoes": [],
+        "gates": [],
+        "gatedBy": [],
+        "verifiedProvenance": true,
         "pillars": {
           "provenance": 82,
-          "integrity": 100,
+          "integrity": 50,
           "reputation": 78,
           "metadataCompleteness": 74
         },
-        "gatedBy": [],
         "evidence": [
           {
             "code": "package_pin",
@@ -42,6 +42,18 @@
           },
           {
             "code": "npm_integrity_verified",
+            "status": "declared",
+            "message": "npm tarball integrity matched registry dist.integrity for @proofofwork-agency/contextrelay@3.9.2. (registry-declared, not locally recomputed)",
+            "verifiedByToolPin": false,
+            "source": "npm-tarball",
+            "claim": "sha512-zUmS+iLWX/uRha5wzO8AdxSHUrOvXy8MOx+JHdMBRDRvMU+wS6jtQn0beWRUjRdMKN2RDZ0WRzxoHlDtEBmQYQ==",
+            "verificationMethod": "npm-packument-sri",
+            "trustedAnchor": true,
+            "trustAnchor": "registry.npmjs.org",
+            "verifiedAt": "2026-06-27T19:50:00.000Z"
+          },
+          {
+            "code": "npm_integrity_verified",
             "status": "passed",
             "message": "npm tarball integrity matched registry dist.integrity for @proofofwork-agency/contextrelay@3.9.2.",
             "source": "npm-tarball",
@@ -50,7 +62,12 @@
             "verifiedByToolPin": true,
             "trustedAnchor": true,
             "trustAnchor": "registry.npmjs.org",
-            "verifiedAt": "2026-06-27T19:50:00.000Z"
+            "verifiedAt": "2026-07-10T07:46:39.926Z"
+          },
+          {
+            "code": "tool_description_hash",
+            "status": "unavailable",
+            "message": "Package tools/list hashing requires executing the package; rerun with --allow-execute to capture live capability pins."
           },
           {
             "code": "lock_integrity",
@@ -69,7 +86,13 @@
           "pinned version",
           "npm-integrity-verified"
         ],
-        "issues": []
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "package_execution_skipped",
+            "message": "Live package probe skipped: ToolPin does not execute server packages during verification without --allow-execute. Network artifact checks still ran."
+          }
+        ]
       },
       "config": {
         "mcp_servers": {
@@ -100,10 +123,10 @@
         ],
         "remoteHosts": [],
         "secrets": [],
-        "generatedAt": "2026-06-27T20:38:01.081Z"
+        "generatedAt": "2026-07-10T07:46:39.926Z"
       },
-      "resolvedAt": "2026-06-27T20:38:01.081Z",
-      "lockedAt": "2026-06-27T20:38:01.086Z",
+      "resolvedAt": "2026-07-10T07:46:40.177Z",
+      "lockedAt": "2026-07-10T07:46:40.183Z",
       "resolved": {
         "source": "toolpin",
         "name": "@proofofwork-agency/contextrelay",
@@ -148,10 +171,10 @@
           ],
           "remoteHosts": [],
           "secrets": [],
-          "generatedAt": "2026-06-27T20:38:01.081Z"
+          "generatedAt": "2026-07-10T07:46:39.926Z"
         }
       },
-      "integrity": "sha256-H1jhYjQn4AkxanyFOQFvlYADAgxywVAYAa+Akn3lcuE="
+      "integrity": "sha256-wefuMlwwfZ/fWpkJiE2cX6aHVPOFH2mRV4jTTA/Bu/8="
     },
     "ac.inference.sh/mcp:claude": {
       "name": "ac.inference.sh/mcp",
@@ -169,16 +192,16 @@
         "metadataCompleteness": 80,
         "tier": "conditional",
         "capReason": "no verified provenance",
-        "vetoes": [],
-        "gates": [],
-        "gatedBy": [],
         "verifiedProvenance": false,
+        "gates": [],
+        "vetoes": [],
         "pillars": {
           "provenance": 20,
           "integrity": 65,
           "reputation": 80,
           "metadataCompleteness": 80
         },
+        "gatedBy": [],
         "evidence": [
           {
             "code": "lock_integrity",
